@@ -1,0 +1,216 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pr-rules:
+    name: pr-rules
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - id: check
+        run: |
+          if [ -f scripts/ci/pr_rules.py ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.check.outputs.present == 'true'
+        env:
+          EVENT: ${{ github.event_name }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          BRANCH: ${{ github.head_ref }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: python scripts/ci/pr_rules.py
+      - if: steps.check.outputs.present == 'true'
+        uses: gitleaks/gitleaks-action@v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - if: steps.check.outputs.present == 'false'
+        run: echo "::notice::Nothing to check yet"
+
+  backend:
+    name: backend
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: charie
+          POSTGRES_PASSWORD: charie
+          POSTGRES_DB: charie_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U charie -d charie_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql+psycopg://charie:charie@localhost:5432/charie_test
+      AI_REPLAY: replay
+    steps:
+      - uses: actions/checkout@v7
+      - id: check
+        run: |
+          if [ -f backend/pyproject.toml ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.check.outputs.present == 'true'
+        uses: astral-sh/setup-uv@v10
+      - if: steps.check.outputs.present == 'true'
+        working-directory: backend
+        run: uv sync --frozen
+      - if: steps.check.outputs.present == 'true'
+        working-directory: backend
+        run: uv run ruff format --check .
+      - if: steps.check.outputs.present == 'true'
+        working-directory: backend
+        run: uv run ruff check .
+      - if: steps.check.outputs.present == 'true'
+        working-directory: backend
+        run: |
+          if [ -f alembic.ini ]; then
+            uv run alembic upgrade head
+          fi
+      - if: steps.check.outputs.present == 'true'
+        working-directory: backend
+        run: |
+          code=0
+          uv run pytest -m "not practice_db and not live_ai" || code=$?
+          if [ "$code" -eq 5 ]; then
+            echo "No tests found yet; counting as a pass"
+            exit 0
+          fi
+          exit "$code"
+      - if: steps.check.outputs.present == 'false'
+        run: echo "::notice::Nothing to check yet"
+
+  frontend:
+    name: frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - id: check
+        run: |
+          if [ -f frontend/package.json ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.check.outputs.present == 'true'
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: frontend/.nvmrc
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - if: steps.check.outputs.present == 'true'
+        working-directory: frontend
+        run: npm ci
+      - if: steps.check.outputs.present == 'true'
+        working-directory: frontend
+        run: npm run lint
+      - if: steps.check.outputs.present == 'true'
+        working-directory: frontend
+        run: npm run typecheck
+      - if: steps.check.outputs.present == 'true'
+        working-directory: frontend
+        run: npm test
+      - if: steps.check.outputs.present == 'true'
+        working-directory: frontend
+        run: npm run build
+      - if: steps.check.outputs.present == 'false'
+        run: echo "::notice::Nothing to check yet"
+
+  e2e:
+    name: e2e
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - id: check
+        run: |
+          if [ -f frontend/package.json ] && grep -q '"e2e:mock"' frontend/package.json; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.check.outputs.present == 'true'
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: frontend/.nvmrc
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - if: steps.check.outputs.present == 'true'
+        working-directory: frontend
+        run: npm ci
+      - if: steps.check.outputs.present == 'true'
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+      - if: steps.check.outputs.present == 'true'
+        working-directory: frontend
+        run: npm run e2e:mock
+      - if: failure() && steps.check.outputs.present == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report
+          path: frontend/playwright-report/
+          if-no-files-found: ignore
+      - if: steps.check.outputs.present == 'false'
+        run: echo "::notice::Nothing to check yet"
+
+  docker:
+    name: docker
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - id: check
+        run: |
+          if [ -f docker/chat.Dockerfile ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.check.outputs.present == 'true'
+        run: docker build -f docker/chat.Dockerfile .
+      - if: steps.check.outputs.present == 'true'
+        run: docker build -f docker/learner.Dockerfile .
+      - if: steps.check.outputs.present == 'false'
+        run: echo "::notice::Nothing to check yet"
+
+  infra:
+    name: infra
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - id: check
+        run: |
+          if compgen -G "infra/*.bicep" > /dev/null; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.check.outputs.present == 'true'
+        run: az bicep install
+      - if: steps.check.outputs.present == 'true'
+        run: |
+          for f in infra/*.bicep; do
+            az bicep build --file "$f" --stdout > /dev/null
+          done
+      - if: steps.check.outputs.present == 'false'
+        run: echo "::notice::Nothing to check yet"
