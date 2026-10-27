@@ -5,7 +5,10 @@ import os
 import subprocess
 import sys
 
-BACKEND_TEST = "uv run --directory backend pytest -q "
+# Automatic runs never call real AI: replays only, and live_ai tests are left
+# out (they also need the practice database, so practice_db is left out too).
+# Explicitly authorized live test runs are started by hand, never from here.
+BACKEND_TEST = 'uv run --directory backend pytest -q -m "not live_ai and not practice_db" '
 FRONTEND_TEST = "npm --prefix frontend test"
 FRONTEND_E2E = "npm --prefix frontend run e2e:mock"
 
@@ -41,26 +44,30 @@ def commands_for(path):
     return commands
 
 
+class DiscoveryError(Exception):
+    pass
+
+
+def git_output(args):
+    try:
+        result = subprocess.run(
+            ["git"] + args, capture_output=True, text=True, timeout=30,
+        )
+    except Exception as exc:
+        raise DiscoveryError(f"git {' '.join(args)} could not run: {exc}")
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or "").strip().splitlines()
+        raise DiscoveryError(
+            f"git {' '.join(args)} failed: {detail[0] if detail else 'unknown error'}")
+    return result.stdout
+
+
 def changed_files():
     files = set()
-    try:
-        base = subprocess.run(
-            ["git", "merge-base", "HEAD", "main"],
-            capture_output=True, text=True, timeout=30,
-        ).stdout.strip()
-        if base:
-            out = subprocess.run(
-                ["git", "diff", "--name-only", base],
-                capture_output=True, text=True, timeout=30,
-            ).stdout
-            files.update(out.splitlines())
-        out = subprocess.run(
-            ["git", "ls-files", "--others", "--exclude-standard"],
-            capture_output=True, text=True, timeout=30,
-        ).stdout
-        files.update(out.splitlines())
-    except Exception:
-        pass
+    base = git_output(["merge-base", "HEAD", "main"]).strip()
+    if base:
+        files.update(git_output(["diff", "--name-only", base]).splitlines())
+    files.update(git_output(["ls-files", "--others", "--exclude-standard"]).splitlines())
     return sorted(f for f in files if f)
 
 
@@ -79,13 +86,28 @@ def planned_commands():
 
 
 def run_commands(commands):
+    env = dict(os.environ)
+    env["AI_REPLAY"] = "replay"
     failed = []
     for command in commands:
         print(f"$ {command}")
-        result = subprocess.run(command, shell=True)
+        result = subprocess.run(command, shell=True, env=env)
         if result.returncode != 0:
             failed.append(command)
     return failed
+
+
+def stop_reason(hook_payload, status, detail=""):
+    # Never block twice in a row: the session would loop forever. Allowing a
+    # stop that was already blocked once is not a claim that tests passed.
+    if hook_payload.get("stop_hook_active"):
+        return None
+    if status == "passed":
+        return None
+    if status == "failed":
+        return "The quick tests failed. Fix the tests first, then finish."
+    return (f"The quick tests could not run ({detail}). "
+            "Fix that first, then finish. Unrun tests are not a pass.")
 
 
 def self_test():
@@ -105,10 +127,72 @@ def self_test():
             failed.append(path)
         if not expected and commands:
             failed.append(path)
+
+    backend_command = " ".join(commands_for("backend/charie/shared/safety/x.py"))
+    if "not live_ai" not in backend_command or "not practice_db" not in backend_command:
+        failed.append("backend commands must exclude live_ai and practice_db")
+
+    real_run = run_commands([f'"{sys.executable}" -c "import sys; sys.exit(3)"'])
+    if len(real_run) != 1:
+        failed.append("a command exiting 3 must be reported as failed")
+
+    original_run = subprocess.run
+    captured = {}
+
+    class FakeResult:
+        returncode = 0
+
+    def fake_run(command, **kwargs):
+        captured["command"] = command
+        captured.update(kwargs)
+        return FakeResult()
+
+    try:
+        subprocess.run = fake_run
+        if run_commands(["pytest -q tests/unit/safety"]):
+            failed.append("a command exiting 0 must pass")
+        if captured.get("env", {}).get("AI_REPLAY") != "replay":
+            failed.append("test subprocesses must get AI_REPLAY=replay")
+        if "tests/unit/safety" not in str(captured.get("command", "")):
+            failed.append("test subprocess must receive the planned command")
+
+        def failing_run(*args, **kwargs):
+            raise OSError("git is missing")
+
+        subprocess.run = failing_run
+        try:
+            changed_files()
+            failed.append("a git exception must fail discovery")
+        except DiscoveryError:
+            pass
+
+        class GitFail:
+            returncode = 128
+            stdout = ""
+            stderr = "fatal: not a git repository"
+
+        subprocess.run = lambda *a, **k: GitFail()
+        try:
+            changed_files()
+            failed.append("a git exit 128 must fail discovery")
+        except DiscoveryError:
+            pass
+    finally:
+        subprocess.run = original_run
+
+    if stop_reason({"stop_hook_active": True}, "failed") is not None:
+        failed.append("stop_hook_active must prevent a second block (loop)")
+    if not stop_reason({"stop_hook_active": False}, "failed"):
+        failed.append("failed tests must block the first stop")
+    if not stop_reason({"stop_hook_active": False}, "error", "git failed"):
+        failed.append("unrun tests must block the first stop, never pass silently")
+    if stop_reason({"stop_hook_active": False}, "passed") is not None:
+        failed.append("passing tests must not block stopping")
+
     if failed:
         print("self-test failed: " + "; ".join(failed))
         return 1
-    print(f"self-test passed ({len(cases)} cases)")
+    print(f"self-test passed ({len(cases) + 8} cases)")
     return 0
 
 
@@ -123,10 +207,19 @@ def main():
         except Exception:
             hook_payload = None
     is_stop_hook = bool(hook_payload) and hook_payload.get("hook_event_name") == "Stop"
-    if is_stop_hook and hook_payload.get("stop_hook_active"):
-        return 0
 
-    commands = planned_commands()
+    try:
+        commands = planned_commands()
+    except DiscoveryError as exc:
+        print(f"Quick tests could not work out what changed: {exc}")
+        if is_stop_hook:
+            reason = stop_reason(hook_payload, "error", str(exc))
+            if reason:
+                print(json.dumps({"decision": "block", "reason": reason}))
+            else:
+                print("Quick tests did not run (see above); not a pass.")
+            return 0
+        return 1
     if "--dry-run" in sys.argv:
         if not commands:
             if not os.path.isfile("backend/pyproject.toml"):
@@ -146,10 +239,9 @@ def main():
         print(f"Quick tests failed ({len(failed)} of {len(commands)} commands). "
               "Fix the tests first.")
         if is_stop_hook:
-            print(json.dumps({
-                "decision": "block",
-                "reason": "The quick tests failed. Fix the tests first, then finish.",
-            }))
+            reason = stop_reason(hook_payload, "failed")
+            if reason:
+                print(json.dumps({"decision": "block", "reason": reason}))
             return 0
         return 1
     print(f"Quick tests passed ({len(commands)} commands).")
