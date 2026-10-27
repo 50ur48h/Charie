@@ -9,6 +9,12 @@ Charie is an AI data and business analyst with two apps that share one knowledge
 2. Work on ONE task at a time. Run /plan for it first.
 3. End each task with /finish-task. After the last task of a sub-phase, /finish-task opens the PR.
    Then STOP: the owner reviews and merges. While the PR is open, only fix the owner's review comments.
+4. Until P01.6 builds our skills, follow their documented procedures by hand: read docs/STATUS.md and the
+   current sub-phase file, run the checks, and update the docs yourself. A missing skill never blocks
+   work, and never invent a command for it.
+5. If a sub-phase plan is missing or incomplete, complete it first from DECISIONS.md, the architecture,
+   older outlines and the existing code. Use judgment for routine details; ask the owner about material
+   decisions or conflicts. Never skip required work just because its plan is incomplete.
 
 ## Where things are
 - docs/ (on this laptop only): DECISIONS.md (what we decided; it wins), IMPLEMENTATION-PLAN.md and plan/ (what to build),
