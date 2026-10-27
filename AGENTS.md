@@ -38,7 +38,7 @@ Charie is an AI data and business analyst with two apps that share one knowledge
 10. Never open or edit .env. Never commit secrets. Never open docs/hidden-tests/.
 11. Follow DECISIONS.md. If something seems wrong, ask; don't change it on your own.
 12. Match the approved designs in docs/designs/calm/. Use the theme colors, never hard-coded colors.
-13. Git: work only on the sub-phase's branch. Never commit or push on main. Never merge, close or approve a PR.
+13. Git: work only on the current branch (one sub-phase, or a batch of 2–3 related sub-phases in one PR, per C012). Never commit or push on main. Never merge, close or approve a PR.
     Never force-push. One open PR at a time.
 14. Stay in scope: only what the current sub-phase file says. Anything else goes to docs/BACKLOG.md (/add-backlog).
 15. If anything differs from the plan or the docs (a name, a file, a choice), record it with /record-change
