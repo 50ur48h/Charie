@@ -93,14 +93,33 @@ def current_branch():
         return "unknown"
 
 
+MISSING_FILE_INPUT = ("Blocked: this file action has no file path, so the guard "
+                      "can't check it. Give the path and try again.")
+MISSING_COMMAND_INPUT = ("Blocked: this shell action has no command, so the guard "
+                         "can't check it. Give the command and try again.")
+
+
 def decide(payload):
-    tool = payload.get("tool_name", "")
-    tool_input = payload.get("tool_input") or {}
+    if not isinstance(payload, dict):
+        return SAFE_BLOCK
+    tool = payload.get("tool_name")
+    if not tool or not isinstance(tool, str):
+        return SAFE_BLOCK
+    tool_input = payload.get("tool_input")
+    if tool_input is None:
+        tool_input = {}
+    if not isinstance(tool_input, dict):
+        return SAFE_BLOCK
     if tool in ("read_file", "write_file", "edit_file"):
+        path = tool_input.get("path")
+        if not path or not isinstance(path, str):
+            return MISSING_FILE_INPUT
         action = "read" if tool == "read_file" else "edit"
-        return check_file(tool_input.get("path", ""), action)
+        return check_file(path, action)
     if tool in ("powershell", "powershell_input"):
-        command = tool_input.get("command") or tool_input.get("chars") or ""
+        command = tool_input.get("command") or tool_input.get("chars")
+        if not command or not isinstance(command, str):
+            return MISSING_COMMAND_INPUT
         return check_command(command, current_branch())
     if "hidden-tests" in json.dumps(tool_input).lower():
         return ("Blocked: the owner's hidden test questions are off-limits. "
@@ -169,6 +188,21 @@ def self_test():
     cmd_case("docker rm charie_restaurant_demo-db-1", "any", True)
     cmd_case("docker volume rm charie_restaurant_demo_data", "any", True)
     cmd_case("git status", "main", False)
+
+    payload_cases = [
+        ("empty payload", {}, True),
+        ("payload is a list", ["read_file"], True),
+        ("no tool name", {"tool_input": {"path": ".env"}}, True),
+        ("tool_input not an object", {"tool_name": "read_file", "tool_input": "x"}, True),
+        ("read without path", {"tool_name": "read_file", "tool_input": {}}, True),
+        ("edit with empty path", {"tool_name": "edit_file", "tool_input": {"path": ""}}, True),
+        ("shell without command", {"tool_name": "powershell", "tool_input": {}}, True),
+        ("shell input without text", {"tool_name": "powershell_input", "tool_input": {"session_id": 1}}, True),
+        ("read .env payload", {"tool_name": "read_file", "tool_input": {"path": ".env"}}, True),
+        ("read .env.example payload", {"tool_name": "read_file", "tool_input": {"path": ".env.example"}}, False),
+    ]
+    for name, payload, blocked in payload_cases:
+        cases.append((name, decide(payload), blocked))
 
     failed = [name for name, reason, blocked in cases if (reason is not None) != blocked]
     if failed:
