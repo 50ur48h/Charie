@@ -1,0 +1,20 @@
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: charie-db
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_USER: charie
+      POSTGRES_PASSWORD: charie
+      POSTGRES_DB: charie
+    volumes:
+      - charie-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U charie -d charie"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  charie-db-data:
