@@ -73,7 +73,7 @@ jobs:
             echo "present=false" >> "$GITHUB_OUTPUT"
           fi
       - if: steps.check.outputs.present == 'true'
-        uses: astral-sh/setup-uv@v10
+        uses: astral-sh/setup-uv@v10.3.2
       - if: steps.check.outputs.present == 'true'
         working-directory: backend
         run: uv sync --frozen
