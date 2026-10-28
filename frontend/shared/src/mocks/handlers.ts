@@ -1,9 +1,12 @@
 import { http, HttpResponse } from "msw";
 import { readSavedTheme } from "../theme/theme";
-import chats from "./data";
+import { addMockMessage, createMockChat, getMockChat, listMockChats } from "./sampleChat";
 import { SAMPLE_PASSWORD } from "./password";
 
 export const CHATS_URL = "*/api/chats";
+export const CHAT_DETAIL_URL = "*/api/chats/:id";
+export const CHAT_MESSAGES_URL = "*/api/chats/:id/messages";
+export const STATUS_URL = "*/api/status";
 export const ME_URL = "*/api/me";
 export const HEALTH_URL = "*/api/health";
 export const LOGIN_URL = "*/api/login";
@@ -120,7 +123,53 @@ export const handlers = [
   http.get(CHATS_URL, () => {
     const blocked = needSession();
     if (blocked) return blocked;
-    return HttpResponse.json(chats);
+    return HttpResponse.json(listMockChats());
+  }),
+  http.post(CHATS_URL, () => {
+    const blocked = needSession();
+    if (blocked) return blocked;
+    return HttpResponse.json(createMockChat(), { status: 201 });
+  }),
+  http.get(CHAT_DETAIL_URL, ({ params }) => {
+    const blocked = needSession();
+    if (blocked) return blocked;
+    const chat = getMockChat(Number(params.id));
+    if (chat === undefined) {
+      return HttpResponse.json(
+        { error: "not_found", message: "That chat is gone." },
+        { status: 404 },
+      );
+    }
+    return HttpResponse.json(chat);
+  }),
+  http.post(CHAT_MESSAGES_URL, async ({ params, request }) => {
+    const blocked = needSession();
+    if (blocked) return blocked;
+    let text: unknown;
+    try {
+      text = ((await request.json()) as { text?: unknown }).text;
+    } catch {
+      text = undefined;
+    }
+    if (typeof text !== "string" || text.trim() === "") {
+      return HttpResponse.json(
+        { error: "empty_text", message: "Please write a question first." },
+        { status: 400 },
+      );
+    }
+    const sent = addMockMessage(Number(params.id), text.trim());
+    if (sent === undefined) {
+      return HttpResponse.json(
+        { error: "not_found", message: "That chat is gone." },
+        { status: 404 },
+      );
+    }
+    return HttpResponse.json(sent, { status: 201 });
+  }),
+  http.get(STATUS_URL, () => {
+    const blocked = needSession();
+    if (blocked) return blocked;
+    return HttpResponse.json({ questions_waiting: 3, data_through: "2025-10-26" });
   }),
   http.all(CATCH_ALL_URL, () => {
     const blocked = needSession();
