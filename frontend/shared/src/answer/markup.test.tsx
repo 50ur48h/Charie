@@ -34,6 +34,20 @@ describe("Markup", () => {
     ).toBeTruthy();
   });
 
+  test("long_repeated_unclosed_tags stay literal and fast", () => {
+    // 400KB of unclosed openers with content between them: the old
+    // backtracking scan needed ~2.2s for the split alone (quadratic). The
+    // single-pass scanner stays linear, so this budget has wide margin
+    // only when parsing is linear. (Bare ** runs pair up and are not
+    // unclosed input, so they are not used here.)
+    const text = "<good>x ".repeat(50000);
+    const started = performance.now();
+    render(<Markup text={text} />);
+    expect(performance.now() - started).toBeLessThan(2000);
+    expect(document.body.textContent).toBe(text);
+    expect(document.querySelectorAll("span, strong").length).toBe(0);
+  });
+
   test("incomplete_tags and unknown spans stay literal", () => {
     render(
       <Markup

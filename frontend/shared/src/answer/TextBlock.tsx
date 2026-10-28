@@ -2,16 +2,21 @@ import { Fragment } from "react";
 import type { TextBlock as TextBlockType, TextSentence } from "../api/chat-types";
 import { Markup } from "./markup";
 
-const PREFIX: Partial<Record<TextSentence["kind"], string>> = {
-  possible_reason: "Maybe: ",
-  suggestion: "Try: ",
-};
-
 function Sentence({ sentence }: { sentence: TextSentence }) {
-  const prefix = PREFIX[sentence.kind] ?? "";
+  // Sentence kinds look the same (architecture 09), except a possible
+  // reason carries a small hover hint. No visible prefixes: the sentence
+  // text renders exactly as the answer sent it.
+  if (sentence.kind === "possible_reason") {
+    return (
+      <>
+        <span title="possible reason">
+          <Markup text={sentence.text} />
+        </span>{" "}
+      </>
+    );
+  }
   return (
     <>
-      {prefix}
       <Markup text={sentence.text} />{" "}
     </>
   );

@@ -90,7 +90,7 @@ describe("AnswerView", () => {
     expect(onFollowUp).toHaveBeenCalledWith("How much did it cost?");
   });
 
-  test("renders every sentence kind with its prefix", () => {
+  test("renders every sentence kind as sent, with a hover hint on possible reasons", () => {
     render(
       <AnswerView
         answer={answerWith([
@@ -114,9 +114,16 @@ describe("AnswerView", () => {
     );
     expect(screen.getByText("Sales were $1.42M.", { exact: false })).toBeTruthy();
     expect(screen.getByText("We are ahead.", { exact: false })).toBeTruthy();
-    expect(screen.getByText("Maybe: ", { exact: false })).toBeTruthy();
-    expect(screen.getByText("Try: ", { exact: false })).toBeTruthy();
+    expect(screen.getByText("The holiday menu.", { exact: false })).toBeTruthy();
+    expect(screen.getByText("Keep it.", { exact: false })).toBeTruthy();
     expect(screen.getByText("October is partial.", { exact: false })).toBeTruthy();
+    // No injected prefixes: kinds look the same, except the possible
+    // reason carries its hover hint.
+    expect(screen.queryByText(/Maybe:|Try:/)).toBeNull();
+    const reason = screen
+      .getByText("The holiday menu.", { exact: false })
+      .closest("span");
+    expect(reason?.getAttribute("title")).toBe("possible reason");
   });
 
   test("an unknown block warns and falls back", () => {
