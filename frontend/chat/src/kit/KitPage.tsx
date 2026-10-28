@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { THEMES, useTheme } from "@charie/shared";
 import BasicBlocksSection from "./BasicBlocksSection";
 import ColorsSection from "./ColorsSection";
+import OverlaysSection from "./OverlaysSection";
 import TextSection from "./TextSection";
 
 export default function KitPage() {
@@ -34,10 +35,12 @@ export default function KitPage() {
         <a href="#colors">Colors</a>
         <a href="#text">Text</a>
         <a href="#basic-blocks">Building blocks 1</a>
+        <a href="#overlays">Building blocks 2</a>
       </nav>
       <ColorsSection />
       <TextSection />
       <BasicBlocksSection />
+      <OverlaysSection />
     </div>
   );
 }
