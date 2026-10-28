@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { THEMES, useTheme } from "@charie/shared";
 import BasicBlocksSection from "./BasicBlocksSection";
 import ColorsSection from "./ColorsSection";
+import CompositeBlocksSection from "./CompositeBlocksSection";
 import OverlaysSection from "./OverlaysSection";
 import TextSection from "./TextSection";
 
@@ -17,7 +18,7 @@ export default function KitPage() {
         Every building block and chart in the Calm look. For development only; never in the
         real app.
       </p>
-      <div className="mt-4 flex items-center gap-2" role="group" aria-label="Theme">
+      <div className="mt-4 flex flex-wrap items-center gap-2" role="group" aria-label="Theme">
         <span className="field-label">Theme</span>
         {THEMES.map((t) => (
           <button
@@ -31,16 +32,18 @@ export default function KitPage() {
           </button>
         ))}
       </div>
-      <nav className="mt-4 flex gap-4" aria-label="Kit sections">
+      <nav className="mt-4 flex flex-wrap gap-4" aria-label="Kit sections">
         <a href="#colors">Colors</a>
         <a href="#text">Text</a>
         <a href="#basic-blocks">Building blocks 1</a>
         <a href="#overlays">Building blocks 2</a>
+        <a href="#composite-blocks">Building blocks 3</a>
       </nav>
       <ColorsSection />
       <TextSection />
       <BasicBlocksSection />
       <OverlaysSection />
+      <CompositeBlocksSection />
     </div>
   );
 }

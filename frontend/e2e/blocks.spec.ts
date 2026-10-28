@@ -26,3 +26,21 @@ test("keyboard focus is visible on the basic blocks", async ({ page }) => {
   await showsFocus(page, section.getByRole("tab", { name: /Waiting/ }));
   await showsFocus(page, section.getByRole("switch", { name: "Remember off" }));
 });
+
+test("a wide table scrolls sideways on phones", async ({ page }) => {
+  await page.goto(`${CHAT}/__kit`);
+  const table = page.locator("#composite-blocks table").first();
+  await expect(table).toBeVisible();
+  const box = page.locator("#composite-blocks .overflow-x-auto").first();
+  const sizes = await box.evaluate((el) => ({
+    scrollWidth: el.scrollWidth,
+    clientWidth: el.clientWidth,
+    pageScroll: document.documentElement.scrollWidth,
+    viewport: window.innerWidth,
+  }));
+  // The table only overflows at phone width; on bigger screens it fits.
+  if (sizes.viewport < 500) {
+    expect(sizes.scrollWidth).toBeGreaterThan(sizes.clientWidth);
+  }
+  expect(sizes.pageScroll).toBeLessThanOrEqual(sizes.viewport);
+});
