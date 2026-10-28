@@ -3,12 +3,12 @@ import { echarts } from "./echarts";
 
 /** File-safe name for a chart title, e.g. "Sales change" -> "sales-change.png". */
 export function chartFileName(title: string): string {
-  const slug =
-    title
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "") || "chart";
-  return `${slug}.png`;
+  const slug = title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+/, "")
+    .replace(/-+$/, "");
+  return `${slug || "chart"}.png`;
 }
 
 /**
