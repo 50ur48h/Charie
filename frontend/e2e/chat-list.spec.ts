@@ -95,7 +95,7 @@ test("questions_badge refreshes after sending and keeps the active route", async
   await expect(questionsLink).toContainText("3");
   await closeSidebar(page);
   // The mock badge count changes; sending re-reads /api/status.
-  await page.evaluate(() => localStorage.setItem("charie-mock-questions-waiting", "1"));
+  await page.evaluate(() => localStorage.setItem("charie-mock-waiting-override", "1"));
   await page.getByRole("textbox", { name: "Ask a question" }).fill("Anything new?");
   await page.getByRole("button", { name: "Ask" }).click();
   const reopened = await sidebarScope(page);

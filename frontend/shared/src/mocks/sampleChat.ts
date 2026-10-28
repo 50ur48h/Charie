@@ -473,32 +473,6 @@ export function deleteMockChat(chatId: number): "ok" | "not_found" | "running" {
   return "ok";
 }
 
-// Waiting-questions badge count (mock only). Tests override it; the app just
-// reads it through GET /api/status.
-const QUESTIONS_WAITING_KEY = "charie-mock-questions-waiting";
-export function mockQuestionsWaiting(): number {
-  const store = storage();
-  if (store === null) return 3;
-  try {
-    const raw = store.getItem(QUESTIONS_WAITING_KEY);
-    const n = raw === null ? 3 : Number(raw);
-    return Number.isInteger(n) && n >= 0 ? n : 3;
-  } catch {
-    return 3;
-  }
-}
-
-// Test-only override for the badge count. Meaningless outside mock mode.
-export function setMockQuestionsWaiting(count: number): void {
-  const store = storage();
-  if (store === null) return;
-  try {
-    store.setItem(QUESTIONS_WAITING_KEY, String(count));
-  } catch {
-    // Counts are test-only; ignore.
-  }
-}
-
 function storedChat(chatId: number): Chat | undefined {
   rehydrate();
   if (deleted.has(chatId)) return undefined;
@@ -641,7 +615,6 @@ export function resetMockChats(): void {
     store.removeItem(COUNT_FINISH_KEY);
     store.removeItem(COUNT_KEYS.feedback);
     store.removeItem(COUNT_KEYS.wrong);
-    store.removeItem(QUESTIONS_WAITING_KEY);
   } catch {
     // Nothing to clear.
   }
