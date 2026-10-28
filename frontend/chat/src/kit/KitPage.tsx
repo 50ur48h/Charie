@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { THEMES, useTheme } from "@charie/shared";
+import BasicBlocksSection from "./BasicBlocksSection";
 import ColorsSection from "./ColorsSection";
 import TextSection from "./TextSection";
 
@@ -32,9 +33,11 @@ export default function KitPage() {
       <nav className="mt-4 flex gap-4" aria-label="Kit sections">
         <a href="#colors">Colors</a>
         <a href="#text">Text</a>
+        <a href="#basic-blocks">Building blocks 1</a>
       </nav>
       <ColorsSection />
       <TextSection />
+      <BasicBlocksSection />
     </div>
   );
 }
