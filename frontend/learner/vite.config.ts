@@ -2,8 +2,13 @@ import { fileURLToPath } from "node:url";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vitest/config";
+import { SAMPLE_PASSWORD } from "../shared/src/mocks/password";
 
-export default defineConfig(({ mode }) => ({
+export default defineConfig(({ mode }) => {
+  if (mode === "mock") {
+    console.log(`Sample data mode. Sign in with the password: ${SAMPLE_PASSWORD}`);
+  }
+  return ({
   plugins: [react(), tailwindcss()],
   publicDir: mode === "mock" ? "public-mock" : "public",
   define: {
@@ -34,4 +39,4 @@ export default defineConfig(({ mode }) => ({
   test: {
     environment: "jsdom",
   },
-}));
+})});

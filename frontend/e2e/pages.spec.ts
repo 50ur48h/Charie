@@ -1,5 +1,5 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
-import { CHAT, LEARNER } from "./apps";
+import { CHAT, LEARNER, signedIn } from "./apps";
 
 const CHAT_TITLES = [
   "How are we doing this month?",
@@ -25,6 +25,10 @@ async function sidebarScope(page: Page): Promise<Locator> {
   return page.locator("aside");
 }
 
+test.beforeEach(async ({ page }) => {
+  await signedIn(page, CHAT);
+});
+
 test("every chat page opens with its title", async ({ page }) => {
   const pages: [string, string][] = [
     ["/", "New chat"],
@@ -41,6 +45,7 @@ test("every chat page opens with its title", async ({ page }) => {
 });
 
 test("every learner page opens with its title", async ({ page }) => {
+  await signedIn(page, LEARNER, "/setup");
   await page.goto(`${LEARNER}/`);
   await expect(page).toHaveURL(`${LEARNER}/setup`);
   const pages: [string, string][] = [

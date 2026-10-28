@@ -5,11 +5,13 @@ import { cn } from "./cn";
 export interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   icon?: LucideIcon;
   end?: ReactNode;
+  inputRef?: React.Ref<HTMLInputElement>;
 }
 
-export function Input({ icon: Icon, end, className, ...props }: InputProps) {
+export function Input({ icon: Icon, end, className, inputRef, ...props }: InputProps) {
   const input = (
     <input
+      ref={inputRef}
       className={cn(
         "h-[42px] w-full rounded-[11px] border border-border bg-surface px-[14px] text-[14.5px] outline-none transition-[border-color,box-shadow] duration-200 placeholder:text-placeholder focus:border-accent focus:shadow-[0_0_0_3px_var(--accent-soft)] focus-visible:outline-none aria-invalid:border-bad",
         Icon && "pl-[40px]",

@@ -4,6 +4,8 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { createMemoryRouter, RouterProvider } from "react-router";
 import { routes } from "./routes";
 
+const ME = '{"logged_in": true, "setup_done": true, "theme": "sage"}';
+
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
@@ -12,8 +14,12 @@ afterEach(() => {
 function renderAt(path: string) {
   vi.stubGlobal(
     "fetch",
-    vi.fn().mockResolvedValue(
-      new Response("[]", { headers: { "Content-Type": "application/json" } }),
+    vi.fn().mockImplementation((url: string) =>
+      Promise.resolve(
+        new Response(url.includes("/api/me") ? ME : "[]", {
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
     ),
   );
   const client = new QueryClient({
