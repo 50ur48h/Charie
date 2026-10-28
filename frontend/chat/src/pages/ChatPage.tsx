@@ -37,6 +37,7 @@ export function ChatPage() {
   const chatQuery = useChat(Number.isInteger(id) ? id : -1);
   const statusQuery = useStatus();
   const [drafts, setDrafts] = useState<Record<number, string>>({});
+  const composerRef = useRef<HTMLTextAreaElement>(null);
   const [sending, setSending] = useState(false);
   const [finishing, setFinishing] = useState(false);
   // Ref guards make a double click a single request even before React
@@ -113,6 +114,11 @@ export function ChatPage() {
     }
   }
 
+  function followUp(text: string): void {
+    setDrafts((prev) => ({ ...prev, [chat.id]: text }));
+    composerRef.current?.focus();
+  }
+
   async function finishNow(): Promise<void> {
     if (runningId === undefined || finishInflight.current) return;
     finishInflight.current = true;
@@ -137,7 +143,7 @@ export function ChatPage() {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <ChatHeader title={chat.title} />
-      <MessageList messages={chat.messages} />
+      <MessageList messages={chat.messages} onFollowUp={followUp} />
       <div className="flex-none px-7 pb-4">
         <div className="mx-auto max-w-[800px]">
           {runningId !== undefined && (
@@ -158,6 +164,7 @@ export function ChatPage() {
             onSubmit={() => void submit()}
             sending={busy}
             dataThrough={statusQuery.data?.data_through}
+            textareaRef={composerRef}
           />
           <div className="mt-2 text-center text-[12px] text-muted">
             Charie checks every number before showing it.

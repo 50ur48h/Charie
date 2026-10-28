@@ -50,7 +50,10 @@ export function sampleAnswer(messageId: number): Answer {
             sentences: [
               { kind: "conclusion", text: "We are ahead of September on every measure." },
               { kind: "suggestion", text: "Keep the holiday menu through November." },
-              { kind: "note", text: "October has data up to the 26th only." },
+              {
+                kind: "note",
+                text: "October only runs to the <mark>26th</mark> so far.",
+              },
             ],
           },
         ],

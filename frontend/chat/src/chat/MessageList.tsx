@@ -7,7 +7,7 @@
 import { useEffect, useRef, useState } from "react";
 import { LogoMark, Spinner } from "@charie/shared";
 import type { ChatMessage } from "@charie/shared";
-import { ThinkingPanel } from "@charie/shared";
+import { AnswerView, ThinkingPanel } from "@charie/shared";
 import { ScrollToLatest } from "./ScrollToLatest";
 
 const NEAR_BOTTOM_PX = 80;
@@ -32,7 +32,13 @@ function AssistantStatus({ message }: { message: ChatMessage }) {
   return null;
 }
 
-export function MessageList({ messages }: { messages: ChatMessage[] }) {
+export function MessageList({
+  messages,
+  onFollowUp,
+}: {
+  messages: ChatMessage[];
+  onFollowUp: (text: string) => void;
+}) {
   const scrollerRef = useRef<HTMLDivElement>(null);
   const [stuck, setStuck] = useState(true);
 
@@ -86,6 +92,9 @@ export function MessageList({ messages }: { messages: ChatMessage[] }) {
                     />
                   )}
                   <AssistantStatus message={message} />
+                  {message.status === "done" && message.answer !== null && (
+                    <AnswerView answer={message.answer} onFollowUp={onFollowUp} />
+                  )}
                 </div>
               </div>
             ),
