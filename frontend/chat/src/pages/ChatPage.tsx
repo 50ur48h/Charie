@@ -1,7 +1,8 @@
 // The chat page frame (P03.2): header, messages, question box, scrolling.
-// Answer blocks arrive in P03.4-P03.6 and the live stream in P03.7; until
-// then the frame shows the message structure and the thinking state.
-import { useRef, useState } from "react";
+// A freshly sent question opens the answer's live stream, and reopening a
+// running answer resumes it (P03.7); the saved answer replaces the streamed
+// blocks on done. The stream stays scoped to its chat and message.
+import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -9,6 +10,7 @@ import {
   QuestionComposer,
   Spinner,
   toast,
+  useAnswerStream,
   useChat,
   useFinishMessage,
   useSendMessage,
@@ -40,12 +42,51 @@ export function ChatPage() {
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const [sending, setSending] = useState(false);
   const [finishing, setFinishing] = useState(false);
+  // The stream follows exactly one (chat, message) at a time. An
+  // in-session send pins it explicitly; otherwise the loaded running
+  // answer takes over once per visit, so reopening or reloading a running
+  // answer resumes it. The target always comes from the loaded API data,
+  // never from fixtures: saved thinking panels are just states until the
+  // stream serves live events for them.
+  const [scope, setScope] = useState<{ chatId: number; messageId: number } | null>(null);
+  // Messages already followed during this visit: resuming one that stays
+  // running (a frozen saved state, or an answer that finished between the
+  // chat load and the stream open) must not reopen it in a loop.
+  const openedRef = useRef<{ chatId: number; messageId: number } | null>(null);
   // Ref guards make a double click a single request even before React
   // re-renders with sending/finishing set.
   const sendInflight = useRef(false);
   const finishInflight = useRef(false);
   const sendMessage = useSendMessage();
   const finishMessage = useFinishMessage();
+  // A fresh visit (mount or sidebar switch) drops the old scope: the
+  // previous connection aborts and never reopens under the new chat.
+  useEffect(() => {
+    openedRef.current = null;
+    setScope(null);
+  }, [id]);
+
+  // Resume the loaded running answer once per visit.
+  useEffect(() => {
+    if (chatQuery.data === undefined || scope !== null) return;
+    const resumeId = runningAssistantId(chatQuery.data.messages);
+    if (resumeId === undefined) return;
+    const opened = openedRef.current;
+    if (opened !== null && opened.chatId === id && opened.messageId === resumeId) return;
+    openedRef.current = { chatId: id, messageId: resumeId };
+    setScope({ chatId: id, messageId: resumeId });
+  }, [id, chatQuery.data, scope]);
+
+  // Gated on the scope's chat: a stale scope from the previous chat opens
+  // nothing here, so its connection stays aborted and its completion can
+  // never touch this chat.
+  const streamMessageId = scope !== null && scope.chatId === id ? scope.messageId : null;
+  const liveFeed = useAnswerStream(Number.isInteger(id) ? id : -1, streamMessageId, async () => {
+    await client.refetchQueries({ queryKey: ["chat", id] });
+    // Clear only this chat's scope: a completion racing a sidebar switch
+    // must not kill the new chat's stream.
+    setScope((current) => (current !== null && current.chatId === id ? null : current));
+  });
 
   if (chatQuery.isPending) {
     return (
@@ -97,11 +138,12 @@ export function ChatPage() {
     sendInflight.current = true;
     setSending(true);
     try {
-      await sendMessage.mutateAsync({ chatId: chat.id, text });
+      const sent = await sendMessage.mutateAsync({ chatId: chat.id, text });
       // Stay locked until the refreshed chat (with the running answer) is
       // back: the list below still shows the old messages until then.
       await client.refetchQueries({ queryKey: ["chat", chat.id] });
       setDrafts((prev) => ({ ...prev, [chat.id]: "" }));
+      setScope({ chatId: chat.id, messageId: sent.assistant_message_id });
     } catch (error) {
       toast(
         error instanceof ApiError
@@ -125,6 +167,8 @@ export function ChatPage() {
     setFinishing(true);
     try {
       await finishMessage.mutateAsync(runningId);
+      // Stop the stream first so its late done can't overwrite the stop.
+      setScope(null);
       // Stay locked until the refreshed chat (with the stopped answer) is
       // back, so a second click can't send a repeated request.
       await client.refetchQueries({ queryKey: ["chat"] });
@@ -143,7 +187,11 @@ export function ChatPage() {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <ChatHeader title={chat.title} />
-      <MessageList messages={chat.messages} onFollowUp={followUp} />
+      <MessageList
+        messages={chat.messages}
+        onFollowUp={followUp}
+        live={streamMessageId === null ? null : { messageId: streamMessageId, feed: liveFeed }}
+      />
       <div className="flex-none px-7 pb-4">
         <div className="mx-auto max-w-[800px]">
           {runningId !== undefined && (

@@ -2,12 +2,14 @@
 // Each answer renders its own thinking panel from its own message, so
 // earlier evidence never moves to a new answer. It follows new messages
 // only while the reader is near the bottom; otherwise it offers "Jump to
-// latest". Answer blocks render here from P03.4; until then a finished
-// assistant message shows its text.
+// latest". A running answer with a live feed renders its streamed blocks;
+// the saved answer replaces them on done.
 import { useEffect, useRef, useState } from "react";
 import { LogoMark, Spinner } from "@charie/shared";
 import type { ChatMessage } from "@charie/shared";
 import { AnswerView, ThinkingPanel } from "@charie/shared";
+import type { FeedState } from "@charie/shared";
+import { LiveAnswer } from "./LiveAnswer";
 import { ScrollToLatest } from "./ScrollToLatest";
 
 const NEAR_BOTTOM_PX = 80;
@@ -35,9 +37,11 @@ function AssistantStatus({ message }: { message: ChatMessage }) {
 export function MessageList({
   messages,
   onFollowUp,
+  live,
 }: {
   messages: ChatMessage[];
   onFollowUp: (text: string) => void;
+  live?: { messageId: number; feed: FeedState } | null;
 }) {
   const scrollerRef = useRef<HTMLDivElement>(null);
   const [stuck, setStuck] = useState(true);
@@ -55,12 +59,13 @@ export function MessageList({
     setStuck(true);
   }
 
+  const liveFeed = live?.feed;
   useEffect(() => {
     if (stuck) {
       const el = scrollerRef.current;
       if (el !== null) el.scrollTop = el.scrollHeight;
     }
-  }, [messages, stuck]);
+  }, [messages, stuck, liveFeed]);
 
   return (
     <div className="relative min-h-0 flex-1">
@@ -84,16 +89,37 @@ export function MessageList({
                   <LogoMark size={26} />
                 </span>
                 <div className="min-w-0 flex-1">
-                  {message.thinking.length > 0 && (
-                    <ThinkingPanel
-                      lines={message.thinking}
-                      summary={message.summary}
-                      panelId={`thinking-${message.id}`}
-                    />
-                  )}
-                  <AssistantStatus message={message} />
-                  {message.status === "done" && message.answer !== null && (
-                    <AnswerView answer={message.answer} onFollowUp={onFollowUp} />
+                  {live?.messageId === message.id ? (
+                    <>
+                      {live.feed.thinking.lines.length > 0 && (
+                        <ThinkingPanel
+                          lines={live.feed.thinking.lines}
+                          summary={live.feed.thinking.summary}
+                          panelId={`thinking-live-${message.id}`}
+                        />
+                      )}
+                      <AssistantStatus message={message} />
+                      <LiveAnswer feed={live.feed} onFollowUp={onFollowUp} />
+                      {live.feed.error !== null && (
+                        <p role="alert" className="text-[14.5px] text-bad-ink">
+                          {live.feed.error.message}
+                        </p>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      {message.thinking.length > 0 && (
+                        <ThinkingPanel
+                          lines={message.thinking}
+                          summary={message.summary}
+                          panelId={`thinking-${message.id}`}
+                        />
+                      )}
+                      <AssistantStatus message={message} />
+                      {message.status === "done" && message.answer !== null && (
+                        <AnswerView answer={message.answer} onFollowUp={onFollowUp} />
+                      )}
+                    </>
                   )}
                 </div>
               </div>

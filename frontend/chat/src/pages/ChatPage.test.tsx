@@ -35,8 +35,9 @@ const RUNNING = {
   ],
 };
 
-function stubFetch() {
+function stubFetch(startRunning = false) {
   const posts: string[] = [];
+  const streams: string[] = [];
   let posted = false;
   vi.stubGlobal(
     "fetch",
@@ -50,11 +51,21 @@ function stubFetch() {
         posted = true;
         return Promise.resolve(json({ user_message_id: 10, assistant_message_id: 11 }, 201));
       }
-      if (url.includes("/api/chats/3")) return Promise.resolve(json(posted ? RUNNING : FRESH));
+      if (url.includes("/stream")) {
+        streams.push(url);
+        return Promise.resolve(
+          new Response('id: 1' + "\n" + 'event: done' + "\n" + 'data: {"message_id":11,"status":"done"}' + "\n" + "\n", {
+            status: 200,
+            headers: { "Content-Type": "text/event-stream" },
+          }),
+        );
+      }
+      if (url.includes("/api/chats/3"))
+        return Promise.resolve(json(startRunning || posted ? RUNNING : FRESH));
       return Promise.resolve(json({}));
     }),
   );
-  return posts;
+  return { posts, streams };
 }
 
 function renderAt(path: string) {
@@ -84,7 +95,7 @@ function renderAt(path: string) {
 
 describe("ChatPage", () => {
   test("a same-tick double submit sends once", async () => {
-    const posts = stubFetch();
+    const { posts } = stubFetch();
     renderAt("/chat/3");
     await screen.findByRole("textbox", { name: "Ask a question" });
     fireEvent.change(screen.getByRole("textbox", { name: "Ask a question" }), {
@@ -100,6 +111,21 @@ describe("ChatPage", () => {
     form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
     expect(await screen.findByText("Thinking…")).toBeTruthy();
     expect(posts).toHaveLength(1);
+  });
+
+  test("a loaded running answer resumes its stream exactly once", async () => {
+    const { streams } = stubFetch(true);
+    renderAt("/chat/3");
+    // The stub chat is already running: no send needed, the stream opens.
+    expect(await screen.findByText("Thinking…")).toBeTruthy();
+    const messageStreams = () => streams.filter((url) => url.includes("/api/messages/11/stream"));
+    await vi.waitFor(() => {
+      expect(messageStreams()).toHaveLength(1);
+    });
+    // Let any accidental reconnect loop fire: the count must hold, so a
+    // frozen running state can never spin the stream open again.
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    expect(messageStreams()).toHaveLength(1);
   });
 
   test("an unknown chat says it is gone", async () => {

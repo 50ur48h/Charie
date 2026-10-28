@@ -69,6 +69,16 @@ export { MethodBlock } from "./answer/MethodBlock";
 export { tableCsv, tableFileName } from "./answer/exportCsv";
 export { buildChartOption, chartSummary, CHART_HEIGHTS } from "./charts/chartBlockOption";
 export { AnswerView } from "./answer/AnswerView";
+export {
+  backoffDelayMs,
+  fetchStream,
+  MAX_STREAM_RETRIES,
+  readStreamEvents,
+  useAnswerStream,
+} from "./api/stream";
+export type { StreamEvent } from "./api/stream";
+export { applyFeedEvent, emptyFeed } from "./api/message-feed";
+export type { FeedChoice, FeedDone, FeedError, FeedEvent, FeedState } from "./api/message-feed";
 export * from "./layout/AppProviders";
 export * from "./layout/LoginPage";
 export * from "./layout/PlaceholderPage";
