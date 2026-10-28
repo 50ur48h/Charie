@@ -9,9 +9,16 @@ export default defineConfig(({ mode }) => ({
     "import.meta.env.VITE_MOCK": JSON.stringify(mode === "mock" ? "1" : "0"),
   },
   resolve: {
-    alias: {
-      "@charie/shared": fileURLToPath(new URL("../shared/src/index.ts", import.meta.url)),
-    },
+    alias: [
+      {
+        find: "@charie/shared/mocks",
+        replacement: fileURLToPath(new URL("../shared/src/mocks/index.ts", import.meta.url)),
+      },
+      {
+        find: "@charie/shared",
+        replacement: fileURLToPath(new URL("../shared/src/index.ts", import.meta.url)),
+      },
+    ],
   },
   server: {
     port: 5173,

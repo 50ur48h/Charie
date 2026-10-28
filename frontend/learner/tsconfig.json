@@ -3,7 +3,8 @@
   "compilerOptions": {
     "types": ["vite/client"],
     "paths": {
-      "@charie/shared": ["../shared/src/index.ts"]
+      "@charie/shared": ["../shared/src/index.ts"],
+      "@charie/shared/mocks": ["../shared/src/mocks/index.ts"]
     }
   },
   "include": ["src", "vite.config.ts"]
