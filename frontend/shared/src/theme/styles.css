@@ -1,0 +1,69 @@
+@import "tailwindcss";
+@import "./themes.css";
+
+/* Changed in P02.2: the @fontsource variable font has this name. */
+:root {
+  --font-prose: "Source Serif 4 Variable", "Source Serif 4", Georgia, serif;
+}
+@import "./base.css";
+@import "./text.css";
+@source "../";
+
+@theme inline {
+  --color-*: initial;
+  --color-white: #fff;
+  --color-bg: var(--bg);
+  --color-sidebar: var(--sidebar);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-border: var(--border);
+  --color-border-soft: var(--border-soft);
+  --color-text: var(--text);
+  --color-text-2: var(--text-2);
+  --color-prose: var(--prose);
+  --color-muted: var(--muted);
+  --color-muted-2: var(--muted-2);
+  --color-placeholder: var(--placeholder);
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-hover: var(--accent-hover);
+  --color-bubble: var(--bubble);
+  --color-head-hover: var(--head-hover);
+  --color-focus: var(--focus);
+  --color-good: var(--good);
+  --color-good-ink: var(--good-ink);
+  --color-good-soft: var(--good-soft);
+  --color-bad: var(--bad);
+  --color-bad-ink: var(--bad-ink);
+  --color-bad-soft: var(--bad-soft);
+  --color-warn: var(--warn);
+  --color-warn-ink: var(--warn-ink);
+  --color-warn-soft: var(--warn-soft);
+  --color-code-bg: var(--code-bg);
+  --color-code-ink: var(--code-ink);
+  --color-code-kw: var(--code-kw);
+  --color-code-str: var(--code-str);
+  --color-chart-pos: var(--chart-pos);
+  --color-chart-neg: var(--chart-neg);
+  --color-chart-grid: var(--chart-grid);
+  --color-chart-muted: var(--chart-muted);
+  --color-chart-edge: var(--chart-edge);
+
+  --font-sans: var(--font);
+  --font-serif: var(--font-prose);
+
+  --radius-*: initial;
+  --radius-card: var(--radius);
+  --radius-control: var(--radius-sm);
+
+  --shadow-card: 0 1px 2px rgba(var(--shadow-rgb), 0.05);
+  --shadow-raised: 0 1px 2px rgba(var(--shadow-rgb), 0.07);
+  --shadow-tab: 0 1px 3px rgba(var(--shadow-rgb), 0.1);
+  --shadow-button: 0 4px 12px rgba(var(--shadow-rgb), 0.12);
+  --shadow-lift: 0 6px 16px rgba(var(--shadow-rgb), 0.08);
+  --shadow-pop: 0 10px 30px rgba(var(--shadow-rgb), 0.12);
+
+  --ease-calm: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --animate-fade-up: fade-up 0.5s var(--ease-calm) both;
+}

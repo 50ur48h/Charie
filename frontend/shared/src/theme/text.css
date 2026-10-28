@@ -1,0 +1,94 @@
+@utility page-title {
+  margin: 0;
+  font-family: var(--font-prose);
+  font-size: 32px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+}
+
+@utility page-lead {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 15px;
+  max-width: 640px;
+}
+
+@utility section-title {
+  margin: 32px 0 12px;
+  font-family: var(--font-prose);
+  font-size: 20px;
+  font-weight: 600;
+}
+
+@utility section-note {
+  font-family: var(--font);
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--muted);
+  margin-left: 8px;
+}
+
+@utility card-title {
+  font-family: var(--font-prose);
+  font-size: 18px;
+  font-weight: 600;
+}
+
+@utility card-sub {
+  font-size: 13.5px;
+  color: var(--muted);
+}
+
+@utility field-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+@utility field-hint {
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+@utility stat-label {
+  font-size: 12.5px;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+@utility stat-value {
+  margin-top: 4px;
+  font-family: var(--font-prose);
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+}
+
+@utility stat-foot {
+  margin-top: 6px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+@utility prose-text {
+  margin: 0;
+  font-family: var(--font-prose);
+  font-size: var(--prose-size);
+  line-height: 1.7;
+  color: var(--prose);
+}
+
+@utility code-block {
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--code-bg);
+  color: var(--code-ink);
+  font:
+    12.5px/1.65 var(--font-mono);
+  white-space: pre-wrap;
+  word-break: break-word;
+}

@@ -9,5 +9,7 @@ export default defineConfig({
   },
   test: {
     environment: "jsdom",
+    exclude: ["**/node_modules/**", "**/dist/**", "**/dist-mock/**", "e2e/**"],
+    setupFiles: ["./shared/src/testSetup.ts"],
   },
 });
