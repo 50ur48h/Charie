@@ -59,7 +59,7 @@ export function LearnerSidebar({
   charieUrl?: string;
 }) {
   return (
-    <div className="flex min-h-0 flex-col gap-1">
+    <div className="flex h-full min-h-0 flex-col gap-1">
       <div className="flex items-center justify-between px-1 pb-2.5 pt-0.5">
         <Brand app="learner" href={learnerRoutes.setup} />
       </div>

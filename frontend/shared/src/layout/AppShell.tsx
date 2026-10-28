@@ -21,7 +21,13 @@ export function AppShell({
   const [drawerOpen, setDrawerOpen] = useState(false);
   const openerRef = useRef<HTMLButtonElement | null>(null);
   return (
-    <div className={sidebarHidden ? "grid h-dvh grid-cols-1" : "grid h-dvh grid-cols-[268px_1fr]"}>
+    <div
+      className={
+        sidebarHidden
+          ? "grid h-dvh grid-cols-1"
+          : "grid h-dvh grid-cols-[268px_1fr] max-[899px]:grid-cols-1"
+      }
+    >
       <a
         href="#main"
         className="sr-only focus:not-sr-only focus:absolute focus:left-3 focus:top-3 focus:z-[60] focus:rounded-lg focus:bg-surface focus:px-3 focus:py-2"

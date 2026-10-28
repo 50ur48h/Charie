@@ -16,6 +16,16 @@ test("the sidebar sits on the left on laptops", async ({ page }) => {
   const sidebarBox = await sidebar.boundingBox();
   const mainBox = await page.locator("#main").boundingBox();
   expect(sidebarBox && mainBox && sidebarBox.x < mainBox.x).toBe(true);
+  const footerGap = await page.evaluate(() => {
+    const aside = document.querySelector("aside")!;
+    const settings = [...aside.querySelectorAll("a")].find((a) =>
+      (a.textContent ?? "").includes("Settings"),
+    );
+    const a = aside.getBoundingClientRect();
+    const s = settings!.parentElement!.getBoundingClientRect();
+    return a.y + a.height - (s.y + s.height);
+  });
+  expect(footerGap).toBeLessThan(24);
 });
 
 test("the menu button opens the drawer, and Escape closes it", async ({ page }) => {
@@ -41,6 +51,14 @@ test("the drawer closes when a link is clicked", async ({ page }) => {
   await expect(drawer).toBeVisible();
   await drawer.getByRole("link", { name: "Usage" }).click();
   await expect(drawer).toBeHidden();
+});
+
+test("the page fills the screen on phones", async ({ page }) => {
+  test.skip(!(await isNarrow(page)), "phone layout only");
+  await page.goto(FRAME);
+  const viewport = page.viewportSize();
+  const mainBox = await page.locator("#main").boundingBox();
+  expect(Math.abs((mainBox?.width ?? 0) - (viewport?.width ?? 0))).toBeLessThanOrEqual(2);
 });
 
 test("hiding the sidebar gives the page the full width", async ({ page }) => {
