@@ -1,6 +1,7 @@
 // Chat, message and answer shapes (architecture 09, "The answer format").
 // Phases 3-4 write these; the back end (Phases 5-10) must send exactly them.
 import type { TreeNode } from "../charts/tree";
+import type { ThinkingLine, ThinkingSummary } from "../answer/thinking";
 
 export type MessageStatus =
   | "thinking"
@@ -148,14 +149,29 @@ export interface Answer {
   blocks: AnswerBlock[];
 }
 
-export interface ChatMessage {
+// Message shapes from the P10.1 contract: the user message carries
+// the question text; the assistant message carries the thinking
+// lines, the summary (null until the message ends) and the saved
+// answer (or null).
+export interface UserMessage {
   id: number;
-  role: "user" | "assistant";
+  role: "user";
   text: string;
-  answer?: Answer;
+  status: MessageStatus;
+  started_at: string;
+}
+
+export interface AssistantMessage {
+  id: number;
+  role: "assistant";
   status: MessageStatus;
   mode: MessageMode;
+  answer: Answer | null;
+  thinking: ThinkingLine[];
+  summary: ThinkingSummary | null;
 }
+
+export type ChatMessage = UserMessage | AssistantMessage;
 
 export interface Chat {
   id: number;

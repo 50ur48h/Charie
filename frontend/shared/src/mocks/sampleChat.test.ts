@@ -1,4 +1,5 @@
 import { describe, expect, test } from "vitest";
+import type { AssistantMessage } from "../api/chat-types";
 import {
   addMockMessage,
   createMockChat,
@@ -9,6 +10,12 @@ import {
   resetMockChats,
   sampleAnswer,
 } from "./sampleChat";
+
+function assistantOf(chatId: number, index: number): AssistantMessage {
+  const message = getMockChat(chatId)?.messages[index];
+  if (message?.role !== "assistant") throw new Error(`message ${index} is not an answer`);
+  return message;
+}
 
 describe("sample chat", () => {
   test("the sample answer covers every block variant", () => {
@@ -32,16 +39,47 @@ describe("sample chat", () => {
     expect(finished?.messages.map((message) => message.status)).toEqual([
       "done",
       "done",
+      "done",
+      "done",
     ]);
-    expect(finished?.messages[1]?.answer?.blocks).toHaveLength(10);
+    expect(assistantOf(1, 1).answer?.blocks).toHaveLength(10);
+    // Each answer keeps its own panel: the follow-up's evidence differs.
+    expect(assistantOf(1, 1).thinking.map((line) => line.title)).toEqual([
+      "Understood the question",
+      "Added up sales by restaurant",
+      "Read the incident log",
+      "Found the Downtown outage",
+      "Checked every number",
+    ]);
+    expect(assistantOf(1, 3).thinking.map((line) => line.title)).toEqual([
+      "Understood the follow-up",
+      "Adding up last year's sales",
+    ]);
+    expect(assistantOf(1, 3).summary).toEqual({
+      seconds: 21,
+      steps: 5,
+      queries: 2,
+      documents: 0,
+    });
 
     const thinking = getMockChat(2);
     expect(thinking?.messages.map((message) => message.status)).toEqual([
       "done",
       "thinking",
     ]);
+    expect(assistantOf(2, 1).summary).toBeNull();
 
     expect(getMockChat(3)?.messages).toEqual([]);
+
+    const failed = getMockChat(4);
+    expect(failed?.messages.map((message) => message.status)).toEqual([
+      "done",
+      "failed",
+    ]);
+    expect(assistantOf(4, 1).thinking.map((line) => line.status)).toEqual([
+      "done",
+      "failed",
+    ]);
     expect(getMockChat(999)).toBeUndefined();
   });
 
@@ -79,6 +117,10 @@ describe("sample chat", () => {
     resetMockChats();
     expect(finishMockMessage(4)).toBe(true);
     expect(getMockChat(2)?.messages[1]?.status).toBe("stopped");
+    expect(assistantOf(2, 1).thinking.map((line) => line.status)).toEqual([
+      "done",
+      "done",
+    ]);
     expect(finishMockMessage(999)).toBe(false);
     expect(listMockChats()).toHaveLength(8);
   });
