@@ -30,8 +30,10 @@ test.beforeEach(async ({ page }) => {
 });
 
 test("every chat page opens with its title", async ({ page }) => {
-  const pages: [string, string][] = [
-    ["/", "New chat"],
+  // P03.1 replaced the "New chat" placeholder with the real page, whose
+  // heading is the time-of-day greeting from the Calm home design.
+  const pages: [string, string | RegExp][] = [
+    ["/", /Good (morning|afternoon|evening)/],
     ["/chat/1", "How are we doing this month?"],
     ["/questions", "Questions for you"],
     ["/knowledge", "Knowledge"],

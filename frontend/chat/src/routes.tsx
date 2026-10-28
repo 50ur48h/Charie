@@ -1,6 +1,7 @@
 import type { RouteObject } from "react-router";
 import { LoginPage, NotFoundPage, PlaceholderPage, RequireLogin } from "@charie/shared";
-import { ChatLayout, ChatThreadPage, NewChatPage } from "./ChatLayout";
+import { ChatLayout, ChatThreadPage } from "./ChatLayout";
+import { NewChatPage } from "./pages/NewChatPage";
 
 const KIT_ENABLED = import.meta.env.DEV || import.meta.env.VITE_MOCK === "1";
 

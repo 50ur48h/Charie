@@ -1,7 +1,8 @@
-import { afterAll, afterEach, beforeAll, describe, expect, test } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "vitest";
 import { setupServer } from "msw/node";
 import { SESSION_KEY, handlers } from "./handlers";
 import type { ChatSummary } from "../api/types";
+import { resetMockChats } from "./sampleChat";
 
 const server = setupServer(...handlers);
 
@@ -14,6 +15,10 @@ beforeAll(() => {
 afterEach(() => {
   server.resetHandlers();
   localStorage.clear();
+});
+
+beforeEach(() => {
+  resetMockChats();
 });
 
 afterAll(() => {
@@ -105,6 +110,59 @@ describe("mock handlers", () => {
 
   test("GET /api/chats needs a session", async () => {
     const response = await fetch(`${APP}/api/chats`);
+    expect(response.status).toBe(401);
+    await expect(response.json()).resolves.toMatchObject({ error: "not_logged_in" });
+  });
+
+  test("POST /api/chats starts a new chat, then a question returns message ids", async () => {
+    await signIn();
+    const created = await post("/api/chats", {});
+    expect(created.status).toBe(201);
+    const chat = (await created.json()) as ChatSummary;
+    expect(chat.id).toBe(100);
+
+    const sent = await post(`/api/chats/${chat.id}/messages`, {
+      text: "How are we doing?",
+      mode: "thinking",
+    });
+    expect(sent.status).toBe(201);
+    await expect(sent.json()).resolves.toEqual({
+      user_message_id: 1000,
+      assistant_message_id: 1001,
+    });
+
+    const detail = await fetch(`${APP}/api/chats/${chat.id}`);
+    expect(detail.status).toBe(200);
+    await expect(detail.json()).resolves.toMatchObject({
+      id: 100,
+      title: "How are we doing?",
+    });
+  });
+
+  test("an empty question is refused and an unknown chat is gone", async () => {
+    await signIn();
+    const created = (await (await post("/api/chats", {})).json()) as ChatSummary;
+    const empty = await post(`/api/chats/${created.id}/messages`, { text: "  " });
+    expect(empty.status).toBe(400);
+    await expect(empty.json()).resolves.toMatchObject({ error: "empty_text" });
+
+    const missing = await fetch(`${APP}/api/chats/999`);
+    expect(missing.status).toBe(404);
+    await expect(missing.json()).resolves.toMatchObject({ error: "not_found" });
+  });
+
+  test("GET /api/status reports waiting questions and the data date", async () => {
+    await signIn();
+    const response = await fetch(`${APP}/api/status`);
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      questions_waiting: 3,
+      data_through: "2025-10-26",
+    });
+  });
+
+  test("POST /api/chats needs a session", async () => {
+    const response = await post("/api/chats", {});
     expect(response.status).toBe(401);
     await expect(response.json()).resolves.toMatchObject({ error: "not_logged_in" });
   });

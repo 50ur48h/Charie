@@ -59,16 +59,6 @@ export function ChatLayout() {
   );
 }
 
-export function NewChatPage() {
-  return (
-    <PlaceholderPage
-      app="chat"
-      title="New chat"
-      lead="Ask anything about your business. Charie checks every number before it shows it."
-    />
-  );
-}
-
 export function ChatThreadPage() {
   const { chatId } = useParams();
   const { data } = useChats();
