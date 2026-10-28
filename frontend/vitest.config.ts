@@ -3,9 +3,16 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   resolve: {
-    alias: {
-      "@charie/shared": fileURLToPath(new URL("./shared/src/index.ts", import.meta.url)),
-    },
+    alias: [
+      {
+        find: "@charie/shared/mocks",
+        replacement: fileURLToPath(new URL("./shared/src/mocks/index.ts", import.meta.url)),
+      },
+      {
+        find: "@charie/shared",
+        replacement: fileURLToPath(new URL("./shared/src/index.ts", import.meta.url)),
+      },
+    ],
   },
   test: {
     environment: "jsdom",
