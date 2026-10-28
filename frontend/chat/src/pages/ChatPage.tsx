@@ -1,6 +1,6 @@
 // The chat page frame (P03.2): header, messages, question box, scrolling.
-// Answer blocks arrive in P03.4-P03.6 and the live stream in P03.7; until
-// then the frame shows the message structure and the thinking state.
+// A freshly sent question opens the answer's live stream (P03.7); the
+// saved answer replaces the streamed blocks on done.
 import { useRef, useState } from "react";
 import { Link, useParams } from "react-router";
 import { useQueryClient } from "@tanstack/react-query";
@@ -9,6 +9,7 @@ import {
   QuestionComposer,
   Spinner,
   toast,
+  useAnswerStream,
   useChat,
   useFinishMessage,
   useSendMessage,
@@ -40,12 +41,20 @@ export function ChatPage() {
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const [sending, setSending] = useState(false);
   const [finishing, setFinishing] = useState(false);
+  // The assistant message whose stream is open now. Only in-session sends
+  // attach: seed thinking states never stream, so their saved panels stay
+  // exactly as the back end left them.
+  const [streamingId, setStreamingId] = useState<number | null>(null);
   // Ref guards make a double click a single request even before React
   // re-renders with sending/finishing set.
   const sendInflight = useRef(false);
   const finishInflight = useRef(false);
   const sendMessage = useSendMessage();
   const finishMessage = useFinishMessage();
+  const liveFeed = useAnswerStream(Number.isInteger(id) ? id : -1, streamingId, async () => {
+    await client.refetchQueries({ queryKey: ["chat", id] });
+    setStreamingId(null);
+  });
 
   if (chatQuery.isPending) {
     return (
@@ -97,11 +106,12 @@ export function ChatPage() {
     sendInflight.current = true;
     setSending(true);
     try {
-      await sendMessage.mutateAsync({ chatId: chat.id, text });
+      const sent = await sendMessage.mutateAsync({ chatId: chat.id, text });
       // Stay locked until the refreshed chat (with the running answer) is
       // back: the list below still shows the old messages until then.
       await client.refetchQueries({ queryKey: ["chat", chat.id] });
       setDrafts((prev) => ({ ...prev, [chat.id]: "" }));
+      setStreamingId(sent.assistant_message_id);
     } catch (error) {
       toast(
         error instanceof ApiError
@@ -125,6 +135,8 @@ export function ChatPage() {
     setFinishing(true);
     try {
       await finishMessage.mutateAsync(runningId);
+      // Stop the stream first so its late done can't overwrite the stop.
+      setStreamingId(null);
       // Stay locked until the refreshed chat (with the stopped answer) is
       // back, so a second click can't send a repeated request.
       await client.refetchQueries({ queryKey: ["chat"] });
@@ -143,7 +155,11 @@ export function ChatPage() {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <ChatHeader title={chat.title} />
-      <MessageList messages={chat.messages} onFollowUp={followUp} />
+      <MessageList
+        messages={chat.messages}
+        onFollowUp={followUp}
+        live={streamingId === null ? null : { messageId: streamingId, feed: liveFeed }}
+      />
       <div className="flex-none px-7 pb-4">
         <div className="mx-auto max-w-[800px]">
           {runningId !== undefined && (

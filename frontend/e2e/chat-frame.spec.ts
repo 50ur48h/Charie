@@ -70,7 +70,10 @@ test("sending stays pending until the refreshed chat is back", async ({ page }) 
   await expect.poll(() => postCount(page, "messages")).toBe("1");
   await page.waitForTimeout(200);
   await expect(box).toHaveValue("Slow question?");
-  await expect(messages.getByText("Thinking…")).toBeVisible();
+  // The refreshed chat lands once and stays: the sent question persists,
+  // unlike the transient live Thinking indicators (status plus streaming
+  // panel) that overlap while the answer streams (P03.7).
+  await expect(messages.getByText("Slow question?", { exact: true })).toBeVisible();
   expect(await postCount(page, "messages")).toBe("1");
   await expect(box).toHaveValue("");
 });

@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import type { ChatMessage, ThinkingStatus } from "@charie/shared";
+import { emptyFeed } from "@charie/shared";
 import { MessageList } from "./MessageList";
 
 afterEach(cleanup);
@@ -90,5 +91,27 @@ describe("MessageList", () => {
     fireEvent.click(screen.getByRole("button", { name: "Thinking" }));
     expect(screen.getByRole("button", { name: /First evidence/ })).toBeTruthy();
     expect(screen.getByRole("button", { name: /Second evidence/ })).toBeTruthy();
+  });
+
+  test("a live feed renders streamed text for its own message only", () => {
+    const feed = {
+      ...emptyFeed(),
+      blocks: [{ type: "text" as const, paragraphs: [] }],
+      texts: { 0: "I read this as trucks. " },
+    };
+    render(
+      <MessageList
+        messages={[
+          userMessage(1, "Trucks?"),
+          assistantMessage(2, "thinking", []),
+          userMessage(3, "Cars?"),
+          assistantMessage(4, "thinking", []),
+        ]}
+        onFollowUp={vi.fn()}
+        live={{ messageId: 2, feed }}
+      />,
+    );
+    expect(screen.getByText("I read this as trucks.", { exact: false })).toBeTruthy();
+    expect(screen.queryByText("Stopped.")).toBeNull();
   });
 });

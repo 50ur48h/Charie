@@ -9,12 +9,14 @@ import {
   listMockChats,
 } from "./sampleChat";
 import { SAMPLE_PASSWORD } from "./password";
+import { openMockStream } from "./chat-stream";
 
 export const CHATS_URL = "*/api/chats";
 export const CHAT_DETAIL_URL = "*/api/chats/:id";
 export const CHAT_MESSAGES_URL = "*/api/chats/:id/messages";
 export const STATUS_URL = "*/api/status";
 export const MESSAGE_FINISH_URL = "*/api/messages/:id/finish";
+export const MESSAGE_STREAM_URL = "*/api/messages/:id/stream";
 export const ME_URL = "*/api/me";
 export const HEALTH_URL = "*/api/health";
 export const LOGIN_URL = "*/api/login";
@@ -204,6 +206,29 @@ export const handlers = [
       );
     }
     return HttpResponse.json({ ok: true });
+  }),
+  http.get(MESSAGE_STREAM_URL, ({ params, request }) => {
+    const blocked = needSession();
+    if (blocked) return blocked;
+    const stream = openMockStream(
+      Number(params.id),
+      request.headers.get("Last-Event-ID"),
+      request.signal,
+    );
+    if (stream === null) {
+      return HttpResponse.json(
+        { error: "not_found", message: "We couldn't find that message." },
+        { status: 404 },
+      );
+    }
+    return new HttpResponse(stream, {
+      status: 200,
+      headers: {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+      },
+    });
   }),
   http.all(CATCH_ALL_URL, () => {
     const blocked = needSession();

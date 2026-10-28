@@ -470,6 +470,55 @@ export function addMockMessage(
   return { user_message_id: userId, assistant_message_id: assistantId };
 }
 
+// (Answer, AssistantMessage and Chat are already imported above.)
+export interface MockAssistantRef {
+  chat: Chat;
+  index: number;
+  message: AssistantMessage;
+}
+
+// Locate an assistant message across seed and created chats (same search
+// pattern as finishMockMessage). Used by the fake stream to play and save
+// a live answer for freshly sent messages.
+export function findMockAssistant(messageId: number): MockAssistantRef | undefined {
+  rehydrate();
+  const chats: Chat[] = [...created.values()];
+  for (const summary of summaries) {
+    const chat = storedChat(summary.id);
+    if (chat !== undefined && !chats.includes(chat)) chats.push(chat);
+  }
+  for (const chat of chats) {
+    const index = chat.messages.findIndex(
+      (item) => item.id === messageId && item.role === "assistant",
+    );
+    if (index !== -1) {
+      const message = chat.messages[index];
+      if (message.role === "assistant") return { chat, index, message };
+    }
+  }
+  return undefined;
+}
+
+// Save a streamed answer onto its message, unless Finish now stopped it
+// first. Returns false when there is nothing to save into.
+export function storeMockAnswer(
+  messageId: number,
+  answer: Answer,
+  thinking: AssistantMessage["thinking"],
+  summary: AssistantMessage["summary"],
+): boolean {
+  const ref = findMockAssistant(messageId);
+  if (ref === undefined) return false;
+  if (ref.message.status === "stopped") return false;
+  ref.message.status = "done";
+  ref.message.answer = answer;
+  ref.message.thinking = thinking;
+  ref.message.summary = summary;
+  created.set(ref.chat.id, ref.chat);
+  persist();
+  return true;
+}
+
 export function resetMockChats(): void {
   nextChatId = 100;
   nextMessageId = 1000;
