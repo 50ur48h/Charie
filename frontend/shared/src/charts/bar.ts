@@ -11,9 +11,9 @@ export interface BarData {
 export function barOption(data: BarData, theme: ChartTheme, format: ChartFormat): EChartsCoreOption {
   const items = data.items.slice().sort((a, b) => a.value - b.value);
   const values = items.map((i) => i.value);
-  const longest = Math.max(...values);
-  const step = niceStep(longest / 4);
-  const max = Math.ceil((longest + 0.8 * step) / step) * step;
+  const longest = values.reduce((m, v) => Math.max(m, v), 0);
+  const step = longest > 0 ? niceStep(longest / 4) : 1;
+  const max = longest > 0 ? Math.ceil((longest + 0.8 * step) / step) * step : 1;
   const r = theme.barRadius;
   const tooltipFormat = format.tooltip ?? format.axis;
   return {
@@ -65,7 +65,7 @@ export function barOption(data: BarData, theme: ChartTheme, format: ChartFormat)
         data: items.map((item) => {
           const hl = data.highlight?.includes(item.name) ?? false;
           const color = hl ? theme.accent : theme.pos;
-          const inside = hl && item.value >= longest * 0.5;
+          const inside = hl && longest > 0 && item.value >= longest * 0.5;
           return {
             value: item.value,
             itemStyle: { color: grad(color, 1, 0), borderRadius: [0, r, r, 0] },

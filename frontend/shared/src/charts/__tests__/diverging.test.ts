@@ -46,4 +46,45 @@ describe("divergingOption", () => {
       "Dallas Uptown: +14.8%",
     );
   });
+
+  it("escapes markup in tooltip names and labels", () => {
+    const option = divergingOption(
+      {
+        items: [{ name: '<img src="x">', value: 5, label: "<b>bold</b>" }],
+      },
+      light,
+      percentFormat,
+    ) as {
+      tooltip: { formatter: (p: { name: string }[]) => string };
+    };
+    const html = option.tooltip.formatter([{ name: '<img src="x">' }]);
+    expect(html).not.toContain("<img");
+    expect(html).not.toContain("<b>");
+    expect(html).toContain("&lt;img");
+    expect(html).toContain("&lt;b&gt;bold&lt;/b&gt;");
+  });
+
+  it("falls back to a finite axis for empty data", () => {
+    const option = divergingOption({ items: [] }, light, percentFormat) as {
+      xAxis: { min: number; max: number };
+      yAxis: { data: string[] };
+      series: { data: unknown[] }[];
+    };
+    expect(option.xAxis.min).toBe(-1);
+    expect(option.xAxis.max).toBe(1);
+    expect(option.yAxis.data).toEqual([]);
+    expect(option.series[0].data).toEqual([]);
+  });
+
+  it("falls back to a finite axis for all-zero data", () => {
+    const option = divergingOption(
+      { items: [{ name: "Same", value: 0, label: "0%" }] },
+      light,
+      percentFormat,
+    ) as {
+      xAxis: { min: number; max: number };
+    };
+    expect(option.xAxis.min).toBe(-1);
+    expect(option.xAxis.max).toBe(1);
+  });
 });

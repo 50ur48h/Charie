@@ -1,4 +1,5 @@
 import type { ChartFormat, ChartItem, Series } from "../charts/types";
+import { fmtNum } from "../charts/types";
 import type { TreeNode } from "../charts/tree";
 
 /** Axis "+10%", tooltip "+14.8%", with a real minus sign. */
@@ -23,6 +24,12 @@ export const thousandsFormat: ChartFormat = { axis: thousands, tooltip: thousand
 export const dollarFormat: ChartFormat = {
   axis: (v) => `$${v}`,
   tooltip: (v) => `$${v.toFixed(2)}`,
+};
+
+/** Plain counts, never dollars: axis "300", tooltip "224". */
+export const countFormat: ChartFormat = {
+  axis: (v) => fmtNum(v),
+  tooltip: (v) => `${v}`,
 };
 
 export const SALES_CHANGE: { items: ChartItem[]; highlight: string[] } = {

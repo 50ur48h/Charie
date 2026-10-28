@@ -24,6 +24,30 @@ describe("barOption", () => {
     expect(dallas?.itemStyle.color).not.toBe(light.accent);
   });
 
+  it("falls back to a finite axis for empty data", () => {
+    const option = barOption({ items: [] }, light, thousandsFormat) as {
+      xAxis: { min: number; max: number };
+      yAxis: { data: string[] };
+      series: { data: unknown[] }[];
+    };
+    expect(option.xAxis.min).toBe(0);
+    expect(option.xAxis.max).toBe(1);
+    expect(option.yAxis.data).toEqual([]);
+    expect(option.series[0].data).toEqual([]);
+  });
+
+  it("falls back to a finite axis for all-zero data", () => {
+    const option = barOption(
+      { items: [{ name: "Same", value: 0, label: "$0" }] },
+      light,
+      thousandsFormat,
+    ) as {
+      xAxis: { min: number; max: number };
+    };
+    expect(option.xAxis.min).toBe(0);
+    expect(option.xAxis.max).toBe(1);
+  });
+
   it("themes the grid for light and dark", () => {
     const lightOption = barOption(TOP_RESTAURANTS, light, thousandsFormat) as {
       xAxis: { splitLine: { lineStyle: { color: string } } };

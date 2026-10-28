@@ -18,6 +18,7 @@ import {
   NET_SALES_SPARK,
   SALES_CHANGE,
   TOP_RESTAURANTS,
+  countFormat,
   dollarFormat,
   percentFormat,
   thousandsFormat,
@@ -75,7 +76,7 @@ export default function ChartsSection() {
     [],
   );
   const lineBuild = useCallback(
-    (theme: ChartTheme) => lineOption(DELIVERY_PER_DAY, theme, thousandsFormat),
+    (theme: ChartTheme) => lineOption(DELIVERY_PER_DAY, theme, countFormat),
     [],
   );
   const barBuild = useCallback(

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { mix, niceStep, rgba } from "./helpers";
+import { escHtml, mix, niceStep, rgba } from "./helpers";
 
 describe("helpers", () => {
   test("rgba turns a hex color into rgba", () => {
@@ -9,6 +9,13 @@ describe("helpers", () => {
   test("mix blends two colors", () => {
     expect(mix("#ffffff", "#000000", 0.1)).toBe("rgb(230, 230, 230)");
     expect(mix("#000000", "#ffffff", 1)).toBe("rgb(255, 255, 255)");
+  });
+
+  test("escHtml neutralizes markup", () => {
+    expect(escHtml('<img src="x" onerror="alert(1)">')).toBe(
+      "&lt;img src=&quot;x&quot; onerror=&quot;alert(1)&quot;&gt;",
+    );
+    expect(escHtml("fish & chips")).toBe("fish &amp; chips");
   });
 
   test("niceStep picks 1, 2, 2.5 or 5 times a power of ten", () => {

@@ -1,6 +1,6 @@
 import type { EChartsCoreOption } from "echarts/core";
 import type { ChartTheme } from "../theme/chartTheme";
-import { grad, niceStep, rgba, solid, tooltipStyle } from "./helpers";
+import { escHtml, grad, niceStep, rgba, solid, tooltipStyle } from "./helpers";
 import type { ChartFormat, ChartItem } from "./types";
 
 export interface DivergingData {
@@ -15,10 +15,12 @@ export function divergingOption(
 ): EChartsCoreOption {
   const items = data.items.slice().sort((a, b) => a.value - b.value);
   const values = items.map((i) => i.value);
-  const maxAbs = Math.max(...values.map((v) => Math.abs(v)));
-  const step = niceStep(maxAbs / 4);
-  const min = Math.floor((Math.min(...values) - 1.2 * step) / step) * step;
-  const max = Math.ceil((Math.max(...values) + 0.8 * step) / step) * step;
+  const maxAbs = values.length ? Math.max(...values.map((v) => Math.abs(v))) : 0;
+  const step = maxAbs > 0 ? niceStep(maxAbs / 4) : 1;
+  const lo = values.length ? Math.min(...values) : 0;
+  const hi = values.length ? Math.max(...values) : 0;
+  const min = maxAbs > 0 ? Math.floor((lo - 1.2 * step) / step) * step : -1;
+  const max = maxAbs > 0 ? Math.ceil((hi + 0.8 * step) / step) * step : 1;
   const r = theme.barRadius;
   return {
     textStyle: { fontFamily: theme.font },
@@ -32,7 +34,7 @@ export function divergingOption(
       formatter: (params: { name: string } | { name: string }[]) => {
         const p = Array.isArray(params) ? params[0] : params;
         const item = items.find((i) => i.name === p.name);
-        return `${p.name}: ${item ? item.label : ""}`;
+        return `${escHtml(p.name)}: ${item ? escHtml(item.label) : ""}`;
       },
     },
     xAxis: {
@@ -73,7 +75,7 @@ export function divergingOption(
           const up = item.value >= 0;
           const hl = data.highlight?.includes(item.name) ?? false;
           const color = hl ? theme.bad : up ? theme.pos : theme.neg;
-          const inside = hl && Math.abs(item.value) >= maxAbs * 0.5;
+          const inside = hl && maxAbs > 0 && Math.abs(item.value) >= maxAbs * 0.5;
           return {
             value: item.value,
             itemStyle: {

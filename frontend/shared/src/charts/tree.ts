@@ -1,6 +1,6 @@
 import type { EChartsCoreOption } from "echarts/core";
 import type { ChartTheme } from "../theme/chartTheme";
-import { mix, solid, tooltipStyle } from "./helpers";
+import { escHtml, mix, solid, tooltipStyle } from "./helpers";
 
 export interface TreeNode {
   id: string;
@@ -143,8 +143,8 @@ export function treeOption(nodes: TreeNode[], theme: ChartTheme): EChartsCoreOpt
         const data = (p as { data?: { labelText?: string; valueText?: string } }).data;
         if (!data) return "";
         return data.valueText === undefined
-          ? data.labelText ?? ""
-          : `${data.labelText ?? ""}: <b>${data.valueText}</b>`;
+          ? escHtml(data.labelText ?? "")
+          : `${escHtml(data.labelText ?? "")}: <b>${escHtml(data.valueText)}</b>`;
       },
     },
     series: [

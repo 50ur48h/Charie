@@ -90,6 +90,28 @@ describe("treeOption", () => {
     expect(series.right).toBe(167 / 2 + 8);
   });
 
+  it("escapes markup in tooltip labels and values", () => {
+    const nodes = [
+      {
+        id: "evil",
+        parent: null,
+        label: '<script>alert("x")</script>',
+        value: "<b>bad</b>",
+        tone: "bad" as const,
+      },
+    ];
+    const option = treeOption(nodes, light) as {
+      tooltip: { formatter: (p: { data: { labelText: string; valueText: string } }) => string };
+    };
+    const html = option.tooltip.formatter({
+      data: { labelText: '<script>alert("x")</script>', valueText: "<b>bad</b>" },
+    });
+    expect(html).not.toContain("<script");
+    expect(html).not.toContain("<b>bad");
+    expect(html).toContain("&lt;script&gt;");
+    expect(html).toContain("&lt;b&gt;bad&lt;/b&gt;");
+  });
+
   it("highlights the highlighted node", () => {
     const root = rootNode();
     const outage = root.children[0].children[0];

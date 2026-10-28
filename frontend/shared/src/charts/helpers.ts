@@ -66,6 +66,16 @@ export function fade(hex: string, a: number): LinearGradient {
   };
 }
 
+/** Escape text for ECharts HTML tooltips so chart data cannot inject markup. */
+export function escHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 export function niceStep(x: number): number {
   const power = 10 ** Math.floor(Math.log10(x));
   for (const m of [1, 2, 2.5, 5, 10]) {
