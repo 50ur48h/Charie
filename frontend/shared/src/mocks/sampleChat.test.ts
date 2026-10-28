@@ -25,6 +25,7 @@ describe("sample chat", () => {
       "text",
       "kpis",
       "chart",
+      "chart",
       "table",
       "tree",
       "callout",
@@ -42,7 +43,7 @@ describe("sample chat", () => {
       "done",
       "done",
     ]);
-    expect(assistantOf(1, 1).answer?.blocks).toHaveLength(10);
+    expect(assistantOf(1, 1).answer?.blocks).toHaveLength(11);
     // Each answer keeps its own panel: the follow-up's evidence differs.
     expect(assistantOf(1, 1).thinking.map((line) => line.title)).toEqual([
       "Understood the question",
