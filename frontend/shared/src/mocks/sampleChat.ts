@@ -273,6 +273,9 @@ let rehydrated = false;
 // the fake stream can tell a live answer (full script) from an idle one
 // (immediate done) without the production lifecycle knowing about fixtures.
 let running = new Set<number>();
+// Seed or created chats the owner deleted (mock only): list and detail hide
+// them without touching the fixtures.
+let deleted = new Set<number>();
 
 function storage(): Storage | null {
   try {
@@ -293,6 +296,7 @@ function persist(): void {
         nextMessageId,
         created: [...created.values()],
         running: [...running],
+      deleted: [...deleted],
       }),
     );
   } catch {
@@ -323,7 +327,12 @@ function rehydrate(): void {
     }
     nextChatId = data.nextChatId;
     nextMessageId = data.nextMessageId;
-    // Older stores predate the running set: they simply resume nothing.
+    // Older stores predate the running and deleted sets.
+    if (Array.isArray((data as { deleted?: unknown }).deleted)) {
+      for (const id of (data as { deleted: unknown }).deleted as unknown[]) {
+        if (typeof id === "number") deleted.add(id);
+      }
+    }
     if (Array.isArray(data.running)) {
       for (const id of data.running) {
         if (typeof id === "number") running.add(id);
@@ -382,6 +391,7 @@ export function forgetMockChats(): void {
   nextMessageId = 1000;
   created = new Map();
   running = new Set();
+  deleted = new Set();
   rehydrate();
 }
 
@@ -394,6 +404,7 @@ function seedDetail(summary: ChatSummary): Chat {
 
 export function getMockChat(id: number): Chat | undefined {
   rehydrate();
+  if (deleted.has(id)) return undefined;
   const made = created.get(id);
   if (made) return made;
   const summary = summaries.find((chat) => chat.id === id);
@@ -403,11 +414,12 @@ export function getMockChat(id: number): Chat | undefined {
 export function listMockChats(): ChatSummary[] {
   rehydrate();
   // A stored chat (created or touched by a POST) replaces its seed row.
+  // Deleted chats stay gone (seeds are fixtures; the set hides them).
   const storedIds = new Set(created.keys());
   const made: ChatSummary[] = [...created.values()].map(
     ({ id, title, created_at, updated_at }) => ({ id, title, created_at, updated_at }),
   );
-  return [...made, ...summaries.filter((summary) => !storedIds.has(summary.id))];
+  return [...made, ...summaries.filter((summary) => !storedIds.has(summary.id))].filter((summary) => !deleted.has(summary.id));
 }
 
 export function createMockChat(): ChatSummary {
@@ -431,8 +443,65 @@ export function createMockChat(): ChatSummary {
   };
 }
 
+// Rename a stored or seed chat (mock only). Unknown ids stay unknown.
+export function renameMockChat(chatId: number, title: string): "ok" | "not_found" {
+  const chat = storedChat(chatId);
+  if (chat === undefined) return "not_found";
+  chat.title = title;
+  chat.updated_at = new Date().toISOString();
+  created.set(chat.id, chat);
+  persist();
+  return "ok";
+}
+
+// Delete a chat (mock only). A chat with a genuinely running answer refuses,
+// mirroring the real API; seeds hide via the deleted set, fixtures untouched.
+export function deleteMockChat(chatId: number): "ok" | "not_found" | "running" {
+  rehydrate();
+  if (deleted.has(chatId)) return "not_found";
+  const existing = created.get(chatId);
+  if (existing !== undefined) {
+    if (existing.messages.some((message) => message.role === "assistant" && running.has(message.id))) return "running";
+  } else {
+    const summary = summaries.find((item) => item.id === chatId);
+    if (summary === undefined) return "not_found";
+    if (seedDetail(summary).messages.some((message) => message.role === "assistant" && running.has(message.id))) return "running";
+  }
+  created.delete(chatId);
+  deleted.add(chatId);
+  persist();
+  return "ok";
+}
+
+// Waiting-questions badge count (mock only). Tests override it; the app just
+// reads it through GET /api/status.
+const QUESTIONS_WAITING_KEY = "charie-mock-questions-waiting";
+export function mockQuestionsWaiting(): number {
+  const store = storage();
+  if (store === null) return 3;
+  try {
+    const raw = store.getItem(QUESTIONS_WAITING_KEY);
+    const n = raw === null ? 3 : Number(raw);
+    return Number.isInteger(n) && n >= 0 ? n : 3;
+  } catch {
+    return 3;
+  }
+}
+
+// Test-only override for the badge count. Meaningless outside mock mode.
+export function setMockQuestionsWaiting(count: number): void {
+  const store = storage();
+  if (store === null) return;
+  try {
+    store.setItem(QUESTIONS_WAITING_KEY, String(count));
+  } catch {
+    // Counts are test-only; ignore.
+  }
+}
+
 function storedChat(chatId: number): Chat | undefined {
   rehydrate();
+  if (deleted.has(chatId)) return undefined;
   const existing = created.get(chatId);
   if (existing) return existing;
   const summary = summaries.find((chat) => chat.id === chatId);
@@ -562,6 +631,7 @@ export function resetMockChats(): void {
   nextMessageId = 1000;
   created = new Map();
   running = new Set();
+  deleted = new Set();
   rehydrated = true;
   const store = storage();
   if (store === null) return;
@@ -571,6 +641,7 @@ export function resetMockChats(): void {
     store.removeItem(COUNT_FINISH_KEY);
     store.removeItem(COUNT_KEYS.feedback);
     store.removeItem(COUNT_KEYS.wrong);
+    store.removeItem(QUESTIONS_WAITING_KEY);
   } catch {
     // Nothing to clear.
   }

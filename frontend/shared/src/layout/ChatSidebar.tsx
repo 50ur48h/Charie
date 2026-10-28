@@ -67,6 +67,7 @@ export function ChatSidebar({
   questionCount,
   user,
   onHide,
+  renderChats,
 }: {
   active?: ChatSidebarPage;
   activeChatId?: number;
@@ -74,6 +75,7 @@ export function ChatSidebar({
   questionCount?: number;
   user?: SidebarUser;
   onHide?: () => void;
+  renderChats?: (groups: ChatGroup[], activeChatId?: number) => React.ReactNode;
 }) {
   return (
     <div className="flex h-full min-h-0 flex-col gap-1">
@@ -135,6 +137,8 @@ export function ChatSidebar({
         {chats.status === "ready" &&
           (chats.groups.length === 0 ? (
             <p className="px-3 py-2 text-[13px] text-muted">No chats yet.</p>
+          ) : renderChats !== undefined ? (
+            renderChats(chats.groups, activeChatId)
           ) : (
             chats.groups.map((group, gi) => (
               <div key={group.label ?? `group-${gi}`}>

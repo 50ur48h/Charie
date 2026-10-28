@@ -7,6 +7,9 @@ import {
   finishMockMessage,
   getMockChat,
   listMockChats,
+  deleteMockChat,
+  mockQuestionsWaiting,
+  renameMockChat,
 } from "./sampleChat";
 import { SAMPLE_PASSWORD } from "./password";
 import { openMockStream } from "./chat-stream";
@@ -154,6 +157,53 @@ export const handlers = [
     if (blocked) return blocked;
     return HttpResponse.json(createMockChat(), { status: 201 });
   }),
+  http.patch(CHAT_DETAIL_URL, async ({ params, request }) => {
+    const blocked = needSession();
+    if (blocked) return blocked;
+    let title: unknown;
+    try {
+      title = ((await request.json()) as { title?: unknown }).title;
+    } catch {
+      title = undefined;
+    }
+    if (typeof title !== "string" || title.trim() === "") {
+      return HttpResponse.json(
+        { error: "empty_title", message: "Give the chat a title." },
+        { status: 400 },
+      );
+    }
+    if (renameMockChat(Number(params.id), title.trim()) === "not_found") {
+      return HttpResponse.json(
+        { error: "not_found", message: "That chat is gone." },
+        { status: 404 },
+      );
+    }
+    const chat = getMockChat(Number(params.id));
+    return HttpResponse.json({
+      id: chat?.id ?? Number(params.id),
+      title: title.trim(),
+      created_at: chat?.created_at ?? new Date().toISOString(),
+      updated_at: chat?.updated_at ?? new Date().toISOString(),
+    });
+  }),
+  http.delete(CHAT_DETAIL_URL, ({ params }) => {
+    const blocked = needSession();
+    if (blocked) return blocked;
+    const outcome = deleteMockChat(Number(params.id));
+    if (outcome === "not_found") {
+      return HttpResponse.json(
+        { error: "not_found", message: "That chat is gone." },
+        { status: 404 },
+      );
+    }
+    if (outcome === "running") {
+      return HttpResponse.json(
+        { error: "chat_running", message: "That answer is still running. Wait for it to finish, then delete." },
+        { status: 409 },
+      );
+    }
+    return HttpResponse.json({ ok: true });
+  }),
   http.get(CHAT_DETAIL_URL, async ({ params }) => {
     await mockDelay();
     const blocked = needSession();
@@ -195,7 +245,7 @@ export const handlers = [
   http.get(STATUS_URL, () => {
     const blocked = needSession();
     if (blocked) return blocked;
-    return HttpResponse.json({ questions_waiting: 3, data_through: "2025-10-26" });
+    return HttpResponse.json({ questions_waiting: mockQuestionsWaiting(), data_through: "2025-10-26" });
   }),
   http.post(MESSAGE_FINISH_URL, ({ params }) => {
     const blocked = needSession();

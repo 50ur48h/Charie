@@ -27,7 +27,7 @@ test("the new chat page matches the design", async ({ page }) => {
     "Why did delivery drop in Austin last week?",
     "When should we add more staff?",
   ]) {
-    await expect(page.getByRole("button", { name: new RegExp(question) })).toBeVisible();
+    await expect(page.getByRole("main").getByRole("button", { name: question })).toBeVisible();
   }
   await expect(page.getByText("3 questions need your answer.")).toBeVisible();
   await expect(page.getByText("Data up to 26 Oct")).toBeVisible();
