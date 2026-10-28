@@ -1,4 +1,4 @@
-import * as TooltipPrimitive from "radix-ui/Tooltip";
+import { Tooltip as TooltipPrimitive } from "radix-ui";
 import type { ReactNode } from "react";
 import { cn } from "./cn";
 

@@ -1,4 +1,4 @@
-import * as SwitchPrimitives from "radix-ui/Switch";
+import { Switch as SwitchPrimitives } from "radix-ui";
 import { forwardRef, type ComponentPropsWithoutRef, type ElementRef } from "react";
 import { cn } from "./cn";
 

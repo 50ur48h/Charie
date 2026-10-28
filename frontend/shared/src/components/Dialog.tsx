@@ -1,4 +1,4 @@
-import * as DialogPrimitive from "radix-ui/Dialog";
+import { Dialog as DialogPrimitive } from "radix-ui";
 import { forwardRef, type ComponentPropsWithoutRef, type ElementRef } from "react";
 import { X } from "lucide-react";
 import { Button } from "./Button";

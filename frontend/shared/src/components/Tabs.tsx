@@ -1,4 +1,4 @@
-import * as TabsPrimitive from "radix-ui/Tabs";
+import { Tabs as TabsPrimitive } from "radix-ui";
 import { forwardRef, type ComponentPropsWithoutRef, type ElementRef } from "react";
 import { cn } from "./cn";
 

@@ -1,4 +1,4 @@
-import * as SelectPrimitive from "radix-ui/Select";
+import { Select as SelectPrimitive } from "radix-ui";
 import { Check, ChevronDown } from "lucide-react";
 
 export interface SelectOption {
