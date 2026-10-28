@@ -11,4 +11,8 @@ describe("chartFileName", () => {
   it("falls back to chart.png", () => {
     expect(chartFileName("")).toBe("chart.png");
   });
+
+  it("trims runs of other characters at either end", () => {
+    expect(chartFileName("  Cost/day (M$) ")).toBe("cost-day-m.png");
+  });
 });

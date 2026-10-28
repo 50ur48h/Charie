@@ -3,11 +3,18 @@ import { echarts } from "./echarts";
 
 /** File-safe name for a chart title, e.g. "Sales change" -> "sales-change.png". */
 export function chartFileName(title: string): string {
-  const slug = title
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+/, "")
-    .replace(/-+$/, "");
+  let slug = "";
+  let dashed = true;
+  for (const ch of title.toLowerCase()) {
+    if ((ch >= "a" && ch <= "z") || (ch >= "0" && ch <= "9")) {
+      slug += ch;
+      dashed = false;
+    } else if (!dashed) {
+      slug += "-";
+      dashed = true;
+    }
+  }
+  if (slug.endsWith("-")) slug = slug.slice(0, -1);
   return `${slug || "chart"}.png`;
 }
 
