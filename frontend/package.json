@@ -11,14 +11,17 @@
   "scripts": {
     "dev:chat": "npm run dev -w @charie/chat",
     "dev:learner": "npm run dev -w @charie/learner",
-    "build": "npm run build -w @charie/chat && npm run build -w @charie/learner",
+    "build": "npm run build -w @charie/chat && npm run build -w @charie/learner && node scripts/check-prod-build.mjs",
+    "build:mock": "npm run build:mock -w @charie/chat && npm run build:mock -w @charie/learner",
+    "e2e:mock": "npm run build:mock && playwright test",
     "lint": "eslint .",
-    "typecheck": "npm run typecheck --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present && tsc --noEmit -p e2e",
     "test": "vitest run",
     "format": "prettier --write ."
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",
+    "@playwright/test": "1.64.1",
     "@tailwindcss/vite": "4.3.3",
     "@testing-library/react": "^16.0.0",
     "@types/node": "^22.0.0",

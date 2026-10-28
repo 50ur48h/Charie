@@ -1,6 +1,12 @@
 @import "tailwindcss";
 @import "./themes.css";
+
+/* Changed in P02.2: the @fontsource variable font has this name. */
+:root {
+  --font-prose: "Source Serif 4 Variable", "Source Serif 4", Georgia, serif;
+}
 @import "./base.css";
+@import "./text.css";
 @source "../";
 
 @theme inline {
