@@ -2,7 +2,6 @@ import { Outlet, useLocation, useParams } from "react-router";
 import {
   AppShell,
   ChatSidebar,
-  PlaceholderPage,
   useChats,
   useSidebarHidden,
   type ChatListState,
@@ -57,11 +56,4 @@ export function ChatLayout() {
       <Outlet />
     </AppShell>
   );
-}
-
-export function ChatThreadPage() {
-  const { chatId } = useParams();
-  const { data } = useChats();
-  const chat = data?.find((item) => String(item.id) === chatId);
-  return <PlaceholderPage app="chat" title={chat?.title ?? "Chat"} />;
 }

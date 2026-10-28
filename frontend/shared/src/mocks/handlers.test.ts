@@ -161,6 +161,18 @@ describe("mock handlers", () => {
     });
   });
 
+  test("POST /api/messages/:id/finish stops the running answer", async () => {
+    await signIn();
+    const finished = await post("/api/messages/4/finish", {});
+    expect(finished.status).toBe(200);
+    const detail = await fetch(`${APP}/api/chats/2`);
+    await expect(detail.json()).resolves.toMatchObject({
+      messages: [{ id: 3 }, { id: 4, status: "stopped" }],
+    });
+    const missing = await post("/api/messages/999/finish", {});
+    expect(missing.status).toBe(404);
+  });
+
   test("POST /api/chats needs a session", async () => {
     const response = await post("/api/chats", {});
     expect(response.status).toBe(401);

@@ -2,7 +2,9 @@ import { describe, expect, test } from "vitest";
 import {
   addMockMessage,
   createMockChat,
+  finishMockMessage,
   getMockChat,
+  listMockChats,
   resetMockChats,
   sampleAnswer,
 } from "./sampleChat";
@@ -55,5 +57,13 @@ describe("sample chat", () => {
       "assistant",
     ]);
     expect(addMockMessage(999, "nope")).toBeUndefined();
+  });
+
+  test("finishing stops the running answer without duplicating the list", () => {
+    resetMockChats();
+    expect(finishMockMessage(4)).toBe(true);
+    expect(getMockChat(2)?.messages[1]?.status).toBe("stopped");
+    expect(finishMockMessage(999)).toBe(false);
+    expect(listMockChats()).toHaveLength(8);
   });
 });

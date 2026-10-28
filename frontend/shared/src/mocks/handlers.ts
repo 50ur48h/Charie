@@ -1,12 +1,19 @@
 import { http, HttpResponse } from "msw";
 import { readSavedTheme } from "../theme/theme";
-import { addMockMessage, createMockChat, getMockChat, listMockChats } from "./sampleChat";
+import {
+  addMockMessage,
+  createMockChat,
+  finishMockMessage,
+  getMockChat,
+  listMockChats,
+} from "./sampleChat";
 import { SAMPLE_PASSWORD } from "./password";
 
 export const CHATS_URL = "*/api/chats";
 export const CHAT_DETAIL_URL = "*/api/chats/:id";
 export const CHAT_MESSAGES_URL = "*/api/chats/:id/messages";
 export const STATUS_URL = "*/api/status";
+export const MESSAGE_FINISH_URL = "*/api/messages/:id/finish";
 export const ME_URL = "*/api/me";
 export const HEALTH_URL = "*/api/health";
 export const LOGIN_URL = "*/api/login";
@@ -170,6 +177,17 @@ export const handlers = [
     const blocked = needSession();
     if (blocked) return blocked;
     return HttpResponse.json({ questions_waiting: 3, data_through: "2025-10-26" });
+  }),
+  http.post(MESSAGE_FINISH_URL, ({ params }) => {
+    const blocked = needSession();
+    if (blocked) return blocked;
+    if (!finishMockMessage(Number(params.id))) {
+      return HttpResponse.json(
+        { error: "not_found", message: "We couldn't find that message." },
+        { status: 404 },
+      );
+    }
+    return HttpResponse.json({ ok: true });
   }),
   http.all(CATCH_ALL_URL, () => {
     const blocked = needSession();

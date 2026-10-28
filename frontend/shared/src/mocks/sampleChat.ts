@@ -178,10 +178,12 @@ export function getMockChat(id: number): Chat | undefined {
 }
 
 export function listMockChats(): ChatSummary[] {
+  // A stored chat (created or touched by a POST) replaces its seed row.
+  const storedIds = new Set(created.keys());
   const made: ChatSummary[] = [...created.values()].map(
     ({ id, title, created_at, updated_at }) => ({ id, title, created_at, updated_at }),
   );
-  return [...made, ...summaries];
+  return [...made, ...summaries.filter((summary) => !storedIds.has(summary.id))];
 }
 
 export function createMockChat(): ChatSummary {
@@ -203,11 +205,40 @@ export function createMockChat(): ChatSummary {
   };
 }
 
+function storedChat(chatId: number): Chat | undefined {
+  const existing = created.get(chatId);
+  if (existing) return existing;
+  const summary = summaries.find((chat) => chat.id === chatId);
+  if (summary === undefined) return undefined;
+  const chat = seedDetail(summary);
+  created.set(chatId, chat);
+  return chat;
+}
+
+export function finishMockMessage(messageId: number): boolean {
+  const chats: Chat[] = [...created.values()];
+  for (const summary of summaries) {
+    const chat = storedChat(summary.id);
+    if (chat !== undefined && !chats.includes(chat)) chats.push(chat);
+  }
+  for (const chat of chats) {
+    const message = chat.messages.find(
+      (item) => item.id === messageId && item.role === "assistant",
+    );
+    if (message !== undefined) {
+      message.status = "stopped";
+      created.set(chat.id, chat);
+      return true;
+    }
+  }
+  return false;
+}
+
 export function addMockMessage(
   chatId: number,
   text: string,
 ): { user_message_id: number; assistant_message_id: number } | undefined {
-  const chat = getMockChat(chatId);
+  const chat = storedChat(chatId);
   if (chat === undefined) return undefined;
   if (chat.messages.length === 0) {
     chat.title = text.length > 60 ? `${text.slice(0, 60)}…` : text;
