@@ -17,6 +17,8 @@ export const CHAT_MESSAGES_URL = "*/api/chats/:id/messages";
 export const STATUS_URL = "*/api/status";
 export const MESSAGE_FINISH_URL = "*/api/messages/:id/finish";
 export const MESSAGE_STREAM_URL = "*/api/messages/:id/stream";
+export const MESSAGE_FEEDBACK_URL = "*/api/messages/:id/feedback";
+export const MESSAGE_WRONG_URL = "*/api/messages/:id/wrong";
 export const ME_URL = "*/api/me";
 export const HEALTH_URL = "*/api/health";
 export const LOGIN_URL = "*/api/login";
@@ -229,6 +231,44 @@ export const handlers = [
         Connection: "keep-alive",
       },
     });
+  }),
+  http.post(MESSAGE_FEEDBACK_URL, async ({ request }) => {
+    const blocked = needSession();
+    if (blocked) return blocked;
+    let vote: unknown;
+    try {
+      vote = ((await request.json()) as { vote?: unknown }).vote;
+    } catch {
+      vote = undefined;
+    }
+    if (vote !== "up" && vote !== "down" && vote !== null) {
+      return HttpResponse.json(
+        { error: "bad_vote", message: "Vote up, down or clear it." },
+        { status: 400 },
+      );
+    }
+    countMockPosts("feedback");
+    return HttpResponse.json({ ok: true });
+  }),
+  http.post(MESSAGE_WRONG_URL, async ({ request }) => {
+    const blocked = needSession();
+    if (blocked) return blocked;
+    let correction: unknown;
+    try {
+      correction = ((await request.json()) as { correction?: unknown }).correction;
+    } catch {
+      correction = undefined;
+    }
+    if (typeof correction !== "string" || correction.trim() === "") {
+      return HttpResponse.json(
+        { error: "empty_correction", message: "Please describe what is wrong." },
+        { status: 400 },
+      );
+    }
+    countMockPosts("wrong");
+    // The learner to-do list itself ships later: the mock only proves the
+    // correction was sent once and kept verbatim.
+    return HttpResponse.json({ ok: true });
   }),
   http.all(CATCH_ALL_URL, () => {
     const blocked = needSession();

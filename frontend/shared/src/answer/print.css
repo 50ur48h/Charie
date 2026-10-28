@@ -1,0 +1,65 @@
+/* Print layout for chat answers (P03.8). Loaded only by the chat app,
+   so the learner app is unaffected. Simple control hides live on the
+   components themselves through Tailwind's print: variant; this file
+   holds the structural rules: page box, evidence visibility and breaks. */
+@page {
+  margin: 14mm 12mm;
+}
+
+@media print {
+  /* App chrome never prints: sidebar, skip link, portals stay shut. */
+  aside,
+  a[href="#main"] {
+    display: none !important;
+  }
+
+  /* The thinking panel prints its one-line summary only: the toggle
+     heading already shows it, so the expanded timeline and toggle
+     icons go away. */
+  .thinking-timeline {
+    display: none !important;
+  }
+  .thinking-panel button svg {
+    display: none !important;
+  }
+
+  /* "How I worked this out" prints the full evidence: the interactive
+     disclosures stay shut on screen, so the print-only copy opens. */
+  .method-print {
+    display: block !important;
+  }
+  .method-print-section {
+    break-inside: avoid;
+  }
+  .method-print h4 {
+    margin: 12px 0 4px;
+    font-size: 13.5px;
+  }
+  .method-print p,
+  .method-print blockquote {
+    margin: 4px 0;
+    font-size: 13px;
+  }
+  .method-print pre {
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-size: 12px;
+  }
+
+  /* Long tables repeat their headers and break across pages; chart
+     cards and callouts never split internally. */
+  thead {
+    display: table-header-group;
+  }
+  tr {
+    break-inside: avoid;
+  }
+  table {
+    break-inside: auto;
+  }
+  .method-block,
+  .chart-card,
+  .callout-block {
+    break-inside: avoid;
+  }
+}

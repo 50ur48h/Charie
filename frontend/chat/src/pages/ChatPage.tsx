@@ -192,7 +192,7 @@ export function ChatPage() {
         onFollowUp={followUp}
         live={streamMessageId === null ? null : { messageId: streamMessageId, feed: liveFeed }}
       />
-      <div className="flex-none px-7 pb-4">
+      <div className="flex-none px-7 pb-4 print:hidden">
         <div className="mx-auto max-w-[800px]">
           {runningId !== undefined && (
             <div className="mb-2 flex items-center gap-3">

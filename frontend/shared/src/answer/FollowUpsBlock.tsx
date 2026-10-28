@@ -9,7 +9,7 @@ export function FollowUpsBlock({
   onFollowUp: (text: string) => void;
 }) {
   return (
-    <div className="mb-4 flex flex-wrap gap-2">
+    <div className="follow-ups mb-4 flex flex-wrap gap-2 print:hidden">
       {block.items.map((item) => (
         <button
           key={item}

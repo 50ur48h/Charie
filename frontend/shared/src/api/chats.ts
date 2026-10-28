@@ -45,6 +45,32 @@ export function useChat(chatId: number) {
   });
 }
 
+export type FeedbackVote = "up" | "down" | null;
+
+// POST /api/messages/{id}/feedback { vote, note? } (architecture 09).
+// A null vote clears a previous one; the note stays unused for now.
+export function useFeedback() {
+  return useMutation({
+    mutationFn: ({ messageId, vote }: { messageId: number; vote: FeedbackVote }) =>
+      apiFetch<{ ok: true }>(`/api/messages/${messageId}/feedback`, {
+        method: "POST",
+        body: { vote },
+      }),
+  });
+}
+
+// POST /api/messages/{id}/wrong { correction } (architecture 09): the
+// correction goes to the learner to-do list; the answer never changes here.
+export function useWrongMessage() {
+  return useMutation({
+    mutationFn: ({ messageId, correction }: { messageId: number; correction: string }) =>
+      apiFetch<{ ok: true }>(`/api/messages/${messageId}/wrong`, {
+        method: "POST",
+        body: { correction },
+      }),
+  });
+}
+
 // POST /api/messages/{id}/finish: "Finish now" (architecture 09).
 export function useFinishMessage() {
   const client = useQueryClient();

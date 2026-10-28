@@ -69,6 +69,10 @@ export { MethodBlock } from "./answer/MethodBlock";
 export { tableCsv, tableFileName } from "./answer/exportCsv";
 export { buildChartOption, chartSummary, CHART_HEIGHTS } from "./charts/chartBlockOption";
 export { AnswerView } from "./answer/AnswerView";
+export { AnswerActions } from "./answer/AnswerActions";
+export { WrongAnswerDialog } from "./answer/WrongAnswerDialog";
+export { answerText, blockText } from "./answer/answerText";
+export { printAnswer, waitForPrintReady } from "./answer/print";
 export {
   backoffDelayMs,
   fetchStream,

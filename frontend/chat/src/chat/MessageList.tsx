@@ -7,7 +7,7 @@
 import { useEffect, useRef, useState } from "react";
 import { LogoMark, Spinner } from "@charie/shared";
 import type { ChatMessage } from "@charie/shared";
-import { AnswerView, ThinkingPanel } from "@charie/shared";
+import { AnswerActions, AnswerView, ThinkingPanel } from "@charie/shared";
 import type { FeedState } from "@charie/shared";
 import { LiveAnswer } from "./LiveAnswer";
 import { ScrollToLatest } from "./ScrollToLatest";
@@ -118,6 +118,9 @@ export function MessageList({
                       <AssistantStatus message={message} />
                       {message.status === "done" && message.answer !== null && (
                         <AnswerView answer={message.answer} onFollowUp={onFollowUp} />
+                      )}
+                      {message.status === "done" && message.answer !== null && (
+                        <AnswerActions messageId={message.id} answer={message.answer} />
                       )}
                     </>
                   )}

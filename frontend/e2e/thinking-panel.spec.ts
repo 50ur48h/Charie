@@ -8,11 +8,12 @@ test("a finished answer expands its thinking evidence", async ({ page }) => {
   await panel.click();
   const query = page.getByRole("button", { name: /Added up sales by restaurant/ });
   await query.click();
-  await expect(page.getByText("SELECT restaurant, SUM(net) FROM sales GROUP BY restaurant")).toBeVisible();
+  // Screen-only scope: the print duplicate carries the same evidence text.
+  await expect(page.locator(".thinking-panel").getByText("SELECT restaurant, SUM(net) FROM sales GROUP BY restaurant")).toBeVisible();
   const document = page.getByRole("button", { name: /Read the incident log/ });
   await document.click();
-  await expect(page.getByText("Downtown delivery was down between 6 and 9 pm.", { exact: false })).toBeVisible();
-  await expect(page.getByText("Incident log.docx")).toBeVisible();
+  await expect(page.locator(".thinking-panel").getByText("Downtown delivery was down between 6 and 9 pm.", { exact: false })).toBeVisible();
+  await expect(page.locator(".thinking-panel").getByText("Incident log.docx")).toBeVisible();
 });
 
 test("a running answer finishes through Finish now", async ({ page }) => {
@@ -42,9 +43,10 @@ test("thinking details open from the keyboard", async ({ page }) => {
   const query = page.getByRole("button", { name: /Added up sales by restaurant/ });
   await query.focus();
   await page.keyboard.press("Enter");
-  await expect(page.getByText("SELECT restaurant, SUM(net) FROM sales GROUP BY restaurant")).toBeVisible();
+  // Screen-only scope: the print duplicate carries the same evidence text.
+  await expect(page.locator(".thinking-panel").getByText("SELECT restaurant, SUM(net) FROM sales GROUP BY restaurant")).toBeVisible();
   await page.keyboard.press("Enter");
-  await expect(page.getByText("SELECT restaurant, SUM(net) FROM sales GROUP BY restaurant")).toBeHidden();
+  await expect(page.locator(".thinking-panel").getByText("SELECT restaurant, SUM(net) FROM sales GROUP BY restaurant")).toBeHidden();
 });
 
 test("a failed answer shows its explanation", async ({ page }) => {
