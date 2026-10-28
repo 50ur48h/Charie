@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import type { ChatMessage, ThinkingStatus } from "@charie/shared";
 import { MessageList } from "./MessageList";
 
@@ -38,30 +38,34 @@ function setMetrics(el: HTMLElement, scrollHeight: number, clientHeight: number)
   });
 }
 
+function list(messages: ChatMessage[]) {
+  return <MessageList messages={messages} onFollowUp={vi.fn()} />;
+}
+
 describe("MessageList", () => {
   test("follows new messages when the reader is at the bottom", () => {
-    const { rerender } = render(<MessageList messages={[userMessage(1, "First?")]} />);
+    const { rerender } = render(list([userMessage(1, "First?")]));
     const messages = screen.getByTestId("messages");
     setMetrics(messages, 1000, 500);
     messages.scrollTop = 500;
     fireEvent.scroll(messages);
 
     setMetrics(messages, 1500, 500);
-    rerender(<MessageList messages={[userMessage(1, "First?"), userMessage(2, "Second?")]} />);
+    rerender(list([userMessage(1, "First?"), userMessage(2, "Second?")]));
 
     expect(messages.scrollTop).toBe(1500);
     expect(screen.queryByRole("button", { name: "Jump to latest" })).toBeNull();
   });
 
   test("keeps the reader position and offers Jump to latest when scrolled up", () => {
-    const { rerender } = render(<MessageList messages={[userMessage(1, "First?")]} />);
+    const { rerender } = render(list([userMessage(1, "First?")]));
     const messages = screen.getByTestId("messages");
     setMetrics(messages, 1000, 500);
     messages.scrollTop = 100;
     fireEvent.scroll(messages);
 
     setMetrics(messages, 1500, 500);
-    rerender(<MessageList messages={[userMessage(1, "First?"), userMessage(2, "Second?")]} />);
+    rerender(list([userMessage(1, "First?"), userMessage(2, "Second?")]));
 
     expect(messages.scrollTop).toBe(100);
     const jump = screen.getByRole("button", { name: "Jump to latest" });
@@ -72,14 +76,12 @@ describe("MessageList", () => {
 
   test("each answer keeps its own thinking panel", () => {
     render(
-      <MessageList
-        messages={[
-          userMessage(1, "First?"),
-          assistantMessage(2, "done", [{ seq: 1, title: "First evidence" }]),
-          userMessage(3, "Second?"),
-          assistantMessage(4, "thinking", [{ seq: 1, title: "Second evidence" }]),
-        ]}
-      />,
+      list([
+        userMessage(1, "First?"),
+        assistantMessage(2, "done", [{ seq: 1, title: "First evidence" }]),
+        userMessage(3, "Second?"),
+        assistantMessage(4, "thinking", [{ seq: 1, title: "Second evidence" }]),
+      ]),
     );
     // One panel per answer: the running one starts open, the finished one shut.
     expect(screen.getAllByRole("button", { name: /Thinking/ })).toHaveLength(2);
