@@ -1,8 +1,9 @@
 // The chat page frame (P03.2): header, messages, question box, scrolling.
 // Answer blocks arrive in P03.4-P03.6 and the live stream in P03.7; until
 // then the frame shows the message structure and the thinking state.
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Link, useParams } from "react-router";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   ApiError,
   QuestionComposer,
@@ -32,10 +33,16 @@ function runningAssistantId(messages: { role: string; status: string; id: number
 export function ChatPage() {
   const { chatId } = useParams();
   const id = Number(chatId);
+  const client = useQueryClient();
   const chatQuery = useChat(Number.isInteger(id) ? id : -1);
   const statusQuery = useStatus();
   const [drafts, setDrafts] = useState<Record<number, string>>({});
   const [sending, setSending] = useState(false);
+  const [finishing, setFinishing] = useState(false);
+  // Ref guards make a double click a single request even before React
+  // re-renders with sending/finishing set.
+  const sendInflight = useRef(false);
+  const finishInflight = useRef(false);
   const sendMessage = useSendMessage();
   const finishMessage = useFinishMessage();
 
@@ -85,10 +92,14 @@ export function ChatPage() {
 
   async function submit(): Promise<void> {
     const text = draft.trim();
-    if (text === "" || busy) return;
+    if (text === "" || sendInflight.current) return;
+    sendInflight.current = true;
     setSending(true);
     try {
       await sendMessage.mutateAsync({ chatId: chat.id, text });
+      // Stay locked until the refreshed chat (with the running answer) is
+      // back: the list below still shows the old messages until then.
+      await client.refetchQueries({ queryKey: ["chat", chat.id] });
       setDrafts((prev) => ({ ...prev, [chat.id]: "" }));
     } catch (error) {
       toast(
@@ -97,20 +108,29 @@ export function ChatPage() {
           : "Something went wrong on our side. Please try again.",
       );
     } finally {
+      sendInflight.current = false;
       setSending(false);
     }
   }
 
   async function finishNow(): Promise<void> {
-    if (runningId === undefined || finishMessage.isPending) return;
+    if (runningId === undefined || finishInflight.current) return;
+    finishInflight.current = true;
+    setFinishing(true);
     try {
       await finishMessage.mutateAsync(runningId);
+      // Stay locked until the refreshed chat (with the stopped answer) is
+      // back, so a second click can't send a repeated request.
+      await client.refetchQueries({ queryKey: ["chat"] });
     } catch (error) {
       toast(
         error instanceof ApiError
           ? error.message
           : "Something went wrong on our side. Please try again.",
       );
+    } finally {
+      finishInflight.current = false;
+      setFinishing(false);
     }
   }
 
@@ -125,10 +145,10 @@ export function ChatPage() {
               <button
                 type="button"
                 onClick={() => void finishNow()}
-                disabled={finishMessage.isPending}
+                disabled={finishing}
                 className="cursor-pointer rounded-full border border-border bg-surface px-4 py-[7px] text-[13px] font-medium text-text-2 transition-[border-color,color] duration-200 hover:border-focus hover:text-text disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {finishMessage.isPending ? "Finishing…" : "Finish now"}
+                {finishing ? "Finishing…" : "Finish now"}
               </button>
             </div>
           )}

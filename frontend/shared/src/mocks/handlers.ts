@@ -2,6 +2,7 @@ import { http, HttpResponse } from "msw";
 import { readSavedTheme } from "../theme/theme";
 import {
   addMockMessage,
+  countMockPosts,
   createMockChat,
   finishMockMessage,
   getMockChat,
@@ -86,6 +87,18 @@ const NOT_LOGGED_IN = {
   message: "Please sign in again.",
 };
 
+// Test-only delay (milliseconds in localStorage "charie-mock-delay-ms"), so
+// browser tests can hold a chat-detail response back and prove the page stays
+// locked while it refreshes. Meaningless outside mock mode.
+async function mockDelay(): Promise<void> {
+  try {
+    const ms = Number(localStorage.getItem("charie-mock-delay-ms") ?? "0");
+    if (ms > 0) await new Promise((resolve) => setTimeout(resolve, ms));
+  } catch {
+    // No delay without storage.
+  }
+}
+
 function needSession(): Response | null {
   if (hasSession()) return null;
   return HttpResponse.json(NOT_LOGGED_IN, { status: 401 });
@@ -137,7 +150,8 @@ export const handlers = [
     if (blocked) return blocked;
     return HttpResponse.json(createMockChat(), { status: 201 });
   }),
-  http.get(CHAT_DETAIL_URL, ({ params }) => {
+  http.get(CHAT_DETAIL_URL, async ({ params }) => {
+    await mockDelay();
     const blocked = needSession();
     if (blocked) return blocked;
     const chat = getMockChat(Number(params.id));
@@ -164,6 +178,7 @@ export const handlers = [
         { status: 400 },
       );
     }
+    countMockPosts("messages");
     const sent = addMockMessage(Number(params.id), text.trim());
     if (sent === undefined) {
       return HttpResponse.json(
@@ -181,6 +196,7 @@ export const handlers = [
   http.post(MESSAGE_FINISH_URL, ({ params }) => {
     const blocked = needSession();
     if (blocked) return blocked;
+    countMockPosts("finish");
     if (!finishMockMessage(Number(params.id))) {
       return HttpResponse.json(
         { error: "not_found", message: "We couldn't find that message." },

@@ -1,7 +1,9 @@
 // Sample chat detail for the fake API: one finished answer covering every
 // answer-block variant, plus fresh/thinking/finished seed states and a tiny
-// in-memory store for chats the owner creates. Sample data lives only here,
-// never in the production bundle.
+// store for chats the owner creates. The store is saved to localStorage so a
+// page reload keeps created chats, messages and Finish now state (mock only,
+// mirroring the session key). Sample data lives only here, never in the
+// production bundle.
 import type { Answer, Chat, ChatMessage } from "../api/chat-types";
 import type { ChatSummary } from "../api/types";
 import summaries from "./data";
@@ -160,9 +162,95 @@ function thinkingSeed(summary: ChatSummary): Chat {
   };
 }
 
+const STORE_KEY = "charie-mock-chats";
+const COUNT_MESSAGES_KEY = "charie-mock-count-messages";
+const COUNT_FINISH_KEY = "charie-mock-count-finish";
+
 let nextChatId = 100;
 let nextMessageId = 1000;
-const created = new Map<number, Chat>();
+let created = new Map<number, Chat>();
+let rehydrated = false;
+
+function storage(): Storage | null {
+  try {
+    return localStorage;
+  } catch {
+    return null;
+  }
+}
+
+function persist(): void {
+  const store = storage();
+  if (store === null) return;
+  try {
+    store.setItem(
+      STORE_KEY,
+      JSON.stringify({ nextChatId, nextMessageId, created: [...created.values()] }),
+    );
+  } catch {
+    // Private browsing: created chats just don't survive a reload.
+  }
+}
+
+function rehydrate(): void {
+  if (rehydrated) return;
+  rehydrated = true;
+  const store = storage();
+  if (store === null) return;
+  try {
+    const raw = store.getItem(STORE_KEY);
+    if (!raw) return;
+    const data = JSON.parse(raw) as {
+      nextChatId?: unknown;
+      nextMessageId?: unknown;
+      created?: unknown;
+    };
+    if (
+      typeof data.nextChatId !== "number" ||
+      typeof data.nextMessageId !== "number" ||
+      !Array.isArray(data.created)
+    ) {
+      return;
+    }
+    nextChatId = data.nextChatId;
+    nextMessageId = data.nextMessageId;
+    for (const chat of data.created) {
+      if (
+        typeof chat === "object" &&
+        chat !== null &&
+        typeof (chat as Chat).id === "number" &&
+        Array.isArray((chat as Chat).messages)
+      ) {
+        created.set((chat as Chat).id, chat as Chat);
+      }
+    }
+  } catch {
+    // A corrupt store starts fresh.
+  }
+}
+
+// Test-only request counts, so browser tests can prove a double click sent
+// one request. Meaningless outside mock mode.
+export function countMockPosts(kind: "messages" | "finish"): void {
+  const store = storage();
+  if (store === null) return;
+  try {
+    const key = kind === "messages" ? COUNT_MESSAGES_KEY : COUNT_FINISH_KEY;
+    store.setItem(key, String(Number(store.getItem(key) ?? "0") + 1));
+  } catch {
+    // Counts are test-only; ignore.
+  }
+}
+
+// Drops the in-memory store but keeps the saved one, so tests can simulate a
+// page reload without one. Browser tests get a real reload instead.
+export function forgetMockChats(): void {
+  rehydrated = false;
+  nextChatId = 100;
+  nextMessageId = 1000;
+  created = new Map();
+  rehydrate();
+}
 
 function seedDetail(summary: ChatSummary): Chat {
   if (summary.id === 1) return finishedSeed(summary);
@@ -171,6 +259,7 @@ function seedDetail(summary: ChatSummary): Chat {
 }
 
 export function getMockChat(id: number): Chat | undefined {
+  rehydrate();
   const made = created.get(id);
   if (made) return made;
   const summary = summaries.find((chat) => chat.id === id);
@@ -178,6 +267,7 @@ export function getMockChat(id: number): Chat | undefined {
 }
 
 export function listMockChats(): ChatSummary[] {
+  rehydrate();
   // A stored chat (created or touched by a POST) replaces its seed row.
   const storedIds = new Set(created.keys());
   const made: ChatSummary[] = [...created.values()].map(
@@ -187,6 +277,7 @@ export function listMockChats(): ChatSummary[] {
 }
 
 export function createMockChat(): ChatSummary {
+  rehydrate();
   const now = new Date().toISOString();
   const chat: Chat = {
     id: nextChatId,
@@ -197,6 +288,7 @@ export function createMockChat(): ChatSummary {
   };
   nextChatId += 1;
   created.set(chat.id, chat);
+  persist();
   return {
     id: chat.id,
     title: chat.title,
@@ -206,16 +298,19 @@ export function createMockChat(): ChatSummary {
 }
 
 function storedChat(chatId: number): Chat | undefined {
+  rehydrate();
   const existing = created.get(chatId);
   if (existing) return existing;
   const summary = summaries.find((chat) => chat.id === chatId);
   if (summary === undefined) return undefined;
   const chat = seedDetail(summary);
   created.set(chatId, chat);
+  persist();
   return chat;
 }
 
 export function finishMockMessage(messageId: number): boolean {
+  rehydrate();
   const chats: Chat[] = [...created.values()];
   for (const summary of summaries) {
     const chat = storedChat(summary.id);
@@ -228,6 +323,7 @@ export function finishMockMessage(messageId: number): boolean {
     if (message !== undefined) {
       message.status = "stopped";
       created.set(chat.id, chat);
+      persist();
       return true;
     }
   }
@@ -251,11 +347,22 @@ export function addMockMessage(
     { id: assistantId, role: "assistant", text: "", status: "thinking", mode: "thinking" },
   );
   created.set(chat.id, chat);
+  persist();
   return { user_message_id: userId, assistant_message_id: assistantId };
 }
 
 export function resetMockChats(): void {
   nextChatId = 100;
   nextMessageId = 1000;
-  created.clear();
+  created = new Map();
+  rehydrated = true;
+  const store = storage();
+  if (store === null) return;
+  try {
+    store.removeItem(STORE_KEY);
+    store.removeItem(COUNT_MESSAGES_KEY);
+    store.removeItem(COUNT_FINISH_KEY);
+  } catch {
+    // Nothing to clear.
+  }
 }
