@@ -125,6 +125,14 @@
     box-shadow: 0 0 0 7px transparent;
   }
 }
+@keyframes live {
+  0% {
+    box-shadow: 0 0 0 0 rgba(var(--shadow-rgb), 0.2);
+  }
+  100% {
+    box-shadow: 0 0 0 8px transparent;
+  }
+}
 @keyframes flash {
   0% {
     box-shadow: 0 0 0 0 var(--accent-soft);

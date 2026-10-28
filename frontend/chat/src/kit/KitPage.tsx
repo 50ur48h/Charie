@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { THEMES, useTheme } from "@charie/shared";
 import BasicBlocksSection from "./BasicBlocksSection";
 import ChartsSection from "./ChartsSection";
+import FramesSection from "./FramesSection";
 import ColorsSection from "./ColorsSection";
 import CompositeBlocksSection from "./CompositeBlocksSection";
 import OverlaysSection from "./OverlaysSection";
@@ -40,6 +41,7 @@ export default function KitPage() {
         <a href="#overlays">Building blocks 2</a>
         <a href="#composite-blocks">Building blocks 3</a>
         <a href="#charts">Charts</a>
+        <a href="#frames">Frames</a>
       </nav>
       <ColorsSection />
       <TextSection />
@@ -47,6 +49,7 @@ export default function KitPage() {
       <OverlaysSection />
       <CompositeBlocksSection />
       <ChartsSection />
+      <FramesSection />
     </div>
   );
 }
