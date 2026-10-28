@@ -30,8 +30,8 @@ const FRESH = {
 const RUNNING = {
   ...FRESH,
   messages: [
-    { id: 10, role: "user", text: "Slow question?", status: "done", mode: "thinking" },
-    { id: 11, role: "assistant", text: "", status: "thinking", mode: "thinking" },
+    { id: 10, role: "user", text: "Slow question?", status: "done", started_at: "2026-10-28T08:00:00.000Z" },
+    { id: 11, role: "assistant", status: "thinking", mode: "thinking", answer: null, thinking: [], summary: null },
   ],
 };
 

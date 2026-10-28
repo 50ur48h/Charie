@@ -6,7 +6,7 @@ import {
 } from "./thinking";
 
 function line(seq: number, title: string): ThinkingLine {
-  return { seq, kind: "query", status: "running", title };
+  return { seq, kind: "query", status: "running", title, at: "2025-10-26T12:00:00Z" };
 }
 
 describe("thinking", () => {

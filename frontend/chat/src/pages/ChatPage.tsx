@@ -137,11 +137,7 @@ export function ChatPage() {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <ChatHeader title={chat.title} />
-      <MessageList
-        messages={chat.messages}
-        thinking={chat.thinking}
-        thinkingSummary={chat.thinking_summary}
-      />
+      <MessageList messages={chat.messages} />
       <div className="flex-none px-7 pb-4">
         <div className="mx-auto max-w-[800px]">
           {runningId !== undefined && (

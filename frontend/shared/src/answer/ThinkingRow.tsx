@@ -1,14 +1,27 @@
-import { Check, ChevronDown, FileText, Lightbulb, Search, X } from "lucide-react";
+import {
+  Check,
+  ChevronDown,
+  FileText,
+  Lightbulb,
+  Search,
+  Sparkles,
+  StickyNote,
+  ListOrdered,
+  X,
+} from "lucide-react";
 import { Spinner } from "../components/Spinner";
 import { cn } from "../components/cn";
 import type { ThinkingKind, ThinkingLine } from "./thinking";
 import { ThinkingDetails } from "./ThinkingDetails";
 
 const KIND_ICONS = {
+  step: ListOrdered,
+  found: Sparkles,
   query: Search,
   document: FileText,
   decision: Lightbulb,
   check: Check,
+  note: StickyNote,
 } as const satisfies Record<ThinkingKind, typeof Search>;
 
 export function ThinkingRow({

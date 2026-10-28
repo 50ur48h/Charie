@@ -5,7 +5,7 @@
 
 export type ThinkingStatus = "running" | "done" | "failed";
 
-export type ThinkingKind = "query" | "document" | "decision" | "check";
+export type ThinkingKind = "step" | "found" | "query" | "document" | "decision" | "check" | "note";
 
 export interface ThinkingLineDetails {
   sql?: string;
@@ -22,6 +22,7 @@ export interface ThinkingLine {
   title: string;
   body?: string;
   details?: ThinkingLineDetails;
+  at: string;
 }
 
 export interface ThinkingSummary {

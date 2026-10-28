@@ -4,7 +4,12 @@
 // page reload keeps created chats, messages and Finish now state (mock only,
 // mirroring the session key). Sample data lives only here, never in the
 // production bundle.
-import type { Answer, Chat, ChatMessage } from "../api/chat-types";
+import type {
+  Answer,
+  AssistantMessage,
+  Chat,
+  UserMessage,
+} from "../api/chat-types";
 import type { ChatSummary } from "../api/types";
 import summaries from "./data";
 import {
@@ -12,6 +17,8 @@ import {
   finishedSummary,
   finishedThinking,
   runningThinking,
+  secondSummary,
+  secondThinking,
 } from "./sampleThinking";
 
 export function sampleAnswer(messageId: number): Answer {
@@ -134,26 +141,42 @@ export function sampleAnswer(messageId: number): Answer {
 }
 
 function finishedSeed(summary: ChatSummary): Chat {
-  const user: ChatMessage = {
+  const started = summary.created_at;
+  const firstUser: UserMessage = {
     id: 1,
     role: "user",
     text: "How are we doing this month?",
     status: "done",
-    mode: "thinking",
+    started_at: started,
   };
-  const assistant: ChatMessage = {
+  const firstAssistant: AssistantMessage = {
     id: 2,
     role: "assistant",
-    text: "",
-    answer: sampleAnswer(2),
     status: "done",
     mode: "thinking",
+    answer: sampleAnswer(2),
+    thinking: finishedThinking,
+    summary: finishedSummary,
+  };
+  const secondUser: UserMessage = {
+    id: 7,
+    role: "user",
+    text: "Same for last year?",
+    status: "done",
+    started_at: started,
+  };
+  const secondAssistant: AssistantMessage = {
+    id: 8,
+    role: "assistant",
+    status: "done",
+    mode: "thinking",
+    answer: null,
+    thinking: secondThinking,
+    summary: secondSummary,
   };
   return {
     ...summary,
-    messages: [user, assistant],
-    thinking: finishedThinking,
-    thinking_summary: finishedSummary,
+    messages: [firstUser, firstAssistant, secondUser, secondAssistant],
   };
 }
 
@@ -166,12 +189,18 @@ function thinkingSeed(summary: ChatSummary): Chat {
         role: "user",
         text: "Which dishes make us the most profit?",
         status: "done",
-        mode: "thinking",
+        started_at: summary.created_at,
       },
-      { id: 4, role: "assistant", text: "", status: "thinking", mode: "thinking" },
+      {
+        id: 4,
+        role: "assistant",
+        status: "thinking",
+        mode: "thinking",
+        answer: null,
+        thinking: runningThinking,
+        summary: null,
+      },
     ],
-    thinking: runningThinking,
-    thinking_summary: null,
   };
 }
 
@@ -184,12 +213,18 @@ function failedSeed(summary: ChatSummary): Chat {
         role: "user",
         text: "Weekend vs weekday sales",
         status: "done",
-        mode: "thinking",
+        started_at: summary.created_at,
       },
-      { id: 6, role: "assistant", text: "", status: "failed", mode: "thinking" },
+      {
+        id: 6,
+        role: "assistant",
+        status: "failed",
+        mode: "thinking",
+        answer: null,
+        thinking: failedThinking,
+        summary: null,
+      },
     ],
-    thinking: failedThinking,
-    thinking_summary: null,
   };
 }
 
@@ -253,9 +288,12 @@ function rehydrate(): void {
         Array.isArray((chat as Chat).messages)
       ) {
         const stored = chat as Chat;
-        if (!Array.isArray(stored.thinking)) stored.thinking = [];
-        if ((stored as unknown as Record<string, unknown>).thinking_summary === undefined) {
-          stored.thinking_summary = null;
+        for (const message of stored.messages) {
+          if (message.role !== "assistant") continue;
+          const raw = message as unknown as Record<string, unknown>;
+          if (!Array.isArray(raw.thinking)) message.thinking = [];
+          if (raw.summary === undefined) message.summary = null;
+          if (raw.answer === undefined) message.answer = null;
         }
         created.set(stored.id, stored);
       }
@@ -292,7 +330,7 @@ function seedDetail(summary: ChatSummary): Chat {
   if (summary.id === 1) return finishedSeed(summary);
   if (summary.id === 2) return thinkingSeed(summary);
   if (summary.id === 4) return failedSeed(summary);
-  return { ...summary, messages: [], thinking: [], thinking_summary: null };
+  return { ...summary, messages: [] };
 }
 
 export function getMockChat(id: number): Chat | undefined {
@@ -322,8 +360,6 @@ export function createMockChat(): ChatSummary {
     created_at: now,
     updated_at: now,
     messages: [],
-    thinking: [],
-    thinking_summary: null,
   };
   nextChatId += 1;
   created.set(chat.id, chat);
@@ -359,8 +395,11 @@ export function finishMockMessage(messageId: number): boolean {
     const message = chat.messages.find(
       (item) => item.id === messageId && item.role === "assistant",
     );
-    if (message !== undefined) {
+    if (message !== undefined && message.role === "assistant") {
       message.status = "stopped";
+      for (const line of message.thinking) {
+        if (line.status === "running") line.status = "done";
+      }
       created.set(chat.id, chat);
       persist();
       return true;
@@ -381,9 +420,18 @@ export function addMockMessage(
   const userId = nextMessageId;
   const assistantId = nextMessageId + 1;
   nextMessageId += 2;
+  const now = new Date().toISOString();
   chat.messages.push(
-    { id: userId, role: "user", text, status: "done", mode: "thinking" },
-    { id: assistantId, role: "assistant", text: "", status: "thinking", mode: "thinking" },
+    { id: userId, role: "user", text, status: "done", started_at: now },
+    {
+      id: assistantId,
+      role: "assistant",
+      status: "thinking",
+      mode: "thinking",
+      answer: null,
+      thinking: [],
+      summary: null,
+    },
   );
   created.set(chat.id, chat);
   persist();

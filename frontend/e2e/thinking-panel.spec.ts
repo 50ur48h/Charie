@@ -21,7 +21,19 @@ test("a running answer finishes through Finish now", async ({ page }) => {
   await expect(page.getByRole("button", { name: /Adding up profit by dish/ })).toBeVisible();
   await page.getByRole("button", { name: "Finish now" }).click();
   await expect(page.getByText("Stopped.")).toBeVisible();
+  // The panel leaves its running state: no spinner, no live announcement,
+  // and no invented summary statistics.
+  await expect(page.getByText("Thinking…")).toBeHidden();
+  await expect(page.getByText(/Thought for/)).toBeHidden();
   await expect(page.getByRole("button", { name: /Adding up profit by dish/ })).toBeVisible();
+});
+
+test("two answers keep their own evidence", async ({ page }) => {
+  await signedIn(page, CHAT, "/chat/1");
+  await page.getByRole("button", { name: /Thought for 38 seconds/ }).click();
+  await page.getByRole("button", { name: /Thought for 21 seconds/ }).click();
+  await expect(page.getByRole("button", { name: /Added up sales by restaurant/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Adding up last year's sales/ })).toBeVisible();
 });
 
 test("thinking details open from the keyboard", async ({ page }) => {

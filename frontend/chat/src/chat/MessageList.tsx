@@ -1,10 +1,12 @@
 // The message list: user bubbles on the right, assistant rows on the left.
-// It follows new messages only while the reader is near the bottom;
-// otherwise it offers "Jump to latest". Answer blocks render here from
-// P03.4; until then a finished assistant message shows its text.
+// Each answer renders its own thinking panel from its own message, so
+// earlier evidence never moves to a new answer. It follows new messages
+// only while the reader is near the bottom; otherwise it offers "Jump to
+// latest". Answer blocks render here from P03.4; until then a finished
+// assistant message shows its text.
 import { useEffect, useRef, useState } from "react";
 import { LogoMark, Spinner } from "@charie/shared";
-import type { ChatMessage, ThinkingLine, ThinkingSummary } from "@charie/shared";
+import type { ChatMessage } from "@charie/shared";
 import { ThinkingPanel } from "@charie/shared";
 import { ScrollToLatest } from "./ScrollToLatest";
 
@@ -30,16 +32,7 @@ function AssistantStatus({ message }: { message: ChatMessage }) {
   return null;
 }
 
-export function MessageList({
-  messages,
-  thinking,
-  thinkingSummary,
-}: {
-  messages: ChatMessage[];
-  thinking: ThinkingLine[];
-  thinkingSummary: ThinkingSummary | null;
-}) {
-  const lastAssistantId = [...messages].reverse().find((message) => message.role === "assistant")?.id;
+export function MessageList({ messages }: { messages: ChatMessage[] }) {
   const scrollerRef = useRef<HTMLDivElement>(null);
   const [stuck, setStuck] = useState(true);
 
@@ -85,17 +78,14 @@ export function MessageList({
                   <LogoMark size={26} />
                 </span>
                 <div className="min-w-0 flex-1">
-                  {message.id === lastAssistantId && thinking.length > 0 && (
+                  {message.thinking.length > 0 && (
                     <ThinkingPanel
-                      lines={thinking}
-                      summary={thinkingSummary}
+                      lines={message.thinking}
+                      summary={message.summary}
                       panelId={`thinking-${message.id}`}
                     />
                   )}
                   <AssistantStatus message={message} />
-                  {message.text !== "" && (
-                    <p className="text-[15.5px] whitespace-pre-wrap">{message.text}</p>
-                  )}
                 </div>
               </div>
             ),

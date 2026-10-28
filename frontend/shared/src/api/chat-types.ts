@@ -149,14 +149,29 @@ export interface Answer {
   blocks: AnswerBlock[];
 }
 
-export interface ChatMessage {
+// Message shapes from the P10.1 contract: the user message carries
+// the question text; the assistant message carries the thinking
+// lines, the summary (null until the message ends) and the saved
+// answer (or null).
+export interface UserMessage {
   id: number;
-  role: "user" | "assistant";
+  role: "user";
   text: string;
-  answer?: Answer;
+  status: MessageStatus;
+  started_at: string;
+}
+
+export interface AssistantMessage {
+  id: number;
+  role: "assistant";
   status: MessageStatus;
   mode: MessageMode;
+  answer: Answer | null;
+  thinking: ThinkingLine[];
+  summary: ThinkingSummary | null;
 }
+
+export type ChatMessage = UserMessage | AssistantMessage;
 
 export interface Chat {
   id: number;
@@ -164,6 +179,4 @@ export interface Chat {
   created_at: string;
   updated_at: string;
   messages: ChatMessage[];
-  thinking: ThinkingLine[];
-  thinking_summary: ThinkingSummary | null;
 }
