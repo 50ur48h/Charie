@@ -63,7 +63,7 @@ export function divergingOption(
         formatter: (v: string) =>
           data.highlight?.includes(v) ? `{hl|${v}}` : v,
         rich: {
-          hl: { color: solid(theme.bad), fontWeight: 700, fontSize: 12, fontFamily: theme.font },
+          hl: { color: solid(theme.badInk), fontWeight: 700, fontSize: 12, fontFamily: theme.font },
         },
       },
     },
@@ -74,7 +74,7 @@ export function divergingOption(
         data: items.map((item) => {
           const up = item.value >= 0;
           const hl = data.highlight?.includes(item.name) ?? false;
-          const color = hl ? theme.bad : up ? theme.pos : theme.neg;
+          const color = hl ? theme.badInk : up ? theme.pos : theme.neg;
           const inside = hl && maxAbs > 0 && Math.abs(item.value) >= maxAbs * 0.5;
           return {
             value: item.value,
@@ -87,7 +87,7 @@ export function divergingOption(
               position: inside ? (up ? "insideRight" : "insideLeft") : up ? "right" : "left",
               distance: inside ? 8 : 6,
               formatter: item.label,
-              color: inside ? "#ffffff" : hl ? solid(theme.bad) : theme.muted,
+              color: inside ? "#ffffff" : hl ? solid(theme.badInk) : theme.muted,
               fontWeight: hl ? 700 : 500,
               fontSize: 11.5,
               fontFamily: theme.font,

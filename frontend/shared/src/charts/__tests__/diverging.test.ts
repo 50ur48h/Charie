@@ -11,14 +11,21 @@ describe("divergingOption", () => {
     expect(option.yAxis.data[option.yAxis.data.length - 1]).toBe("Dallas Uptown");
   });
 
-  it("colors highlighted bars with the theme's bad color", () => {
+  it("fills the highlighted bar with bad-ink", () => {
     const option = divergingOption(SALES_CHANGE, light, percentFormat) as {
       series: [{ data: { value: number; itemStyle: { color: unknown } }[] }];
     };
     const downtown = option.series[0].data.find((d) => d.value === -18.2);
     const dallas = option.series[0].data.find((d) => d.value === 14.8);
-    expect(downtown?.itemStyle.color).toBe(light.bad);
-    expect(dallas?.itemStyle.color).not.toBe(light.bad);
+    expect(downtown?.itemStyle.color).toBe(light.badInk);
+    expect(dallas?.itemStyle.color).not.toBe(light.badInk);
+  });
+
+  it("colors the highlighted label with the theme's bad-ink color", () => {
+    const option = divergingOption(SALES_CHANGE, light, percentFormat) as {
+      yAxis: { axisLabel: { rich: { hl: { color: string } } } };
+    };
+    expect(option.yAxis.axisLabel.rich.hl.color).toBe(light.badInk);
   });
 
   it("puts a long highlighted bar's label inside, in white", () => {

@@ -29,6 +29,8 @@ test("keyboard focus is visible on the basic blocks", async ({ page }) => {
 
 test("a wide table scrolls sideways on phones", async ({ page }) => {
   await page.goto(`${CHAT}/__kit`);
+  // Table width depends on the real fonts; fallback metrics can fit.
+  await page.evaluate(() => document.fonts.ready);
   const table = page.locator("#composite-blocks table").first();
   await expect(table).toBeVisible();
   const box = page.locator("#composite-blocks .overflow-x-auto").first();

@@ -99,7 +99,7 @@ export function ChatSidebar({
           active={active === "questions"}
           badge={
             questionCount !== undefined && questionCount > 0 ? (
-              <span className={badgeClass}>
+              <span className={badgeClass} data-on-accent>
                 {questionCount}
                 <span className="sr-only"> waiting</span>
               </span>

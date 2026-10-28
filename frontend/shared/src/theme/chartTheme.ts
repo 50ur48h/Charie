@@ -10,6 +10,9 @@ export interface ChartTheme {
   pos: string;
   neg: string;
   bad: string;
+  badInk: string;
+  goodInk: string;
+  accentInk: string;
   posStrong: string;
   negStrong: string;
   nodeBg: string;
@@ -34,6 +37,9 @@ export function chartTheme(): ChartTheme {
     pos: v("--chart-pos"),
     neg: v("--chart-neg"),
     bad: v("--bad"),
+    badInk: v("--bad-ink"),
+    goodInk: v("--good-ink"),
+    accentInk: v("--accent-ink"),
     posStrong: v("--good"),
     negStrong: v("--bad"),
     nodeBg: v("--surface"),

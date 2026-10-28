@@ -53,7 +53,7 @@ function Figure({
             variant="outline"
             size="sm"
             onClick={() => chartRef.current?.downloadPng(title)}
-            aria-label={`Download ${title} as image`}
+            aria-label={`Download as image: ${title}`}
           >
             <Download />
             Download as image
@@ -149,7 +149,12 @@ export default function ChartsSection() {
           subtitle="1–26 Oct, compared with 1–26 Sep"
           chartRef={treeRef}
         >
-          <div className="overflow-x-auto">
+          <div
+            className="overflow-x-auto"
+            role="region"
+            aria-label="Downtown Austin: where the drop comes from"
+            tabIndex={0}
+          >
             <div className="min-w-[640px]">
               <Chart ref={treeRef} label="Downtown Austin: where the drop comes from" height={380} build={treeBuild} />
             </div>

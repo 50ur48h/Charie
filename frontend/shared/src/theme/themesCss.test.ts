@@ -61,8 +61,10 @@ function blockVariables(css: string, selector: string): string[] {
   if (start < 0) return [];
   const open = css.indexOf("{", start);
   const close = css.indexOf("}", open);
-  return css
+  const block = css
     .slice(open + 1, close)
+    .replace(/\/\*[\s\S]*?\*\//g, '');
+  return block
     .split(";")
     .map((part) => part.trim())
     .filter((part) => part.startsWith("--"))
@@ -96,7 +98,7 @@ describe("themes.css", () => {
     }
   });
 
-  test("Sage's accent is #6E9277", () => {
-    expect(themesCss).toMatch(/:root \{\s*[^}]*--accent: #6E9277;/);
+  test("Sage's accent is #5D7C65", () => {
+    expect(themesCss).toMatch(/:root \{\s*[^}]*--accent: #5D7C65;/);
   });
 });

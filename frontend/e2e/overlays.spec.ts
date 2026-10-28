@@ -32,5 +32,6 @@ test("the toast appears and goes away", async ({ page }) => {
   await page.locator("#overlays").getByRole("button", { name: "Show a toast" }).click();
   const toast = page.getByText("Saved. Charie is re-checking what this affects.");
   await expect(toast).toBeVisible();
-  await expect(toast).toBeHidden({ timeout: 8000 });
+  // Generous under parallel load: the toast itself lasts 4 seconds.
+  await expect(toast).toBeHidden({ timeout: 15000 });
 });

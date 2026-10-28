@@ -73,11 +73,11 @@ function rootNode(): TestNode {
 }
 
 describe("treeOption", () => {
-  it("colors bad nodes with the theme's bad color", () => {
+  it("colors bad values with the theme's bad-ink color", () => {
     const root = rootNode();
-    expect(root.label.rich.v.color).toBe(light.negStrong);
+    expect(root.label.rich.v.color).toBe(light.badInk);
     const pickup = root.children[2];
-    expect(pickup.label.rich.v.color).toBe(light.posStrong);
+    expect(pickup.label.rich.v.color).toBe(light.goodInk);
   });
 
   it("makes boxes wide enough for the longest text", () => {

@@ -28,6 +28,7 @@ export default function KitPage() {
             type="button"
             aria-pressed={theme === t.key}
             onClick={() => setTheme(t.key)}
+            data-on-accent={theme === t.key ? true : undefined}
             className={theme === t.key ? "bg-accent text-white" : "bg-surface-2 text-text-2"}
           >
             {t.name}
