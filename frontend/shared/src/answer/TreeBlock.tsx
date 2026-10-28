@@ -61,7 +61,7 @@ export function TreeBlock({ block }: { block: TreeBlockType }) {
           />
         </div>
       </div>
-      <div className="mt-2">
+      <div className="block-tools mt-2 print:hidden">
         <Button
           variant="outline"
           size="sm"

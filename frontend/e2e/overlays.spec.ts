@@ -32,6 +32,10 @@ test("the toast appears and goes away", async ({ page }) => {
   await page.locator("#overlays").getByRole("button", { name: "Show a toast" }).click();
   const toast = page.getByText("Saved. Charie is re-checking what this affects.");
   await expect(toast).toBeVisible();
+  // Park the cursor away from the fixed bottom toast: sonner intentionally
+  // pauses auto-dismiss while hovered, and the clicked button can sit under
+  // the toast after scroll-into-view on small viewports.
+  await page.mouse.move(8, 8);
   // Generous under parallel load: the toast itself lasts 4 seconds.
   await expect(toast).toBeHidden({ timeout: 15000 });
 });

@@ -43,7 +43,7 @@ export function ChartBlock({ block }: { block: ChartBlockType }) {
       <p className="sr-only">
         Data for {block.title}: {chartSummary(block)}.
       </p>
-      <div className="mt-2 flex flex-wrap gap-2 print:hidden">
+      <div className="block-tools mt-2 flex flex-wrap gap-2 print:hidden">
         <Button variant="outline" size="sm" onClick={() => setOpen(true)} aria-label={`Expand: ${block.title}`}>
           <Expand aria-hidden="true" />
           Expand

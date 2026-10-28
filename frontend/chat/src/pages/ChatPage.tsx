@@ -185,7 +185,7 @@ export function ChatPage() {
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="chat-page flex h-full min-h-0 flex-col">
       <ChatHeader title={chat.title} />
       <MessageList
         messages={chat.messages}
