@@ -1,13 +1,13 @@
 /* The 6 Calm themes, copied from docs/designs/calm/calm.css lines 3–67. Sage is the default. */
 :root {
   --bg: #F4F6F1; --sidebar: #EBEFE7; --surface: #FCFDFB; --surface-2: #EDF1EA; --border: #DFE5DA; --border-soft: #E9EDE5;
-  --text: #232A22; --text-2: #3F4A3D; --prose: #262D25; --muted: #6E786B; --muted-2: #BFC8BA; --placeholder: #98A294;
-  --accent: #6E9277; --accent-ink: #3F6448; --accent-soft: #E1ECE2; --accent-hover: #5E8267;
+  --text: #232A22; --text-2: #3F4A3D; --prose: #262D25; --muted: #646D61; --muted-2: #BFC8BA; --placeholder: #98A294; /* P02.11: AA contrast */
+  --accent: #5D7C65; --accent-ink: #3F6448; --accent-soft: #E1ECE2; --accent-hover: #4E6B55; /* P02.11: AA contrast */ /* P02.11: AA contrast */
   --bubble: #E3E9DE; --head-hover: #E3E9DF; --focus: #C6D3C3; --shadow-rgb: 40, 60, 40;
   --good: #4E8A5E; --good-ink: #3B6E49; --good-soft: #DFEEE2; --bad: #C2554A; --bad-ink: #9C3A30; --bad-soft: #F6E1DD;
   --warn: #B08A2E; --warn-ink: #7E6114; --warn-soft: #F3EBD5;
   --code-bg: #26302A; --code-ink: #E8EFE6; --code-kw: #A8CBB0; --code-str: #E6C99A;
-  --chart-pos: #B5CDB9; --chart-neg: #EBC2BB; --chart-grid: #E2E7DD; --chart-muted: #7A8477; --chart-edge: #CBD5C7;
+  --chart-pos: #B5CDB9; --chart-neg: #EBC2BB; --chart-grid: #E2E7DD; --chart-muted: #6D766A; --chart-edge: #CBD5C7; /* P02.11: AA contrast */
   --radius: 16px; --radius-sm: 11px;
   --font: 'Inter', 'Segoe UI', system-ui, sans-serif;
   --font-prose: 'Source Serif 4', Georgia, serif;
@@ -16,51 +16,51 @@
 }
 :root[data-theme="lavender"] {
   --bg: #F6F5FA; --sidebar: #EEECF6; --surface: #FDFCFF; --surface-2: #EFEDF7; --border: #E2DFEE; --border-soft: #ECEAF4;
-  --text: #26233A; --text-2: #45405E; --prose: #29263D; --muted: #77728E; --muted-2: #C7C2DA; --placeholder: #A29DB8;
-  --accent: #8A7FC4; --accent-ink: #5B4FA0; --accent-soft: #EAE7F8; --accent-hover: #7A6FB5;
+  --text: #26233A; --text-2: #45405E; --prose: #29263D; --muted: #6C6781; --muted-2: #C7C2DA; --placeholder: #A29DB8; /* P02.11: AA contrast */
+  --accent: #776ABA; --accent-ink: #5B4FA0; --accent-soft: #EAE7F8; --accent-hover: #675BAA; /* P02.11: AA contrast */ /* P02.11: AA contrast */
   --bubble: #E8E5F3; --head-hover: #E6E3F2; --focus: #CFC9E8; --shadow-rgb: 50, 40, 90;
-  --good: #4F9B78; --good-ink: #3A7A5C; --good-soft: #E0F1E8; --bad: #C9566A; --bad-ink: #A13B4E; --bad-soft: #F8E2E7;
+  --good: #4F9B78; --good-ink: #387558; --good-soft: #E0F1E8; --bad: #C9566A; --bad-ink: #A13B4E; --bad-soft: #F8E2E7; /* P02.11: AA contrast */
   --warn: #B88A2E; --warn-ink: #84630F; --warn-soft: #F5ECD6;
   --code-bg: #2A2640; --code-ink: #ECEAF6; --code-kw: #C9BFF5; --code-str: #F2C9A0;
-  --chart-pos: #C6BFEA; --chart-neg: #F0C3CC; --chart-grid: #E5E2F0; --chart-muted: #827D99; --chart-edge: #D3CEE6;
+  --chart-pos: #C6BFEA; --chart-neg: #F0C3CC; --chart-grid: #E5E2F0; --chart-muted: #75708E; --chart-edge: #D3CEE6; /* P02.11: AA contrast */
 }
 :root[data-theme="mist"] {
   --bg: #F3F6F9; --sidebar: #E9EEF4; --surface: #FCFDFE; --surface-2: #ECF1F6; --border: #DCE3EB; --border-soft: #E7ECF2;
-  --text: #1F2833; --text-2: #3B4756; --prose: #222B36; --muted: #6C7887; --muted-2: #BAC5D2; --placeholder: #95A1B0;
-  --accent: #6286B0; --accent-ink: #3D618C; --accent-soft: #E1EAF5; --accent-hover: #5476A0;
+  --text: #1F2833; --text-2: #3B4756; --prose: #222B36; --muted: #616B79; --muted-2: #BAC5D2; --placeholder: #95A1B0; /* P02.11: AA contrast */
+  --accent: #5277A3; --accent-ink: #3D618C; --accent-soft: #E1EAF5; --accent-hover: #4A688D; /* P02.11: AA contrast */ /* P02.11: AA contrast */
   --bubble: #E2E9F2; --head-hover: #E1E8F1; --focus: #C3D1E2; --shadow-rgb: 30, 45, 70;
   --good: #4C9472; --good-ink: #377456; --good-soft: #DFF0E7; --bad: #CB5C5C; --bad-ink: #A23F3F; --bad-soft: #F8E2E2;
   --warn: #B98A31; --warn-ink: #85621A; --warn-soft: #F5ECD8;
   --code-bg: #1F2A37; --code-ink: #E3EAF2; --code-kw: #A9C6E8; --code-str: #F0C99A;
-  --chart-pos: #B3C8E2; --chart-neg: #EDC0C0; --chart-grid: #E0E6ED; --chart-muted: #788494; --chart-edge: #C9D4E1;
+  --chart-pos: #B3C8E2; --chart-neg: #EDC0C0; --chart-grid: #E0E6ED; --chart-muted: #697584; --chart-edge: #C9D4E1; /* P02.11: AA contrast */
 }
 :root[data-theme="seafoam"] {
   --bg: #F2F7F6; --sidebar: #E7F0EE; --surface: #FBFDFD; --surface-2: #EAF2F0; --border: #DAE6E3; --border-soft: #E6EEEC;
-  --text: #1E2B29; --text-2: #3A4B48; --prose: #212E2C; --muted: #6A7B78; --muted-2: #B7C9C5; --placeholder: #92A5A1;
-  --accent: #5A9E96; --accent-ink: #36756D; --accent-soft: #DDEFEC; --accent-hover: #4C8E86;
+  --text: #1E2B29; --text-2: #3A4B48; --prose: #212E2C; --muted: #5F6E6B; --muted-2: #B7C9C5; --placeholder: #92A5A1; /* P02.11: AA contrast */
+  --accent: #487E78; --accent-ink: #35736B; --accent-soft: #DDEFEC; --accent-hover: #3B6D67; /* P02.11: AA contrast */ /* P02.11: AA contrast */ /* P02.11: AA contrast */
   --bubble: #E0ECE9; --head-hover: #DFEBE8; --focus: #BFD6D1; --shadow-rgb: 30, 60, 55;
   --good: #4E9A6B; --good-ink: #3A7752; --good-soft: #E0F1E6; --bad: #CC6155; --bad-ink: #A2463B; --bad-soft: #F8E3DF;
   --warn: #B98C33; --warn-ink: #85641A; --warn-soft: #F5EDD8;
   --code-bg: #1F2E2C; --code-ink: #E2EFEC; --code-kw: #9FD5CD; --code-str: #F0CB9B;
-  --chart-pos: #ACD6D0; --chart-neg: #EEC3BC; --chart-grid: #DFE9E6; --chart-muted: #778885; --chart-edge: #C4D9D4;
+  --chart-pos: #ACD6D0; --chart-neg: #EEC3BC; --chart-grid: #DFE9E6; --chart-muted: #687674; --chart-edge: #C4D9D4; /* P02.11: AA contrast */
 }
 :root[data-theme="mauve"] {
   --bg: #F9F5F6; --sidebar: #F2EBED; --surface: #FFFCFD; --surface-2: #F3ECEE; --border: #E8DDE1; --border-soft: #F0E8EB;
-  --text: #2E2327; --text-2: #4F3F45; --prose: #31262A; --muted: #806E75; --muted-2: #D2C2C8; --placeholder: #AD9CA3;
-  --accent: #A97887; --accent-ink: #7D4E5C; --accent-soft: #F3E5EA; --accent-hover: #996878;
+  --text: #2E2327; --text-2: #4F3F45; --prose: #31262A; --muted: #76656C; --muted-2: #D2C2C8; --placeholder: #AD9CA3; /* P02.11: AA contrast */
+  --accent: #9D6576; --accent-ink: #7D4E5C; --accent-soft: #F3E5EA; --accent-hover: #875B69; /* P02.11: AA contrast */ /* P02.11: AA contrast */
   --bubble: #EFE4E8; --head-hover: #EEE2E6; --focus: #DCC8CF; --shadow-rgb: 70, 40, 50;
   --good: #4E9572; --good-ink: #3A7456; --good-soft: #E0F0E7; --bad: #C4533F; --bad-ink: #9B3B2A; --bad-soft: #F7E1DB;
   --warn: #B88B30; --warn-ink: #84631A; --warn-soft: #F5ECD7;
   --code-bg: #2F2428; --code-ink: #F2E8EB; --code-kw: #E3B6C3; --code-str: #E8CF9E;
-  --chart-pos: #CFC0D3; --chart-neg: #F0C9BD; --chart-grid: #ECE2E5; --chart-muted: #8A7980; --chart-edge: #DCCBD1;
+  --chart-pos: #CFC0D3; --chart-neg: #F0C9BD; --chart-grid: #ECE2E5; --chart-muted: #7F6F76; --chart-edge: #DCCBD1; /* P02.11: AA contrast */
 }
 :root[data-theme="slate"] {
   --bg: #F5F5F4; --sidebar: #ECECEA; --surface: #FDFDFC; --surface-2: #EEEEEC; --border: #E0E0DD; --border-soft: #EAEAE7;
-  --text: #222324; --text-2: #3F4143; --prose: #242526; --muted: #6F7275; --muted-2: #C2C4C6; --placeholder: #9C9EA0;
+  --text: #222324; --text-2: #3F4143; --prose: #242526; --muted: #676A6C; --muted-2: #C2C4C6; --placeholder: #9C9EA0; /* P02.11: AA contrast */
   --accent: #5F6B7A; --accent-ink: #3E4855; --accent-soft: #E5E8EC; --accent-hover: #525D6B;
   --bubble: #E6E6E3; --head-hover: #E5E5E2; --focus: #CBCDD0; --shadow-rgb: 35, 38, 42;
   --good: #4D8F6C; --good-ink: #3A7054; --good-soft: #E0EFE6; --bad: #C25450; --bad-ink: #9A3B38; --bad-soft: #F6E1E0;
   --warn: #B48A35; --warn-ink: #81621C; --warn-soft: #F3EBD8;
   --code-bg: #26282B; --code-ink: #E8E9EA; --code-kw: #B5C1D0; --code-str: #E9CC9F;
-  --chart-pos: #BCC4CE; --chart-neg: #EBC3C1; --chart-grid: #E4E4E1; --chart-muted: #7A7D80; --chart-edge: #CFD2D5;
+  --chart-pos: #BCC4CE; --chart-neg: #EBC3C1; --chart-grid: #E4E4E1; --chart-muted: #717477; --chart-edge: #CFD2D5; /* P02.11: AA contrast */
 }

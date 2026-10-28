@@ -54,7 +54,7 @@ export function barOption(data: BarData, theme: ChartTheme, format: ChartFormat)
         formatter: (v: string) =>
           data.highlight?.includes(v) ? `{hl|${v}}` : v,
         rich: {
-          hl: { color: solid(theme.accent), fontWeight: 700, fontSize: 12, fontFamily: theme.font },
+          hl: { color: solid(theme.accentInk), fontWeight: 700, fontSize: 12, fontFamily: theme.font },
         },
       },
     },
@@ -74,7 +74,7 @@ export function barOption(data: BarData, theme: ChartTheme, format: ChartFormat)
               position: inside ? "insideRight" : "right",
               distance: inside ? 8 : 6,
               formatter: item.label,
-              color: inside ? "#ffffff" : hl ? solid(theme.accent) : theme.muted,
+              color: inside ? "#ffffff" : hl ? solid(theme.accentInk) : theme.muted,
               fontWeight: hl ? 700 : 500,
               fontSize: 11.5,
               fontFamily: theme.font,

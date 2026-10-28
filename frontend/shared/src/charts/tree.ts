@@ -88,6 +88,12 @@ export function treeOption(nodes: TreeNode[], theme: ChartTheme): EChartsCoreOpt
         : node.tone === "good"
           ? solid(theme.posStrong)
           : theme.muted;
+  const inkOf = (node: BuiltTreeNode): string =>
+    node.highlight || node.tone === "bad"
+      ? solid(theme.badInk)
+      : node.tone === "good"
+        ? solid(theme.goodInk)
+        : theme.muted;
   const convert = (node: BuiltTreeNode): EChartTreeNode => {
     const c = colorOf(node);
     return {
@@ -120,7 +126,7 @@ export function treeOption(nodes: TreeNode[], theme: ChartTheme): EChartsCoreOpt
             align: "center",
           },
           v: {
-            color: c,
+            color: inkOf(node),
             fontSize: 12.5,
             fontWeight: 700,
             lineHeight: 17,

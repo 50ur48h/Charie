@@ -100,7 +100,7 @@ export function LearnerSidebar({
           active={active === "knowledge"}
           badge={
             reviewCount !== undefined && reviewCount > 0 ? (
-              <span className={badgeClass}>
+              <span className={badgeClass} data-on-accent>
                 {reviewCount}
                 <span className="sr-only"> to review</span>
               </span>

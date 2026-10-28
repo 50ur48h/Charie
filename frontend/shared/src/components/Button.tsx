@@ -42,7 +42,14 @@ export interface ButtonProps
 
 export function Button({ variant, size, block, asChild, className, type = "button", ...props }: ButtonProps) {
   const Comp = asChild ? SlotPrimitive.Slot : "button";
-  return <Comp type={type} className={cn(buttonVariants({ variant, size, block }), className)} {...props} />;
+  return (
+    <Comp
+      type={type}
+      data-on-accent={(variant ?? "primary") === "primary" ? true : undefined}
+      className={cn(buttonVariants({ variant, size, block }), className)}
+      {...props}
+    />
+  );
 }
 
 export function IconButton({

@@ -101,7 +101,7 @@ test("Download as image saves a PNG", async ({ page }) => {
   const downloadPromise = page.waitForEvent("download");
   await page
     .locator('[data-figure="Sales change by restaurant"]')
-    .getByRole("button", { name: "Download Sales change by restaurant as image" })
+    .getByRole("button", { name: "Download as image: Sales change by restaurant" })
     .click();
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toBe("sales-change-by-restaurant.png");

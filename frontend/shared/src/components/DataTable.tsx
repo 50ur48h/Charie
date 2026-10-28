@@ -20,7 +20,7 @@ export function DataTable<T>({
   const table = useReactTable({ columns, data, getCoreRowModel: getCoreRowModel() });
   const width = table.getAllLeafColumns().length;
   return (
-    <div className="overflow-x-auto">
+    <div className="overflow-x-auto" role="region" aria-label={caption} tabIndex={0}>
       <table className="w-full border-collapse text-sm tabular-nums [ &_tr:last-child_td]:border-b-0">
         <caption className="sr-only">{caption}</caption>
         <thead>
