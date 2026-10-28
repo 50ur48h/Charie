@@ -14,7 +14,7 @@ describe("thinking", () => {
     let state = updateThinking(emptyThinking(), { type: "line", line: line(1, "Reading") });
     state = updateThinking(state, {
       type: "line",
-      line: { seq: 1, kind: "query", status: "done", title: "Read the sales" },
+      line: { seq: 1, kind: "query", status: "done", title: "Read the sales", at: "2025-10-26T12:00:00Z" },
     });
     expect(state.lines).toHaveLength(1);
     expect(state.lines[0]).toMatchObject({ seq: 1, status: "done", title: "Read the sales" });

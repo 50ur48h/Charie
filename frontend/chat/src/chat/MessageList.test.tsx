@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, test } from "vitest";
-import type { ChatMessage } from "@charie/shared";
+import type { ChatMessage, ThinkingStatus } from "@charie/shared";
 import { MessageList } from "./MessageList";
 
 afterEach(cleanup);
@@ -24,7 +24,7 @@ function assistantMessage(
       ...line,
       kind: "step" as const,
       // Line states are running/done/failed; only messages are "thinking".
-      status: (status === "thinking" ? "running" : "done") as const,
+      status: (status === "thinking" ? "running" : "done") as ThinkingStatus,
       at: "2025-10-26T12:00:00Z",
     })),
     summary: null,
