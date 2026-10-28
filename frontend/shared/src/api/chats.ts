@@ -31,6 +31,8 @@ export function useSendMessage() {
       }),
     onSuccess: (_data, { chatId }) => {
       void client.invalidateQueries({ queryKey: ["chat", chatId] });
+      // Answering (even a quick choice) can resolve a waiting question.
+      void client.invalidateQueries({ queryKey: ["status"] });
     },
   });
 }
@@ -68,6 +70,36 @@ export function useWrongMessage() {
         method: "POST",
         body: { correction },
       }),
+  });
+}
+
+// PATCH /api/chats/{id} { title } (architecture 09). A blank title never
+// reaches the server: the rename dialog rejects it first.
+export function useRenameChat() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ chatId, title }: { chatId: number; title: string }) =>
+      apiFetch<ChatSummary>(`/api/chats/${chatId}`, {
+        method: "PATCH",
+        body: { title },
+      }),
+    onSuccess: (_data, { chatId }) => {
+      void client.invalidateQueries({ queryKey: ["chats"] });
+      void client.invalidateQueries({ queryKey: ["chat", chatId] });
+    },
+  });
+}
+
+// DELETE /api/chats/{id} (architecture 09). The server refuses a chat with
+// a running answer; the caller keeps the chat and says so.
+export function useDeleteChat() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (chatId: number) =>
+      apiFetch<{ ok: true }>(`/api/chats/${chatId}`, { method: "DELETE" }),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ["chats"] });
+    },
   });
 }
 

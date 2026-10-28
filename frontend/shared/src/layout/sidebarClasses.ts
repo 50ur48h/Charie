@@ -1,5 +1,5 @@
 // Tailwind copies of the design's sidebar classes (calm.css "App frame").
-// Internal to layout/; not exported from the package index.
+// Shared with the chat app ChatList so rows and labels match the sidebar.
 
 export function navLinkClass(active?: boolean): string {
   return active

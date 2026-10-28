@@ -2,7 +2,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } fr
 import { setupServer } from "msw/node";
 import { SESSION_KEY, handlers } from "./handlers";
 import type { ChatSummary } from "../api/types";
-import { resetMockChats } from "./sampleChat";
+import { resetMockChats, setMockQuestionsWaiting } from "./sampleChat";
 
 const server = setupServer(...handlers);
 
@@ -171,6 +171,59 @@ describe("mock handlers", () => {
     });
     const missing = await post("/api/messages/999/finish", {});
     expect(missing.status).toBe(404);
+  });
+
+  test("PATCH /api/chats/:id renames, rejects blank titles and unknown chats", async () => {
+    await signIn();
+    const renamed = await fetch(`${APP}/api/chats/1`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: "  Fresh title  " }),
+    });
+    expect(renamed.status).toBe(200);
+    await expect(renamed.json()).resolves.toMatchObject({ id: 1, title: "Fresh title" });
+    const list = (await (await fetch(`${APP}/api/chats`)).json()) as ChatSummary[];
+    expect(list.find((chat) => chat.id === 1)?.title).toBe("Fresh title");
+    const blank = await fetch(`${APP}/api/chats/1`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: "   " }),
+    });
+    expect(blank.status).toBe(400);
+    await expect(blank.json()).resolves.toMatchObject({ error: "empty_title" });
+    const missing = await fetch(`${APP}/api/chats/999`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: "Gone" }),
+    });
+    expect(missing.status).toBe(404);
+  });
+
+  test("DELETE /api/chats/:id refuses a running answer, then deletes", async () => {
+    await signIn();
+    const created = (await (await post("/api/chats", {})).json()) as ChatSummary;
+    await post(`/api/chats/${created.id}/messages`, { text: "Still thinking?", mode: "thinking" });
+    const refused = await fetch(`${APP}/api/chats/${created.id}`, { method: "DELETE" });
+    expect(refused.status).toBe(409);
+    await expect(refused.json()).resolves.toMatchObject({ error: "chat_running" });
+    const gone = await fetch(`${APP}/api/chats/${created.id}`);
+    expect(gone.status).toBe(200);
+    await post("/api/messages/1001/finish", {});
+    const deleted = await fetch(`${APP}/api/chats/${created.id}`, { method: "DELETE" });
+    expect(deleted.status).toBe(200);
+    const list = (await (await fetch(`${APP}/api/chats`)).json()) as ChatSummary[];
+    expect(list.some((chat) => chat.id === created.id)).toBe(false);
+    const detail = await fetch(`${APP}/api/chats/${created.id}`);
+    expect(detail.status).toBe(404);
+    const missing = await fetch(`${APP}/api/chats/999`, { method: "DELETE" });
+    expect(missing.status).toBe(404);
+  });
+
+  test("GET /api/status reports the overridden waiting count", async () => {
+    await signIn();
+    setMockQuestionsWaiting(1);
+    const response = await fetch(`${APP}/api/status`);
+    await expect(response.json()).resolves.toMatchObject({ questions_waiting: 1 });
   });
 
   test("POST /api/chats needs a session", async () => {

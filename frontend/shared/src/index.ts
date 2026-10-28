@@ -31,6 +31,7 @@ export * from "./layout/appLinks";
 export * from "./layout/ChatSidebar";
 export * from "./layout/LearnerSidebar";
 export * from "./layout/AppShell";
+export * from "./layout/sidebarClasses";
 export * from "./layout/useSidebarHidden";
 export * from "./layout/MobileDrawer";
 export * from "./theme/chartTheme";

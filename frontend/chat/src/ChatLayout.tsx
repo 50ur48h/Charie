@@ -3,10 +3,13 @@ import {
   AppShell,
   ChatSidebar,
   useChats,
+  useStatus,
   useSidebarHidden,
   type ChatListState,
   type ChatSidebarPage,
 } from "@charie/shared";
+import { groupChats } from "./chat/groupChats";
+import { ChatList } from "./chat/ChatList";
 
 function pageFromPath(pathname: string): ChatSidebarPage | undefined {
   if (pathname.startsWith("/questions")) return "questions";
@@ -21,23 +24,17 @@ export function ChatLayout() {
   const { chatId } = useParams();
   const { pathname } = useLocation();
   const chatsQuery = useChats();
+  const statusQuery = useStatus();
   const chats: ChatListState = chatsQuery.isPending
     ? { status: "loading" }
     : chatsQuery.isError
       ? { status: "error", onRetry: () => void chatsQuery.refetch() }
       : {
           status: "ready",
-          groups:
-            chatsQuery.data.length > 0
-              ? [
-                  {
-                    chats: chatsQuery.data.map((chat) => ({
-                      id: chat.id,
-                      title: chat.title,
-                    })),
-                  },
-                ]
-              : [],
+          groups: groupChats(chatsQuery.data).map((group) => ({
+            label: group.label,
+            chats: group.chats.map((chat) => ({ id: chat.id, title: chat.title })),
+          })),
         };
   return (
     <AppShell
@@ -48,7 +45,9 @@ export function ChatLayout() {
         <ChatSidebar
           active={pageFromPath(pathname)}
           activeChatId={chatId === undefined ? undefined : Number(chatId)}
+          questionCount={statusQuery.data?.questions_waiting}
           chats={chats}
+          renderChats={(groups, activeId) => (<ChatList groups={groups} activeChatId={activeId} />)}
           onHide={place === "column" ? () => setHidden(true) : undefined}
         />
       )}
