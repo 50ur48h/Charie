@@ -4,12 +4,15 @@
 // the UI visibly streams. Test faults come from localStorage
 // "charie-mock-stream-fault": {"dropAfter": n} closes the first
 // connection after n events (the reconnect replays the rest),
-// {"errorCode", "errorMessage"} sends an error event, holds, then
-// finishes normally. Connections are counted in
-// "charie-mock-stream-opens".
+// {"stallAfter": n} hangs the first connection after n events (a reload
+// resumes from scratch), {"errorCode", "errorMessage"} sends an error
+// event, holds, then finishes normally. Connections are counted in
+// "charie-mock-stream-opens". Messages with no running answer (static
+// seeds, finished answers) get an immediate done: like the real back
+// end, there is nothing live to stream for them.
 import type { Answer } from "../api/chat-types";
 import type { ThinkingLine, ThinkingSummary } from "../answer/thinking";
-import { findMockAssistant, storeMockAnswer } from "./sampleChat";
+import { findMockAssistant, isMockMessageRunning, storeMockAnswer } from "./sampleChat";
 
 const FAULT_KEY = "charie-mock-stream-fault";
 const OPENS_KEY = "charie-mock-stream-opens";
@@ -27,6 +30,8 @@ interface Script {
   events: ScriptEvent[];
   dropAfter: number | null;
   dropped: boolean;
+  stallAfter: number | null;
+  stalled: boolean;
   answer: Answer;
   thinking: ThinkingLine[];
   summary: ThinkingSummary;
@@ -34,14 +39,21 @@ interface Script {
 
 const scripts = new Map<number, Script>();
 
-function readFault(): { dropAfter?: number; errorCode?: string; errorMessage?: string } {
+interface StreamFault {
+  dropAfter?: number;
+  stallAfter?: number;
+  errorCode?: string;
+  errorMessage?: string;
+}
+
+function readFault(): StreamFault {
   try {
     const raw = localStorage.getItem(FAULT_KEY);
     if (!raw) return {};
     localStorage.removeItem(FAULT_KEY);
     const fault = JSON.parse(raw) as unknown;
     if (typeof fault !== "object" || fault === null) return {};
-    return fault as { dropAfter?: number; errorCode?: string; errorMessage?: string };
+    return fault as StreamFault;
   } catch {
     return {};
   }
@@ -125,10 +137,54 @@ function buildScript(messageId: number, question: string): Script {
     dropAfter:
       fault.dropAfter !== undefined && fault.dropAfter < events.length ? fault.dropAfter : null,
     dropped: false,
+    stallAfter:
+      fault.stallAfter !== undefined && fault.stallAfter < events.length ? fault.stallAfter : null,
+    stalled: false,
     answer,
     thinking: [line1, line2],
     summary,
   };
+}
+
+/**
+ * One done event, then close: the message is not running, so there is
+ * nothing to replay. Never saves: static fixtures stay exactly as served.
+ */
+function doneStream(messageId: number, signal: AbortSignal): ReadableStream<Uint8Array> {
+  const encoder = new TextEncoder();
+  const body = encoder.encode(
+    `id: 0\nevent: done\ndata: ${JSON.stringify({ message_id: messageId, status: "done" })}\n\n`,
+  );
+  let sent = false;
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      if (signal.aborted) {
+        try {
+          controller.close();
+        } catch {
+          // Already closed.
+        }
+        return;
+      }
+      const onAbort = (): void => {
+        try {
+          controller.close();
+        } catch {
+          // Already closed.
+        }
+      };
+      signal.addEventListener("abort", onAbort, { once: true });
+      if (!sent) {
+        sent = true;
+        controller.enqueue(body);
+      }
+      try {
+        controller.close();
+      } catch {
+        // Already closed.
+      }
+    },
+  });
 }
 
 /**
@@ -143,6 +199,7 @@ export function openMockStream(
   const ref = findMockAssistant(messageId);
   if (ref === undefined) return null;
   countStreamOpens();
+  if (!isMockMessageRunning(messageId)) return doneStream(messageId, signal);
   const before = ref.chat.messages[ref.index - 1];
   const question =
     before !== undefined && before.role === "user" ? before.text : "your question";
@@ -201,6 +258,12 @@ export function openMockStream(
         controller.enqueue(
           encoder.encode(`id: ${event.id}\nevent: ${event.name}\ndata: ${JSON.stringify(event.data)}\n\n`),
         );
+        // A stall fault hangs the first connection after its events: only
+        // an abort (or a reload, which resumes from scratch) ends it.
+        if (!script.stalled && script.stallAfter !== null && at >= script.stallAfter) {
+          script.stalled = true;
+          return;
+        }
         timer = setTimeout(step, event.holdMs);
       }
       step();

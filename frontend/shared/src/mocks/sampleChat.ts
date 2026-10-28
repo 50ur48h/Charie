@@ -268,6 +268,11 @@ let nextChatId = 100;
 let nextMessageId = 1000;
 let created = new Map<number, Chat>();
 let rehydrated = false;
+// Assistant messages with a genuinely running answer: created by POST and
+// not yet finished or saved. Static seed fixtures never enter this set, so
+// the fake stream can tell a live answer (full script) from an idle one
+// (immediate done) without the production lifecycle knowing about fixtures.
+let running = new Set<number>();
 
 function storage(): Storage | null {
   try {
@@ -283,7 +288,12 @@ function persist(): void {
   try {
     store.setItem(
       STORE_KEY,
-      JSON.stringify({ nextChatId, nextMessageId, created: [...created.values()] }),
+      JSON.stringify({
+        nextChatId,
+        nextMessageId,
+        created: [...created.values()],
+        running: [...running],
+      }),
     );
   } catch {
     // Private browsing: created chats just don't survive a reload.
@@ -302,6 +312,7 @@ function rehydrate(): void {
       nextChatId?: unknown;
       nextMessageId?: unknown;
       created?: unknown;
+      running?: unknown;
     };
     if (
       typeof data.nextChatId !== "number" ||
@@ -312,6 +323,12 @@ function rehydrate(): void {
     }
     nextChatId = data.nextChatId;
     nextMessageId = data.nextMessageId;
+    // Older stores predate the running set: they simply resume nothing.
+    if (Array.isArray(data.running)) {
+      for (const id of data.running) {
+        if (typeof id === "number") running.add(id);
+      }
+    }
     for (const chat of data.created) {
       if (
         typeof chat === "object" &&
@@ -355,6 +372,7 @@ export function forgetMockChats(): void {
   nextChatId = 100;
   nextMessageId = 1000;
   created = new Map();
+  running = new Set();
   rehydrate();
 }
 
@@ -429,6 +447,7 @@ export function finishMockMessage(messageId: number): boolean {
     );
     if (message !== undefined && message.role === "assistant") {
       message.status = "stopped";
+      running.delete(messageId);
       for (const line of message.thinking) {
         if (line.status === "running") line.status = "done";
       }
@@ -465,6 +484,7 @@ export function addMockMessage(
       summary: null,
     },
   );
+  running.add(assistantId);
   created.set(chat.id, chat);
   persist();
   return { user_message_id: userId, assistant_message_id: assistantId };
@@ -480,6 +500,14 @@ export interface MockAssistantRef {
 // Locate an assistant message across seed and created chats (same search
 // pattern as finishMockMessage). Used by the fake stream to play and save
 // a live answer for freshly sent messages.
+// True while an assistant message has a genuinely running answer: sent and
+// neither finished nor saved. Static seeds never qualify, so the fake
+// stream can serve them an immediate done without touching fixtures.
+export function isMockMessageRunning(messageId: number): boolean {
+  rehydrate();
+  return running.has(messageId);
+}
+
 export function findMockAssistant(messageId: number): MockAssistantRef | undefined {
   rehydrate();
   const chats: Chat[] = [...created.values()];
@@ -511,6 +539,7 @@ export function storeMockAnswer(
   if (ref === undefined) return false;
   if (ref.message.status === "stopped") return false;
   ref.message.status = "done";
+  running.delete(messageId);
   ref.message.answer = answer;
   ref.message.thinking = thinking;
   ref.message.summary = summary;
@@ -523,6 +552,7 @@ export function resetMockChats(): void {
   nextChatId = 100;
   nextMessageId = 1000;
   created = new Map();
+  running = new Set();
   rehydrated = true;
   const store = storage();
   if (store === null) return;

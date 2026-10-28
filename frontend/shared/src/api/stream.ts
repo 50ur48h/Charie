@@ -248,8 +248,11 @@ export function useAnswerStream(
           }
         }
       }
+      // A sidebar switch or unmount during these awaits must not let this
+      // completion touch the new chat: re-check the stop flag each time.
       if (doneRef.current && !stopped) {
         await client.invalidateQueries({ queryKey: ["chat", chatId] });
+        if (stopped) return;
         await onDoneRef.current();
       }
     }
