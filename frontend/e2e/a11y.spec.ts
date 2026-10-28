@@ -22,6 +22,22 @@ async function themedSession(page: Page, theme: string): Promise<void> {
 }
 
 for (const theme of THEMES) {
+  test(`login pages have no axe problems in ${theme} while logged out`, async ({
+    page,
+  }) => {
+    await page.addInitScript((t: string) => {
+      localStorage.setItem("charie-theme", t);
+    }, theme);
+    for (const app of [CHAT, LEARNER]) {
+      await page.goto(`${app}/login`);
+      await expect(page).toHaveURL(`${app}/login`);
+      await expect(
+        page.getByRole("heading", { name: "Welcome back" }),
+      ).toBeVisible();
+      await check(page);
+    }
+  });
+
   test(`no axe problems in ${theme}`, async ({ page }) => {
     await themedSession(page, theme);
     await page.goto(`${CHAT}/__kit`);
@@ -30,10 +46,6 @@ for (const theme of THEMES) {
     await page.goto(`${CHAT}/__kit/chat-frame`);
     await check(page);
     await page.goto(`${CHAT}/__kit/learner-frame`);
-    await check(page);
-    await page.goto(`${CHAT}/login`);
-    await check(page);
-    await page.goto(`${LEARNER}/login`);
     await check(page);
     await page.goto(`${CHAT}/usage`);
     await check(page);
