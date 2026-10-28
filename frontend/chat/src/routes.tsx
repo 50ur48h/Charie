@@ -1,12 +1,16 @@
 import type { RouteObject } from "react-router";
-import { NotFoundPage, PlaceholderPage } from "@charie/shared";
+import { LoginPage, NotFoundPage, PlaceholderPage, RequireLogin } from "@charie/shared";
 import { ChatLayout, ChatThreadPage, NewChatPage } from "./ChatLayout";
 
 const KIT_ENABLED = import.meta.env.DEV || import.meta.env.VITE_MOCK === "1";
 
 export const routes: RouteObject[] = [
   {
-    element: <ChatLayout />,
+    element: (
+      <RequireLogin>
+        <ChatLayout />
+      </RequireLogin>
+    ),
     children: [
       { index: true, element: <NewChatPage /> },
       { path: "chat/:chatId", element: <ChatThreadPage /> },
@@ -53,6 +57,7 @@ export const routes: RouteObject[] = [
       { path: "*", element: <NotFoundPage app="chat" /> },
     ],
   },
+  { path: "login", element: <LoginPage app="chat" /> },
   // Kit pages render outside the app frame: the frame demos bring their own.
   ...(KIT_ENABLED
     ? [

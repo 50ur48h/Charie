@@ -1,10 +1,14 @@
 import { Navigate, type RouteObject } from "react-router";
-import { NotFoundPage, PlaceholderPage } from "@charie/shared";
+import { LoginPage, NotFoundPage, PlaceholderPage, RequireLogin } from "@charie/shared";
 import { LearnerLayout } from "./LearnerLayout";
 
 export const routes: RouteObject[] = [
   {
-    element: <LearnerLayout />,
+    element: (
+      <RequireLogin>
+        <LearnerLayout />
+      </RequireLogin>
+    ),
     children: [
       { index: true, element: <Navigate to="setup" replace /> },
       {
@@ -50,4 +54,5 @@ export const routes: RouteObject[] = [
       { path: "*", element: <NotFoundPage app="learner" /> },
     ],
   },
+  { path: "login", element: <LoginPage app="learner" /> },
 ];
