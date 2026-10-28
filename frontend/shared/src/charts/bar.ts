@@ -8,8 +8,12 @@ export interface BarData {
   highlight?: string[];
 }
 
-export function barOption(data: BarData, theme: ChartTheme, format: ChartFormat): EChartsCoreOption {
-  const items = data.items.slice().sort((a, b) => a.value - b.value);
+export function barOption(data: BarData, theme: ChartTheme, format: ChartFormat, preserveOrder = false): EChartsCoreOption {
+  // Kit demos sort largest-on-top; answer charts pass preserveOrder to
+  // keep the server category order instead.
+  const items = preserveOrder
+    ? data.items.slice()
+    : data.items.slice().sort((a, b) => a.value - b.value);
   const values = items.map((i) => i.value);
   const longest = values.reduce((m, v) => Math.max(m, v), 0);
   const step = longest > 0 ? niceStep(longest / 4) : 1;
@@ -25,7 +29,10 @@ export function barOption(data: BarData, theme: ChartTheme, format: ChartFormat)
       ...tooltipStyle(theme),
       trigger: "axis",
       axisPointer: { type: "shadow", shadowStyle: { color: rgba(theme.muted, 0.07) } },
-      valueFormatter: (value: number | string) => tooltipFormat(Number(value)),
+      valueFormatter: (value: number | string, dataIndex?: number) =>
+        dataIndex === undefined
+          ? tooltipFormat(Number(value))
+          : (format.tooltipByIndex?.(dataIndex) ?? tooltipFormat(Number(value))),
     },
     xAxis: {
       type: "value",

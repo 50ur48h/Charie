@@ -33,7 +33,10 @@ export function lineOption(
     tooltip: {
       ...tooltipStyle(theme),
       trigger: "axis",
-      valueFormatter: (value: number | string) => tooltipFormat(Number(value)),
+      valueFormatter: (value: number | string, dataIndex?: number) =>
+        dataIndex === undefined
+          ? tooltipFormat(Number(value))
+          : (format.tooltipByIndex?.(dataIndex) ?? tooltipFormat(Number(value))),
     },
     xAxis: {
       type: "category",

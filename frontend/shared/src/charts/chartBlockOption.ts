@@ -1,10 +1,11 @@
 // Answer chart blocks (architecture 09) mapped onto the P02 chart kit.
 // Plot v, label f: every business number on screen is the backend's own
-// formatted string. Missing values stay missing (null y is a gap in lines
-// and stacks, a dropped row in bars — never a plotted zero). Rows pass
-// through in server order; the kit's bar sorts are kit design. Axis ticks
-// are scaffolding only (compact per unit) until format.ts arrives with
-// P05.6; tooltips show the supplied f via a value lookup.
+// formatted string. Server category order is preserved (the kit's value
+// sorts stay opt-in for kit demos). Missing values stay missing (null y
+// is a gap in lines and stacks, a dropped row in bars — never a plotted
+// zero). Axis ticks are scaffolding only (compact per unit) until
+// format.ts arrives with P05.6; tooltips show the supplied f by point
+// index, never by value lookup.
 import type { EChartsCoreOption } from "echarts/core";
 import type { ChartTheme } from "../theme/chartTheme";
 import { barOption } from "./bar";
@@ -22,9 +23,15 @@ export const CHART_HEIGHTS: Record<string, number> = {
 };
 
 interface Point {
+  key: string;
   x: string;
   v: number | null;
   f: string;
+}
+
+function cellText(cell: Exclude<Cell, null | undefined>): { key: string; text: string } {
+  if (typeof cell === "object") return { key: String(cell.v), text: cell.f };
+  return { key: String(cell), text: String(cell) };
 }
 
 function pointsOf(block: ChartBlock): Point[] {
@@ -36,23 +43,29 @@ function pointsOf(block: ChartBlock): Point[] {
   for (const row of block.data.rows) {
     const xRaw = row[xIndex];
     if (xRaw === null || xRaw === undefined) continue;
-    const x = typeof xRaw === "string" ? xRaw : String(xRaw);
+    const { key, text } = cellText(xRaw);
     const yRaw: Cell = row[yIndex];
     if (yRaw === null || yRaw === undefined) {
-      points.push({ x, v: null, f: "" });
+      points.push({ key, x: text, v: null, f: "" });
     } else if (typeof yRaw === "object") {
-      points.push({ x, v: yRaw.v, f: yRaw.f });
+      points.push({ key, x: text, v: yRaw.v, f: yRaw.f });
     } else if (typeof yRaw === "number") {
-      points.push({ x, v: yRaw, f: String(yRaw) });
+      points.push({ key, x: text, v: yRaw, f: String(yRaw) });
     } else {
-      points.push({ x, v: null, f: yRaw });
+      points.push({ key, x: text, v: null, f: yRaw });
     }
   }
   return points;
 }
 
+// Trimmed decimals that keep distinct small ticks distinguishable:
+// percent matches the backend's one-decimal labels, ratios keep three.
+function trimDecimals(v: number, places: number): string {
+  return String(parseFloat(v.toFixed(places)));
+}
+
 // Compact axis scaffolding per unit. Tooltips never use this: they show
-// the backend's f through the lookup below.
+// the backend's f through the index lookup below.
 function axisFormat(unit: string, currency?: string): (v: number) => string {
   if (unit === "money") {
     if (currency === undefined) return (v) => fmtNum(v);
@@ -68,17 +81,29 @@ function axisFormat(unit: string, currency?: string): (v: number) => string {
       return (v) => fmtNum(v);
     }
   }
-  if (unit === "percent") return (v) => `${Math.round(v)}%`;
-  if (unit === "ratio") return (v) => `${Math.round(v * 100) / 100}`;
+  if (unit === "percent") return (v) => `${trimDecimals(v, 1)}%`;
+  if (unit === "ratio") return (v) => trimDecimals(v, 3);
   return (v) => fmtNum(v);
 }
 
-function lookupFormat(points: Point[], axis: (v: number) => string): ChartFormat {
+function lookupFormat(
+  shown: { v: number | null; f: string }[],
+  axis: (v: number) => string,
+): ChartFormat {
   const byValue = new Map<number, string>();
-  for (const point of points) {
+  for (const point of shown) {
     if (point.v !== null && !byValue.has(point.v)) byValue.set(point.v, point.f);
   }
-  return { axis, tooltip: (v) => byValue.get(v) ?? axis(v) };
+  return {
+    axis,
+    tooltip: (v) => byValue.get(v) ?? axis(v),
+    tooltipByIndex: (index) => {
+      const point = shown[index];
+      if (point === undefined) return undefined;
+      if (point.v === null) return "No data";
+      return point.f;
+    },
+  };
 }
 
 // B002: the design's fixed axis config crowds value-axis ticks on phones.
@@ -99,14 +124,6 @@ export interface ChartFigure {
   option: EChartsCoreOption;
 }
 
-/** Plain-text data summary for screen readers: "Downtown: −18.2%; …". */
-export function chartSummary(block: ChartBlock): string {
-  return pointsOf(block)
-    .filter((p) => p.f !== "")
-    .map((p) => `${p.x}: ${p.f}`)
-    .join("; ");
-}
-
 /** Map an answer chart block onto a kit option. Null when the kind is unknown. */
 export function buildChartOption(
   block: ChartBlock,
@@ -114,28 +131,24 @@ export function buildChartOption(
 ): ChartFigure | null {
   const points = pointsOf(block);
   const axis = axisFormat(block.unit, block.currency);
-  const format = lookupFormat(points, axis);
   const height = CHART_HEIGHTS[block.kind] ?? 300;
+  const highlighted = (point: Point): boolean =>
+    block.highlight?.includes(point.x) === true ||
+    block.highlight?.includes(point.key) === true;
   switch (block.kind) {
-    case "bar": {
-      const items = points
-        .filter((p) => p.v !== null)
-        .map((p) => ({ name: p.x, value: p.v as number, label: p.f }));
-      return {
-        height,
-        option: narrowTicks(barOption({ items, highlight: block.highlight }, theme, format)),
-      };
-    }
+    case "bar":
     case "bar_diverging": {
-      const items = points
-        .filter((p) => p.v !== null)
-        .map((p) => ({ name: p.x, value: p.v as number, label: p.f }));
-      return {
-        height,
-        option: narrowTicks(
-          divergingOption({ items, highlight: block.highlight }, theme, format),
-        ),
+      const shown = points.filter((p) => p.v !== null);
+      const format = lookupFormat(shown, axis);
+      const data = {
+        items: shown.map((p) => ({ name: p.x, value: p.v as number, label: p.f })),
+        highlight: shown.filter(highlighted).map((p) => p.x),
       };
+      const option =
+        block.kind === "bar"
+          ? barOption(data, theme, format, true)
+          : divergingOption(data, theme, format, true);
+      return { height, option: narrowTicks(option) };
     }
     case "line":
       return {
@@ -146,7 +159,7 @@ export function buildChartOption(
             series: [{ name: block.y, values: points.map((p) => p.v) }],
           },
           theme,
-          format,
+          lookupFormat(points, axis),
         ),
       };
     case "bar_stacked":
@@ -160,10 +173,18 @@ export function buildChartOption(
             series: [{ name: block.y, values: points.map((p) => p.v) }],
           },
           theme,
-          format,
+          lookupFormat(points, axis),
         ),
       };
     default:
       return null;
   }
+}
+
+/** Plain-text data summary for screen readers: "Downtown: −18.2%; …". */
+export function chartSummary(block: ChartBlock): string {
+  return pointsOf(block)
+    .filter((p) => p.f !== "")
+    .map((p) => `${p.x}: ${p.f}`)
+    .join("; ");
 }

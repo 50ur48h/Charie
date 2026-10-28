@@ -34,7 +34,10 @@ export function stackedBarsOption(
       ...tooltipStyle(theme),
       trigger: "axis",
       axisPointer: { type: "shadow", shadowStyle: { color: rgba(theme.muted, 0.07) } },
-      valueFormatter: (value: number | string) => tooltipFormat(Number(value)),
+      valueFormatter: (value: number | string, dataIndex?: number) =>
+        dataIndex === undefined
+          ? tooltipFormat(Number(value))
+          : (format.tooltipByIndex?.(dataIndex) ?? tooltipFormat(Number(value))),
     },
     xAxis: {
       type: "category",

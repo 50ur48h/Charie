@@ -12,8 +12,13 @@ export function divergingOption(
   data: DivergingData,
   theme: ChartTheme,
   format: ChartFormat,
+  preserveOrder = false,
 ): EChartsCoreOption {
-  const items = data.items.slice().sort((a, b) => a.value - b.value);
+  // Kit demos sort by value; answer charts pass preserveOrder to keep
+  // the server category order instead.
+  const items = preserveOrder
+    ? data.items.slice()
+    : data.items.slice().sort((a, b) => a.value - b.value);
   const values = items.map((i) => i.value);
   const maxAbs = values.length ? Math.max(...values.map((v) => Math.abs(v))) : 0;
   const step = maxAbs > 0 ? niceStep(maxAbs / 4) : 1;

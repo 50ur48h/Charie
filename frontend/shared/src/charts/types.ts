@@ -7,6 +7,9 @@ export interface ChartItem {
 export interface ChartFormat {
   axis: (v: number) => string;
   tooltip?: (v: number) => string;
+  // Exact per-point label by series data index. Used by answer charts
+  // so duplicate values keep their own labels; kit demos omit it.
+  tooltipByIndex?: (index: number) => string | undefined;
 }
 
 export interface Series {
