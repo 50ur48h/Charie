@@ -1,15 +1,16 @@
-// One saved answer: reading, text, callout, suggestions and follow-ups
-// render now; cards, charts, tables, trees and method arrive in P03.5-P03.6.
-// Those known-future blocks render nothing until their sub-phase. Anything
-// else logs an error and says it is unsupported.
+// One saved answer: all ten block kinds render in order. Anything else
+// logs an error and says it is unsupported.
 import type { Answer, AnswerBlock } from "./types";
 import { CalloutBlock } from "./CalloutBlock";
+import { ChartBlock } from "./ChartBlock";
 import { FollowUpsBlock } from "./FollowUpsBlock";
+import { KpisBlock } from "./KpisBlock";
+import { MethodBlock } from "./MethodBlock";
 import { ReadingBlock } from "./ReadingBlock";
 import { SuggestionsBlock } from "./SuggestionsBlock";
+import { TableBlock } from "./TableBlock";
 import { TextBlock } from "./TextBlock";
-
-const FUTURE_BLOCKS = new Set(["kpis", "chart", "table", "tree", "method"]);
+import { TreeBlock } from "./TreeBlock";
 
 export function AnswerView({
   answer,
@@ -43,6 +44,7 @@ function AnswerBlockView({
   onFollowUp: (text: string) => void;
   showReading: boolean;
 }) {
+  const kind: string = block.type;
   switch (block.type) {
     case "reading":
       return <ReadingBlock block={block} showReading={showReading} />;
@@ -54,9 +56,18 @@ function AnswerBlockView({
       return <SuggestionsBlock block={block} />;
     case "follow_ups":
       return <FollowUpsBlock block={block} onFollowUp={onFollowUp} />;
+    case "kpis":
+      return <KpisBlock block={block} />;
+    case "chart":
+      return <ChartBlock block={block} />;
+    case "table":
+      return <TableBlock block={block} />;
+    case "tree":
+      return <TreeBlock block={block} />;
+    case "method":
+      return <MethodBlock block={block} />;
     default:
-      if (FUTURE_BLOCKS.has(block.type)) return null;
-      console.error(`Unsupported answer block: ${block.type}`);
+      console.error(`Unsupported answer block: ${kind}`);
       return <p className="text-[14px] text-muted">Unsupported block.</p>;
   }
 }

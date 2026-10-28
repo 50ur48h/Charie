@@ -1,9 +1,13 @@
 import {
   flexRender,
   getCoreRowModel,
+  getSortedRowModel,
   useReactTable,
   type ColumnDef,
+  type SortingState,
 } from "@tanstack/react-table";
+import { useState } from "react";
+import { ArrowDown, ArrowUp } from "lucide-react";
 import { cn } from "./cn";
 
 export function DataTable<T>({
@@ -11,13 +15,27 @@ export function DataTable<T>({
   data,
   empty = "Nothing here yet.",
   caption,
+  sortable = false,
 }: {
   columns: ColumnDef<T>[];
   data: T[];
   empty?: string;
   caption: string;
+  sortable?: boolean;
 }) {
-  const table = useReactTable({ columns, data, getCoreRowModel: getCoreRowModel() });
+  const [sorting, setSorting] = useState<SortingState>([]);
+  const table = useReactTable({
+    columns,
+    data,
+    getCoreRowModel: getCoreRowModel(),
+    ...(sortable
+      ? {
+          getSortedRowModel: getSortedRowModel(),
+          onSortingChange: setSorting,
+          state: { sorting },
+        }
+      : {}),
+  });
   const width = table.getAllLeafColumns().length;
   return (
     <div className="overflow-x-auto" role="region" aria-label={caption} tabIndex={0}>
@@ -26,18 +44,53 @@ export function DataTable<T>({
         <thead>
           {table.getHeaderGroups().map((group) => (
             <tr key={group.id}>
-              {group.headers.map((header) => (
-                <th
-                  key={header.id}
-                  colSpan={header.colSpan}
-                  className={cn(
-                    "whitespace-nowrap border-b border-border px-3 py-2.5 text-left text-xs font-semibold text-muted",
-                    numeric(header.column.columnDef) && "text-right",
-                  )}
-                >
-                  {flexRender(header.column.columnDef.header, header.getContext())}
-                </th>
-              ))}
+              {group.headers.map((header) => {
+                const sorted = header.column.getIsSorted();
+                const num = numeric(header.column.columnDef);
+                const label = flexRender(
+                  header.column.columnDef.header,
+                  header.getContext(),
+                );
+                return (
+                  <th
+                    key={header.id}
+                    colSpan={header.colSpan}
+                    aria-sort={
+                      sortable && sorted
+                        ? sorted === "asc"
+                          ? "ascending"
+                          : "descending"
+                        : undefined
+                    }
+                    className={cn(
+                      "whitespace-nowrap border-b border-border px-3 py-2.5 text-left text-xs font-semibold text-muted",
+                      num && "text-right",
+                    )}
+                  >
+                    {sortable ? (
+                      <button
+                        type="button"
+                        onClick={header.column.getToggleSortingHandler()}
+                        aria-label={
+                          typeof header.column.columnDef.header === "string"
+                            ? `Sort by ${header.column.columnDef.header}`
+                            : `Sort by column ${header.id}`
+                        }
+                        className={cn(
+                          "inline-flex cursor-pointer items-center gap-1 hover:text-text",
+                          num && "float-right",
+                        )}
+                      >
+                        {label}
+                        {sorted === "asc" && <ArrowUp size={13} aria-hidden="true" />}
+                        {sorted === "desc" && <ArrowDown size={13} aria-hidden="true" />}
+                      </button>
+                    ) : (
+                      label
+                    )}
+                  </th>
+                );
+              })}
             </tr>
           ))}
         </thead>

@@ -11,7 +11,8 @@ export interface ChartFormat {
 
 export interface Series {
   name: string;
-  values: number[];
+  // Null plots as a gap: missing values stay missing, never invented zeros.
+  values: (number | null)[];
 }
 
 /** Compact count axis, e.g. 1500 -> "1.5K". */

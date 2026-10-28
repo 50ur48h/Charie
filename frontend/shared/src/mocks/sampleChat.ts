@@ -76,6 +76,14 @@ export function sampleAnswer(messageId: number): Answer {
             direction: "down",
             compare: "vs Sep",
           },
+          {
+            label: "Refund rate",
+            value: "2.1%",
+            change: "−0.4%",
+            direction: "down",
+            compare: "vs Sep",
+          },
+          { label: "New guests", value: "12.4K" },
         ],
       },
       {
@@ -92,6 +100,27 @@ export function sampleAnswer(messageId: number): Answer {
           rows: [
             ["Downtown", { v: -18.2, f: "−18.2%" }],
             ["Uptown", { v: 9.4, f: "+9.4%" }],
+          ],
+        },
+      },
+      {
+        type: "chart",
+        kind: "line",
+        title: "Delivery orders per day",
+        subtitle: "1-7 Oct 2025",
+        x: "day",
+        y: "orders",
+        unit: "count",
+        data: {
+          columns: ["day", "orders"],
+          rows: [
+            ["1 Oct", { v: 301, f: "301" }],
+            ["2 Oct", { v: 287, f: "287" }],
+            ["3 Oct", { v: 224, f: "224" }],
+            ["4 Oct", { v: 342, f: "342" }],
+            ["5 Oct", { v: 358, f: "358" }],
+            ["6 Oct", { v: 295, f: "295" }],
+            ["7 Oct", { v: 310, f: "310" }],
           ],
         },
       },
