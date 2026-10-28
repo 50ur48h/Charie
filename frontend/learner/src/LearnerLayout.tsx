@@ -1,0 +1,29 @@
+import { Outlet, useLocation } from "react-router";
+import {
+  AppShell,
+  LearnerSidebar,
+  useSidebarHidden,
+  type LearnerSidebarPage,
+} from "@charie/shared";
+
+function pageFromPath(pathname: string): LearnerSidebarPage {
+  if (pathname.startsWith("/sources")) return "sources";
+  if (pathname.startsWith("/learning")) return "learning";
+  if (pathname.startsWith("/knowledge")) return "knowledge";
+  return "setup";
+}
+
+export function LearnerLayout() {
+  const [hidden, setHidden] = useSidebarHidden();
+  const { pathname } = useLocation();
+  return (
+    <AppShell
+      app="learner"
+      sidebarHidden={hidden}
+      onShowSidebar={() => setHidden(false)}
+      sidebar={() => <LearnerSidebar active={pageFromPath(pathname)} />}
+    >
+      <Outlet />
+    </AppShell>
+  );
+}

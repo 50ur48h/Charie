@@ -45,11 +45,7 @@ export function ChatFrameDemo() {
         <PageHeader
           title="Usage"
           lead="What Charie's AI has cost this month. Every number here comes from the log of each AI call."
-          actions={
-            <Pill icon={Brain}>
-              Model: Muse Wonder
-            </Pill>
-          }
+          actions={<Pill icon={Brain}>Model: Muse Wonder</Pill>}
         />
         <div className="grid gap-[14px] min-[1000px]:grid-cols-4 grid-cols-2">
           <StatCard label="Spent this month" value="$41.20" foot="1–27 Oct" />

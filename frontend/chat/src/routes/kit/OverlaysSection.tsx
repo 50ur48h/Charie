@@ -11,7 +11,6 @@ import {
   Progress,
   Skeleton,
   Spinner,
-  Toaster,
   Tooltip,
   TooltipProvider,
   toast,
@@ -46,7 +45,10 @@ export default function OverlaysSection() {
               <Download />
             </IconButton>
           </Tooltip>
-          <Button variant="soft" onClick={() => toast("Saved. Charie is re-checking what this affects.")}>
+          <Button
+            variant="soft"
+            onClick={() => toast("Saved. Charie is re-checking what this affects.")}
+          >
             Show a toast
           </Button>
         </div>
@@ -72,7 +74,6 @@ export default function OverlaysSection() {
         <div className="mt-4">
           <Spinner label="Loading" />
         </div>
-        <Toaster />
       </TooltipProvider>
     </KitSection>
   );

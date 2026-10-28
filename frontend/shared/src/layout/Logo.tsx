@@ -1,3 +1,5 @@
+import { Link, useInRouterContext } from "react-router";
+
 export function LogoMark({ size = 28 }: { size?: number }) {
   return (
     <svg
@@ -29,8 +31,10 @@ export function Brand({
   markSize?: number;
   href: string;
 }) {
-  return (
-    <a href={href} className="flex items-center gap-2.5 text-accent">
+  // Plain <a> in the kit (no router there), a router Link inside the apps.
+  const inRouter = useInRouterContext();
+  const inner = (
+    <>
       <LogoMark size={markSize} />
       <span className="font-serif text-[23px] font-semibold tracking-[-0.01em] text-text">
         Charie
@@ -40,6 +44,15 @@ export function Brand({
           Learner
         </span>
       )}
+    </>
+  );
+  return inRouter ? (
+    <Link to={href} className="flex items-center gap-2.5 text-accent">
+      {inner}
+    </Link>
+  ) : (
+    <a href={href} className="flex items-center gap-2.5 text-accent">
+      {inner}
     </a>
   );
 }

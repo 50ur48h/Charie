@@ -1,32 +1,27 @@
-import { StrictMode, Suspense, lazy } from "react";
+import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { fontsReady } from "@charie/shared";
-import App from "./App";
+import { createBrowserRouter, RouterProvider } from "react-router";
+import { AppProviders, fontsReady } from "@charie/shared";
+import { routes } from "./routes";
 import "./index.css";
 
 void fontsReady();
 
-const KIT_ENABLED = import.meta.env.DEV || import.meta.env.VITE_MOCK === "1";
-const KitPage = KIT_ENABLED ? lazy(() => import("./kit/KitPage")) : null;
-const ChatFrameDemo = KIT_ENABLED
-  ? lazy(() => import("./kit/FrameDemos").then((m) => ({ default: m.ChatFrameDemo })))
-  : null;
-const LearnerFrameDemo = KIT_ENABLED
-  ? lazy(() => import("./kit/FrameDemos").then((m) => ({ default: m.LearnerFrameDemo })))
-  : null;
+const IS_MOCK = import.meta.env.VITE_MOCK === "1";
 
-const kitPath = KIT_ENABLED ? window.location.pathname : "";
-const KitScreen =
-  kitPath === "/__kit/chat-frame"
-    ? ChatFrameDemo
-    : kitPath === "/__kit/learner-frame"
-      ? LearnerFrameDemo
-      : kitPath.startsWith("/__kit")
-        ? KitPage
-        : null;
+async function start() {
+  if (IS_MOCK) {
+    // A dynamic import keeps MSW out of the production bundle entirely.
+    const { startMockApi } = await import("@charie/shared/mocks");
+    await startMockApi();
+  }
+  createRoot(document.getElementById("root")!).render(
+    <StrictMode>
+      <AppProviders>
+        <RouterProvider router={createBrowserRouter(routes)} />
+      </AppProviders>
+    </StrictMode>,
+  );
+}
 
-createRoot(document.getElementById("root")!).render(
-  <StrictMode>
-    <Suspense fallback={null}>{KitScreen ? <KitScreen /> : <App />}</Suspense>
-  </StrictMode>,
-);
+void start();

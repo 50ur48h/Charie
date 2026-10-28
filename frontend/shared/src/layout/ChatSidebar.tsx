@@ -7,6 +7,7 @@ import {
   SquarePen,
   type LucideIcon,
 } from "lucide-react";
+import { RouterLink } from "./RouterLink";
 import { Button, IconButton } from "../components/Button";
 import { Skeleton } from "../components/Skeleton";
 import { Brand } from "./Logo";
@@ -38,24 +39,24 @@ export interface SidebarUser {
 }
 
 function NavLink({
-  href,
+  to,
   icon: Icon,
   active,
   badge,
   children,
 }: {
-  href: string;
+  to: string;
   icon: LucideIcon;
   active?: boolean;
   badge?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
-    <a href={href} className={navLinkClass(active)} aria-current={active ? "page" : undefined}>
+    <RouterLink to={to} className={navLinkClass(active)} aria-current={active ? "page" : undefined}>
       <Icon aria-hidden="true" className={navIconClass(active)} />
       {children}
       {badge}
-    </a>
+    </RouterLink>
   );
 }
 
@@ -84,16 +85,16 @@ export function ChatSidebar({
           </IconButton>
         )}
       </div>
-      <a
-        href={chatRoutes.home}
+      <RouterLink
+        to={chatRoutes.home}
         className="flex items-center gap-2.5 rounded-xl border border-border bg-surface px-3 py-2 text-sm font-medium shadow-card transition-[box-shadow,transform] duration-200 hover:-translate-y-px hover:shadow-lift"
       >
         <SquarePen aria-hidden="true" className="[--icon:17px] text-accent" />
         New chat
-      </a>
+      </RouterLink>
       <nav className="mt-2 grid gap-0.5" aria-label="Pages">
         <NavLink
-          href={chatRoutes.questions}
+          to={chatRoutes.questions}
           icon={Inbox}
           active={active === "questions"}
           badge={
@@ -107,15 +108,24 @@ export function ChatSidebar({
         >
           Questions for you
         </NavLink>
-        <NavLink href={chatRoutes.knowledge} icon={BookOpen} active={active === "knowledge"}>
+        <NavLink to={chatRoutes.knowledge} icon={BookOpen} active={active === "knowledge"}>
           Knowledge
         </NavLink>
       </nav>
-      <div className="mt-2.5 grid flex-1 content-start gap-px overflow-auto" aria-label="Chats">
-        {chats.status === "loading" &&
-          Array.from({ length: 5 }, (_, i) => <Skeleton key={i} className="h-[30px] w-full" />)}
+      <div
+        className="mt-2.5 grid flex-1 content-start gap-px overflow-auto"
+        aria-label="Chats"
+        data-testid="chat-list"
+      >
+        {chats.status === "loading" && (
+          <div role="status" aria-label="Loading chats" className="grid content-start gap-px">
+            {Array.from({ length: 5 }, (_, i) => (
+              <Skeleton key={i} className="h-[30px] w-full" />
+            ))}
+          </div>
+        )}
         {chats.status === "error" && (
-          <div className="grid gap-2 px-3 py-2">
+          <div role="alert" className="grid gap-2 px-3 py-2">
             <p className="text-[13px] text-muted">Couldn&apos;t load your chats.</p>
             <Button variant="ghost" size="sm" onClick={chats.onRetry}>
               Try again
@@ -132,14 +142,14 @@ export function ChatSidebar({
                 {group.chats.map((chat) => {
                   const isActive = chat.id === activeChatId;
                   return (
-                    <a
+                    <RouterLink
                       key={chat.id}
-                      href={chatRoutes.chat(chat.id)}
+                      to={chatRoutes.chat(chat.id)}
                       className={chatItemClass(isActive)}
                       aria-current={isActive ? "page" : undefined}
                     >
                       {chat.title}
-                    </a>
+                    </RouterLink>
                   );
                 })}
               </div>
@@ -147,10 +157,10 @@ export function ChatSidebar({
           ))}
       </div>
       <div className="grid gap-0.5 border-t border-border pt-2">
-        <NavLink href={chatRoutes.usage} icon={Gauge} active={active === "usage"}>
+        <NavLink to={chatRoutes.usage} icon={Gauge} active={active === "usage"}>
           Usage
         </NavLink>
-        <NavLink href={chatRoutes.settings} icon={Settings} active={active === "settings"}>
+        <NavLink to={chatRoutes.settings} icon={Settings} active={active === "settings"}>
           Settings
         </NavLink>
         {user && (
