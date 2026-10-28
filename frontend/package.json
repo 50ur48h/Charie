@@ -10,7 +10,9 @@
   ],
   "scripts": {
     "dev:chat": "npm run dev -w @charie/chat",
+    "dev:chat:mock": "npm run dev:mock -w @charie/chat",
     "dev:learner": "npm run dev -w @charie/learner",
+    "dev:learner:mock": "npm run dev:mock -w @charie/learner",
     "build": "npm run build -w @charie/chat && npm run build -w @charie/learner && node scripts/check-prod-build.mjs",
     "build:mock": "npm run build:mock -w @charie/chat && npm run build:mock -w @charie/learner",
     "e2e:mock": "npm run build:mock && playwright test",

@@ -5,6 +5,7 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig(({ mode }) => ({
   plugins: [react(), tailwindcss()],
+  publicDir: mode === "mock" ? "public-mock" : "public",
   define: {
     "import.meta.env.VITE_MOCK": JSON.stringify(mode === "mock" ? "1" : "0"),
   },

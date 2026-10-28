@@ -7,6 +7,7 @@ import {
   MessageSquare,
   type LucideIcon,
 } from "lucide-react";
+import { RouterLink } from "./RouterLink";
 import { Brand } from "./Logo";
 import { learnerRoutes } from "./appLinks";
 import {
@@ -22,24 +23,24 @@ import type { SidebarUser } from "./ChatSidebar";
 export type LearnerSidebarPage = "setup" | "sources" | "learning" | "knowledge";
 
 function NavLink({
-  href,
+  to,
   icon: Icon,
   active,
   badge,
   children,
 }: {
-  href: string;
+  to: string;
   icon: LucideIcon;
   active?: boolean;
   badge?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
-    <a href={href} className={navLinkClass(active)} aria-current={active ? "page" : undefined}>
+    <RouterLink to={to} className={navLinkClass(active)} aria-current={active ? "page" : undefined}>
       <Icon aria-hidden="true" className={navIconClass(active)} />
       {children}
       {badge}
-    </a>
+    </RouterLink>
   );
 }
 
@@ -64,11 +65,11 @@ export function LearnerSidebar({
         <Brand app="learner" href={learnerRoutes.setup} />
       </div>
       <nav className="grid gap-0.5" aria-label="Pages">
-        <NavLink href={learnerRoutes.setup} icon={ListChecks} active={active === "setup"}>
+        <NavLink to={learnerRoutes.setup} icon={ListChecks} active={active === "setup"}>
           Setup guide
         </NavLink>
         <NavLink
-          href={learnerRoutes.sources}
+          to={learnerRoutes.sources}
           icon={Database}
           active={active === "sources"}
           badge={
@@ -80,7 +81,7 @@ export function LearnerSidebar({
           Sources
         </NavLink>
         <NavLink
-          href={learnerRoutes.learning}
+          to={learnerRoutes.learning}
           icon={Brain}
           active={active === "learning"}
           badge={
@@ -94,7 +95,7 @@ export function LearnerSidebar({
           Learning
         </NavLink>
         <NavLink
-          href={learnerRoutes.knowledge}
+          to={learnerRoutes.knowledge}
           icon={BookOpen}
           active={active === "knowledge"}
           badge={
@@ -112,11 +113,11 @@ export function LearnerSidebar({
       <div className="flex-1" />
       <div className="grid gap-0.5 border-t border-border pt-2">
         {charieUrl !== undefined && (
-          <a href={charieUrl} className={navLinkClass(false)}>
+          <RouterLink to={charieUrl} className={navLinkClass(false)}>
             <MessageSquare aria-hidden="true" className={navIconClass(false)} />
             Open Charie
             <ArrowUpRight aria-hidden="true" className="ml-auto [--icon:17px] text-muted" />
-          </a>
+          </RouterLink>
         )}
         {user && (
           <div className="flex items-center gap-2.5 px-2.5 pb-0.5 pt-2">
