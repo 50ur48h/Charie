@@ -1,6 +1,7 @@
 import type { RouteObject } from "react-router";
 import { LoginPage, NotFoundPage, PlaceholderPage, RequireLogin } from "@charie/shared";
-import { ChatLayout, ChatThreadPage } from "./ChatLayout";
+import { ChatLayout } from "./ChatLayout";
+import { ChatPage } from "./pages/ChatPage";
 import { NewChatPage } from "./pages/NewChatPage";
 
 const KIT_ENABLED = import.meta.env.DEV || import.meta.env.VITE_MOCK === "1";
@@ -14,7 +15,7 @@ export const routes: RouteObject[] = [
     ),
     children: [
       { index: true, element: <NewChatPage /> },
-      { path: "chat/:chatId", element: <ChatThreadPage /> },
+      { path: "chat/:chatId", element: <ChatPage /> },
       {
         path: "questions",
         element: (

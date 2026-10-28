@@ -1,0 +1,91 @@
+// The message list: user bubbles on the right, assistant rows on the left.
+// It follows new messages only while the reader is near the bottom;
+// otherwise it offers "Jump to latest". Answer blocks render here from
+// P03.4; until then a finished assistant message shows its text.
+import { useEffect, useRef, useState } from "react";
+import { LogoMark, Spinner } from "@charie/shared";
+import type { ChatMessage } from "@charie/shared";
+import { ScrollToLatest } from "./ScrollToLatest";
+
+const NEAR_BOTTOM_PX = 80;
+
+function AssistantStatus({ message }: { message: ChatMessage }) {
+  if (message.status === "thinking" || message.status === "writing") {
+    return (
+      <div className="flex items-center gap-2 text-[14px] text-muted">
+        <Spinner />
+        <span role="status">Thinking…</span>
+      </div>
+    );
+  }
+  if (message.status === "failed") {
+    return (
+      <p className="text-[14.5px] text-bad-ink">That answer didn&apos;t finish. Ask again when you&apos;re ready.</p>
+    );
+  }
+  if (message.status === "stopped") {
+    return <p className="text-[14.5px] text-muted">Stopped.</p>;
+  }
+  return null;
+}
+
+export function MessageList({ messages }: { messages: ChatMessage[] }) {
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  const [stuck, setStuck] = useState(true);
+
+  function measure(): void {
+    const el = scrollerRef.current;
+    if (el === null) return;
+    setStuck(el.scrollHeight - el.scrollTop - el.clientHeight < NEAR_BOTTOM_PX);
+  }
+
+  function jumpToLatest(): void {
+    const el = scrollerRef.current;
+    if (el === null) return;
+    el.scrollTop = el.scrollHeight;
+    setStuck(true);
+  }
+
+  useEffect(() => {
+    if (stuck) {
+      const el = scrollerRef.current;
+      if (el !== null) el.scrollTop = el.scrollHeight;
+    }
+  }, [messages, stuck]);
+
+  return (
+    <div className="relative min-h-0 flex-1">
+      <div
+        ref={scrollerRef}
+        data-testid="messages"
+        onScroll={measure}
+        className="h-full overflow-y-auto"
+      >
+        <div className="mx-auto max-w-[800px] px-7 pt-[18px] pb-10">
+          {messages.map((message) =>
+            message.role === "user" ? (
+              <div key={message.id} className="mb-5 flex justify-end">
+                <div className="max-w-[80%] rounded-[20px] bg-bubble px-[18px] py-[10px] text-[15.5px]">
+                  {message.text}
+                </div>
+              </div>
+            ) : (
+              <div key={message.id} className="mb-5 flex items-start gap-3">
+                <span className="mt-0.5 flex-none text-accent" aria-hidden="true">
+                  <LogoMark size={26} />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <AssistantStatus message={message} />
+                  {message.text !== "" && (
+                    <p className="text-[15.5px] whitespace-pre-wrap">{message.text}</p>
+                  )}
+                </div>
+              </div>
+            ),
+          )}
+        </div>
+      </div>
+      {!stuck && <ScrollToLatest onJump={jumpToLatest} />}
+    </div>
+  );
+}

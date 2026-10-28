@@ -2,7 +2,10 @@ import { describe, expect, test } from "vitest";
 import {
   addMockMessage,
   createMockChat,
+  finishMockMessage,
+  forgetMockChats,
   getMockChat,
+  listMockChats,
   resetMockChats,
   sampleAnswer,
 } from "./sampleChat";
@@ -55,5 +58,28 @@ describe("sample chat", () => {
       "assistant",
     ]);
     expect(addMockMessage(999, "nope")).toBeUndefined();
+  });
+
+  test("created chats, messages and stops survive a reload", () => {
+    resetMockChats();
+    const chat = createMockChat();
+    addMockMessage(chat.id, "Hello?");
+    finishMockMessage(1001);
+    forgetMockChats();
+    const detail = getMockChat(chat.id);
+    expect(detail?.title).toBe("Hello?");
+    expect(detail?.messages.map((message) => message.status)).toEqual([
+      "done",
+      "stopped",
+    ]);
+    expect(listMockChats()).toHaveLength(9);
+  });
+
+  test("finishing stops the running answer without duplicating the list", () => {
+    resetMockChats();
+    expect(finishMockMessage(4)).toBe(true);
+    expect(getMockChat(2)?.messages[1]?.status).toBe("stopped");
+    expect(finishMockMessage(999)).toBe(false);
+    expect(listMockChats()).toHaveLength(8);
   });
 });

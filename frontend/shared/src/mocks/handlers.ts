@@ -1,12 +1,20 @@
 import { http, HttpResponse } from "msw";
 import { readSavedTheme } from "../theme/theme";
-import { addMockMessage, createMockChat, getMockChat, listMockChats } from "./sampleChat";
+import {
+  addMockMessage,
+  countMockPosts,
+  createMockChat,
+  finishMockMessage,
+  getMockChat,
+  listMockChats,
+} from "./sampleChat";
 import { SAMPLE_PASSWORD } from "./password";
 
 export const CHATS_URL = "*/api/chats";
 export const CHAT_DETAIL_URL = "*/api/chats/:id";
 export const CHAT_MESSAGES_URL = "*/api/chats/:id/messages";
 export const STATUS_URL = "*/api/status";
+export const MESSAGE_FINISH_URL = "*/api/messages/:id/finish";
 export const ME_URL = "*/api/me";
 export const HEALTH_URL = "*/api/health";
 export const LOGIN_URL = "*/api/login";
@@ -79,6 +87,18 @@ const NOT_LOGGED_IN = {
   message: "Please sign in again.",
 };
 
+// Test-only delay (milliseconds in localStorage "charie-mock-delay-ms"), so
+// browser tests can hold a chat-detail response back and prove the page stays
+// locked while it refreshes. Meaningless outside mock mode.
+async function mockDelay(): Promise<void> {
+  try {
+    const ms = Number(localStorage.getItem("charie-mock-delay-ms") ?? "0");
+    if (ms > 0) await new Promise((resolve) => setTimeout(resolve, ms));
+  } catch {
+    // No delay without storage.
+  }
+}
+
 function needSession(): Response | null {
   if (hasSession()) return null;
   return HttpResponse.json(NOT_LOGGED_IN, { status: 401 });
@@ -130,7 +150,8 @@ export const handlers = [
     if (blocked) return blocked;
     return HttpResponse.json(createMockChat(), { status: 201 });
   }),
-  http.get(CHAT_DETAIL_URL, ({ params }) => {
+  http.get(CHAT_DETAIL_URL, async ({ params }) => {
+    await mockDelay();
     const blocked = needSession();
     if (blocked) return blocked;
     const chat = getMockChat(Number(params.id));
@@ -157,6 +178,7 @@ export const handlers = [
         { status: 400 },
       );
     }
+    countMockPosts("messages");
     const sent = addMockMessage(Number(params.id), text.trim());
     if (sent === undefined) {
       return HttpResponse.json(
@@ -170,6 +192,18 @@ export const handlers = [
     const blocked = needSession();
     if (blocked) return blocked;
     return HttpResponse.json({ questions_waiting: 3, data_through: "2025-10-26" });
+  }),
+  http.post(MESSAGE_FINISH_URL, ({ params }) => {
+    const blocked = needSession();
+    if (blocked) return blocked;
+    countMockPosts("finish");
+    if (!finishMockMessage(Number(params.id))) {
+      return HttpResponse.json(
+        { error: "not_found", message: "We couldn't find that message." },
+        { status: 404 },
+      );
+    }
+    return HttpResponse.json({ ok: true });
   }),
   http.all(CATCH_ALL_URL, () => {
     const blocked = needSession();
