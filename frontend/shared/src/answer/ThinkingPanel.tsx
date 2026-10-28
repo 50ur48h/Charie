@@ -45,7 +45,7 @@ export function ThinkingPanel({
   }
 
   return (
-    <div className="mb-1" aria-live={running ? "polite" : undefined}>
+    <div className="thinking-panel mb-1" aria-live={running ? "polite" : undefined}>
       <button
         type="button"
         aria-expanded={expanded}
@@ -62,7 +62,7 @@ export function ThinkingPanel({
         />
       </button>
       {expanded && (
-        <div id={`${panelId}-timeline`} role="region" className="pt-1">
+        <div id={`${panelId}-timeline`} role="region" className="thinking-timeline pt-1">
           {lines.map((line) => (
             <ThinkingRow
               key={line.seq}

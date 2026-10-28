@@ -18,6 +18,7 @@ function CopyButton({ text, label }: { text: string; label: string }) {
     <Button
       variant="ghost"
       size="sm"
+      className="print:hidden"
       aria-label={copied ? "Copied" : `Copy: ${label}`}
       onClick={() => {
         setCopied(false);
@@ -59,10 +60,65 @@ function Disclosure({ title, children }: { title: string; children: React.ReactN
 // evidence. Every section expands with a keyboard (native buttons) and
 // each query and source copies as plain text. SQL and quotes render as
 // text nodes, never HTML.
+function PrintEvidence({ block }: { block: MethodBlockType }) {
+  // Full evidence for print: the interactive disclosures stay collapsed
+  // on screen, so the print layout renders its own always-open copy.
+  // Hidden from sighted users and screen readers until printing.
+  return (
+    <div className="method-print hidden" aria-hidden="true">
+      {block.definitions.length > 0 && (
+        <div className="method-print-section">
+          <h4>What this means</h4>
+          <ul>
+            {block.definitions.map((definition) => (
+              <li key={definition}>{definition}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {block.steps.length > 0 && (
+        <div className="method-print-section">
+          <h4>Steps</h4>
+          <ol>
+            {block.steps.map((step) => (
+              <li key={step}>{step}</li>
+            ))}
+          </ol>
+        </div>
+      )}
+      {block.queries.length > 0 && (
+        <div className="method-print-section">
+          <h4>Data used</h4>
+          {block.queries.map((query) => (
+            <div key={query.purpose}>
+              <p>{query.purpose}</p>
+              <pre>{query.sql}</pre>
+            </div>
+          ))}
+        </div>
+      )}
+      {block.sources.length > 0 && (
+        <div className="method-print-section">
+          <h4>Sources</h4>
+          {block.sources.map((source) => (
+            <div key={`${source.document}${source.location}`}>
+              <p>
+                {source.document} · {source.location}
+              </p>
+              <blockquote>{source.quote}</blockquote>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function MethodBlock({ block }: { block: MethodBlockType }) {
   return (
-    <div className="mb-4 rounded-card border border-border bg-surface px-[18px] py-3 shadow-card">
+    <div className="method-block mb-4 rounded-card border border-border bg-surface px-[18px] py-3 shadow-card">
       <h3 className="m-0 font-serif text-[16px] font-semibold">How I worked this out</h3>
+      <div className="method-screen print:hidden">
       <Disclosure title={`What this means (${block.definitions.length})`}>
         <ul className="m-0 list-disc space-y-1 pl-5 text-[14px] leading-relaxed text-text-2">
           {block.definitions.map((definition) => (
@@ -112,6 +168,8 @@ export function MethodBlock({ block }: { block: MethodBlockType }) {
           ))}
         </div>
       </Disclosure>
+      </div>
+      <PrintEvidence block={block} />
     </div>
   );
 }

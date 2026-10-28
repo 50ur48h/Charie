@@ -7,7 +7,7 @@
 import { useEffect, useRef, useState } from "react";
 import { LogoMark, Spinner } from "@charie/shared";
 import type { ChatMessage } from "@charie/shared";
-import { AnswerView, ThinkingPanel } from "@charie/shared";
+import { AnswerActions, AnswerView, ThinkingPanel } from "@charie/shared";
 import type { FeedState } from "@charie/shared";
 import { LiveAnswer } from "./LiveAnswer";
 import { ScrollToLatest } from "./ScrollToLatest";
@@ -68,14 +68,14 @@ export function MessageList({
   }, [messages, stuck, liveFeed]);
 
   return (
-    <div className="relative min-h-0 flex-1">
+    <div className="messages-view relative min-h-0 flex-1">
       <div
         ref={scrollerRef}
         data-testid="messages"
         onScroll={measure}
         className="h-full overflow-y-auto"
       >
-        <div className="mx-auto max-w-[800px] px-7 pt-[18px] pb-10">
+        <div className="messages-wrap mx-auto max-w-[800px] px-7 pt-[18px] pb-10">
           {messages.map((message) =>
             message.role === "user" ? (
               <div key={message.id} className="mb-5 flex justify-end">
@@ -118,6 +118,9 @@ export function MessageList({
                       <AssistantStatus message={message} />
                       {message.status === "done" && message.answer !== null && (
                         <AnswerView answer={message.answer} onFollowUp={onFollowUp} />
+                      )}
+                      {message.status === "done" && message.answer !== null && (
+                        <AnswerActions messageId={message.id} answer={message.answer} />
                       )}
                     </>
                   )}

@@ -39,10 +39,11 @@ test("method_keyboard expands evidence with the keyboard", async ({ page }) => {
   await steps.focus();
   await page.keyboard.press("Enter");
   await expect(
-    page.getByText("Added up sales by restaurant for October and September."),
+  // Screen-only scope: the print duplicate carries the same evidence text.
+    page.locator(".method-screen").getByText("Added up sales by restaurant for October and September."),
   ).toBeVisible();
   const sources = page.getByRole("button", { name: /Sources/ });
   await sources.focus();
   await page.keyboard.press("Enter");
-  await expect(page.getByText("Incident log.docx · page 2")).toBeVisible();
+  await expect(page.locator(".method-screen").getByText("Incident log.docx · page 2")).toBeVisible();
 });

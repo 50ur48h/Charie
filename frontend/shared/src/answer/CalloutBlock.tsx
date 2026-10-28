@@ -12,7 +12,7 @@ export function CalloutBlock({ block }: { block: CalloutBlockType }) {
   const toneClass =
     block.tone === "warn" ? TONE_CLASS.warn : TONE_CLASS.note;
   return (
-    <div className={`mb-4 rounded-xl px-4 py-3 text-[14px] leading-relaxed ${toneClass}`}>
+    <div className={`callout-block mb-4 rounded-xl px-4 py-3 text-[14px] leading-relaxed ${toneClass}`}>
       <Markup text={block.text} />
     </div>
   );

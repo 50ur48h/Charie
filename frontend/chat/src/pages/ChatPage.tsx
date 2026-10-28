@@ -185,14 +185,14 @@ export function ChatPage() {
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="chat-page flex h-full min-h-0 flex-col">
       <ChatHeader title={chat.title} />
       <MessageList
         messages={chat.messages}
         onFollowUp={followUp}
         live={streamMessageId === null ? null : { messageId: streamMessageId, feed: liveFeed }}
       />
-      <div className="flex-none px-7 pb-4">
+      <div className="flex-none px-7 pb-4 print:hidden">
         <div className="mx-auto max-w-[800px]">
           {runningId !== undefined && (
             <div className="mb-2 flex items-center gap-3">

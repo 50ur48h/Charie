@@ -24,8 +24,8 @@ export function AppShell({
     <div
       className={
         sidebarHidden
-          ? "grid h-dvh grid-cols-1"
-          : "grid h-dvh grid-cols-[268px_1fr] max-[899px]:grid-cols-1"
+          ? "app-shell grid h-dvh grid-cols-1"
+          : "app-shell grid h-dvh grid-cols-[268px_1fr] max-[899px]:grid-cols-1"
       }
     >
       <a
@@ -50,7 +50,7 @@ export function AppShell({
         </IconButton>
       )}
       <div className="flex min-h-0 min-w-0 flex-col">
-        <div className="sticky top-0 z-20 hidden h-[54px] flex-none items-center border-b border-border-soft bg-bg px-5 max-[899px]:flex">
+        <div className="mobile-topbar sticky top-0 z-20 hidden h-[54px] flex-none items-center border-b border-border-soft bg-bg px-5 print:hidden max-[899px]:flex">
           <MobileDrawer
             open={drawerOpen}
             onOpenChange={setDrawerOpen}

@@ -90,6 +90,7 @@ export function NewChatPage() {
         </p>
       </div>
 
+      <div className="print:hidden">
       <QuestionComposer
         large
         value={draft}
@@ -99,6 +100,7 @@ export function NewChatPage() {
         dataThrough={statusQuery.data?.data_through}
         textareaRef={composerRef}
       />
+      </div>
 
       <div className="mt-[18px] grid grid-cols-1 gap-3 sm:grid-cols-2">
         {SAMPLE_QUESTIONS.map(({ kind, text, icon }) => (

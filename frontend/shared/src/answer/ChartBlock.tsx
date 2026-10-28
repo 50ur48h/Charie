@@ -32,7 +32,7 @@ export function ChartBlock({ block }: { block: ChartBlockType }) {
     return <p className="text-[14px] text-muted">Chart unavailable.</p>;
   }
   return (
-    <div className="mb-4 min-w-0 rounded-card border border-border bg-surface px-[18px] pb-3 pt-4 shadow-card">
+    <div className="chart-card mb-4 min-w-0 rounded-card border border-border bg-surface px-[18px] pb-3 pt-4 shadow-card">
       <div className="mb-2">
         <div className="font-serif text-[17px]">{block.title}</div>
         {block.subtitle !== undefined && block.subtitle !== "" && (
@@ -43,7 +43,7 @@ export function ChartBlock({ block }: { block: ChartBlockType }) {
       <p className="sr-only">
         Data for {block.title}: {chartSummary(block)}.
       </p>
-      <div className="mt-2 flex flex-wrap gap-2">
+      <div className="block-tools mt-2 flex flex-wrap gap-2 print:hidden">
         <Button variant="outline" size="sm" onClick={() => setOpen(true)} aria-label={`Expand: ${block.title}`}>
           <Expand aria-hidden="true" />
           Expand

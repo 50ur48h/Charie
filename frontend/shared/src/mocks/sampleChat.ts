@@ -354,11 +354,20 @@ function rehydrate(): void {
 
 // Test-only request counts, so browser tests can prove a double click sent
 // one request. Meaningless outside mock mode.
-export function countMockPosts(kind: "messages" | "finish"): void {
+export type MockPostKind = "messages" | "finish" | "feedback" | "wrong";
+
+const COUNT_KEYS: Record<MockPostKind, string> = {
+  messages: COUNT_MESSAGES_KEY,
+  finish: COUNT_FINISH_KEY,
+  feedback: "charie-mock-count-feedback",
+  wrong: "charie-mock-count-wrong",
+};
+
+export function countMockPosts(kind: MockPostKind): void {
   const store = storage();
   if (store === null) return;
   try {
-    const key = kind === "messages" ? COUNT_MESSAGES_KEY : COUNT_FINISH_KEY;
+    const key = COUNT_KEYS[kind];
     store.setItem(key, String(Number(store.getItem(key) ?? "0") + 1));
   } catch {
     // Counts are test-only; ignore.
@@ -560,6 +569,8 @@ export function resetMockChats(): void {
     store.removeItem(STORE_KEY);
     store.removeItem(COUNT_MESSAGES_KEY);
     store.removeItem(COUNT_FINISH_KEY);
+    store.removeItem(COUNT_KEYS.feedback);
+    store.removeItem(COUNT_KEYS.wrong);
   } catch {
     // Nothing to clear.
   }

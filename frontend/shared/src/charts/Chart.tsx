@@ -82,6 +82,7 @@ export const Chart = forwardRef<ChartHandle, ChartProps>(function Chart(
       ref={divRef}
       role="img"
       aria-label={label}
+      data-chart-container="true"
       className={className}
       style={{ width: "100%", height }}
     />

@@ -94,7 +94,7 @@ export function TableBlock({ block }: { block: TableBlockType }) {
         sortable
         empty="No rows."
       />
-      <div className="mt-2">
+      <div className="block-tools mt-2 print:hidden">
         <Button
           variant="outline"
           size="sm"

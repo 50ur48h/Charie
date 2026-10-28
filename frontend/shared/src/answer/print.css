@@ -1,0 +1,115 @@
+/* Print layout for chat answers (P03.8). Loaded only by the chat app,
+   so the learner app is unaffected. Simple control hides live on the
+   components through Tailwind's print: variant; this file holds the
+   structural rules: full-width unclipped flow, evidence visibility and
+   page breaks. Every rule here must survive utility ordering, so the
+   layout-critical ones use !important. */
+@page {
+  margin: 14mm 12mm;
+}
+
+@media print {
+  /* The app frame is a fixed viewport grid with internal scrollers.
+     Printing needs the document flow instead: full width, natural
+     height, nothing clipped. */
+  html,
+  body,
+  #root {
+    height: auto !important;
+  }
+  body {
+    overflow: visible !important;
+  }
+  .app-shell {
+    display: block !important;
+    height: auto !important;
+  }
+  .mobile-topbar {
+    display: none !important;
+  }
+  .chat-page {
+    display: block !important;
+    height: auto !important;
+  }
+  .messages-view {
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+  }
+  [data-testid="messages"] {
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
+  .messages-wrap {
+    max-width: none !important;
+    margin: 0 !important;
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+  }
+  /* Wide tables scroll on screen: let them use the page instead. */
+  [data-testid="messages"] div[role="region"] {
+    overflow-x: visible !important;
+  }
+
+  /* Hide chrome and every remaining control, including dialogs that
+     happen to be open: only document content prints. */
+  aside,
+  a[href="#main"],
+  [role="dialog"] {
+    display: none !important;
+  }
+  .block-tools {
+    display: none !important;
+  }
+
+  /* The thinking panel prints its one-line summary only: the toggle
+     heading already shows it, so the expanded timeline and toggle
+     icons go away. */
+  .thinking-timeline {
+    display: none !important;
+  }
+  .thinking-panel button svg {
+    display: none !important;
+  }
+
+  /* "How I worked this out" prints the full evidence: the interactive
+     disclosures stay shut on screen, so the print-only copy opens. */
+  .method-print {
+    display: block !important;
+  }
+  .method-print-section {
+    break-inside: avoid;
+  }
+  .method-print h4 {
+    margin: 12px 0 4px;
+    font-size: 13.5px;
+  }
+  .method-print p,
+  .method-print blockquote {
+    margin: 4px 0;
+    font-size: 13px;
+  }
+  .method-print pre {
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-size: 12px;
+  }
+
+  /* Long tables repeat their headers and break across pages; chart
+     cards and callouts never split internally. */
+  thead {
+    display: table-header-group;
+  }
+  tr {
+    break-inside: avoid;
+  }
+  table {
+    break-inside: auto;
+  }
+  .method-block,
+  .chart-card,
+  .callout-block {
+    break-inside: avoid;
+  }
+}
