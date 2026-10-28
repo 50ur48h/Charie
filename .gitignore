@@ -31,6 +31,9 @@ playwright-report/
 .DS_Store
 Thumbs.db
 
+# Sandbox shell cache artifact (created by headless tool runs in the repo)
+%SystemDrive%/
+
 # Generated and local files
 backend/tests/replays/
 infra/*.local.json

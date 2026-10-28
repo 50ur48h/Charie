@@ -18,7 +18,7 @@ Run these steps in order. State lives in git, the master list and the plan files
 4. If no PR is open:
    - `git switch main`, then `git pull --ff-only`.
    - For each sub-phase marked `in review (#N)` in `docs/plan/README.md`, check `gh pr view <N> --json state,headRefOid`:
-     - `MERGED`: mark it `done (#N)`. Delete its local branch only if `git rev-parse <branch>` equals the PR's `headRefOid`, or `git branch --merged main` lists it. Use `git branch -d`, never `-D`. If the local branch has later commits, do not delete it; report them and ask the owner.
+     - `MERGED`: mark it `done (#N)`. Compare `git rev-parse <branch>` with the PR's `headRefOid`. If they differ, the local branch has later work: never delete it; report the extra commits and ask the owner. If they are equal, delete with `git branch -d`; for a squash-merged PR `-d` cannot see the merge, so `git branch -D` is then allowed — the exact tip match is the safety proof that nothing extra is lost. `git branch --merged main` listing it also allows `-d`.
      - `CLOSED` (not merged): never mark it done and never delete the branch. Keep `in review (#N)`, report it, and ask the owner: reopen, or abandon? Only the owner's answer, recorded with /record-change, changes it.
      - Not found: say so and ask the owner. Never guess a PR was merged.
    - An `in progress` sub-phase or an existing sub-phase branch is resumed before picking anything new (this is how an interrupted or quota-stopped session recovers).
