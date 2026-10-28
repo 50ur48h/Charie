@@ -16,35 +16,39 @@ function setMetrics(el: HTMLElement, scrollHeight: number, clientHeight: number)
   });
 }
 
+function list(messages: ChatMessage[]) {
+  return <MessageList messages={messages} thinking={[]} thinkingSummary={null} />;
+}
+
 describe("MessageList", () => {
   test("follows new messages when the reader is at the bottom", () => {
-    const { rerender } = render(<MessageList messages={[userMessage(1, "First?")]} />);
-    const list = screen.getByTestId("messages");
-    setMetrics(list, 1000, 500);
-    list.scrollTop = 500;
-    fireEvent.scroll(list);
+    const { rerender } = render(list([userMessage(1, "First?")]));
+    const messages = screen.getByTestId("messages");
+    setMetrics(messages, 1000, 500);
+    messages.scrollTop = 500;
+    fireEvent.scroll(messages);
 
-    setMetrics(list, 1500, 500);
-    rerender(<MessageList messages={[userMessage(1, "First?"), userMessage(2, "Second?")]} />);
+    setMetrics(messages, 1500, 500);
+    rerender(list([userMessage(1, "First?"), userMessage(2, "Second?")]));
 
-    expect(list.scrollTop).toBe(1500);
+    expect(messages.scrollTop).toBe(1500);
     expect(screen.queryByRole("button", { name: "Jump to latest" })).toBeNull();
   });
 
   test("keeps the reader position and offers Jump to latest when scrolled up", () => {
-    const { rerender } = render(<MessageList messages={[userMessage(1, "First?")]} />);
-    const list = screen.getByTestId("messages");
-    setMetrics(list, 1000, 500);
-    list.scrollTop = 100;
-    fireEvent.scroll(list);
+    const { rerender } = render(list([userMessage(1, "First?")]));
+    const messages = screen.getByTestId("messages");
+    setMetrics(messages, 1000, 500);
+    messages.scrollTop = 100;
+    fireEvent.scroll(messages);
 
-    setMetrics(list, 1500, 500);
-    rerender(<MessageList messages={[userMessage(1, "First?"), userMessage(2, "Second?")]} />);
+    setMetrics(messages, 1500, 500);
+    rerender(list([userMessage(1, "First?"), userMessage(2, "Second?")]));
 
-    expect(list.scrollTop).toBe(100);
+    expect(messages.scrollTop).toBe(100);
     const jump = screen.getByRole("button", { name: "Jump to latest" });
     fireEvent.click(jump);
-    expect(list.scrollTop).toBe(1500);
+    expect(messages.scrollTop).toBe(1500);
     expect(screen.queryByRole("button", { name: "Jump to latest" })).toBeNull();
   });
 });

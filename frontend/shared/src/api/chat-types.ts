@@ -1,6 +1,7 @@
 // Chat, message and answer shapes (architecture 09, "The answer format").
 // Phases 3-4 write these; the back end (Phases 5-10) must send exactly them.
 import type { TreeNode } from "../charts/tree";
+import type { ThinkingLine, ThinkingSummary } from "../answer/thinking";
 
 export type MessageStatus =
   | "thinking"
@@ -163,4 +164,6 @@ export interface Chat {
   created_at: string;
   updated_at: string;
   messages: ChatMessage[];
+  thinking: ThinkingLine[];
+  thinking_summary: ThinkingSummary | null;
 }

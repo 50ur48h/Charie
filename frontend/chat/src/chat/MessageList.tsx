@@ -4,7 +4,8 @@
 // P03.4; until then a finished assistant message shows its text.
 import { useEffect, useRef, useState } from "react";
 import { LogoMark, Spinner } from "@charie/shared";
-import type { ChatMessage } from "@charie/shared";
+import type { ChatMessage, ThinkingLine, ThinkingSummary } from "@charie/shared";
+import { ThinkingPanel } from "@charie/shared";
 import { ScrollToLatest } from "./ScrollToLatest";
 
 const NEAR_BOTTOM_PX = 80;
@@ -29,7 +30,16 @@ function AssistantStatus({ message }: { message: ChatMessage }) {
   return null;
 }
 
-export function MessageList({ messages }: { messages: ChatMessage[] }) {
+export function MessageList({
+  messages,
+  thinking,
+  thinkingSummary,
+}: {
+  messages: ChatMessage[];
+  thinking: ThinkingLine[];
+  thinkingSummary: ThinkingSummary | null;
+}) {
+  const lastAssistantId = [...messages].reverse().find((message) => message.role === "assistant")?.id;
   const scrollerRef = useRef<HTMLDivElement>(null);
   const [stuck, setStuck] = useState(true);
 
@@ -75,6 +85,13 @@ export function MessageList({ messages }: { messages: ChatMessage[] }) {
                   <LogoMark size={26} />
                 </span>
                 <div className="min-w-0 flex-1">
+                  {message.id === lastAssistantId && thinking.length > 0 && (
+                    <ThinkingPanel
+                      lines={thinking}
+                      summary={thinkingSummary}
+                      panelId={`thinking-${message.id}`}
+                    />
+                  )}
                   <AssistantStatus message={message} />
                   {message.text !== "" && (
                     <p className="text-[15.5px] whitespace-pre-wrap">{message.text}</p>

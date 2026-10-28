@@ -42,6 +42,13 @@ describe("sample chat", () => {
     ]);
 
     expect(getMockChat(3)?.messages).toEqual([]);
+
+    const failed = getMockChat(4);
+    expect(failed?.messages.map((message) => message.status)).toEqual([
+      "done",
+      "failed",
+    ]);
+    expect(failed?.thinking.map((line) => line.status)).toEqual(["done", "failed"]);
     expect(getMockChat(999)).toBeUndefined();
   });
 

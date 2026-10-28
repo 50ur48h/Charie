@@ -7,6 +7,12 @@
 import type { Answer, Chat, ChatMessage } from "../api/chat-types";
 import type { ChatSummary } from "../api/types";
 import summaries from "./data";
+import {
+  failedThinking,
+  finishedSummary,
+  finishedThinking,
+  runningThinking,
+} from "./sampleThinking";
 
 export function sampleAnswer(messageId: number): Answer {
   return {
@@ -143,7 +149,12 @@ function finishedSeed(summary: ChatSummary): Chat {
     status: "done",
     mode: "thinking",
   };
-  return { ...summary, messages: [user, assistant] };
+  return {
+    ...summary,
+    messages: [user, assistant],
+    thinking: finishedThinking,
+    thinking_summary: finishedSummary,
+  };
 }
 
 function thinkingSeed(summary: ChatSummary): Chat {
@@ -159,6 +170,26 @@ function thinkingSeed(summary: ChatSummary): Chat {
       },
       { id: 4, role: "assistant", text: "", status: "thinking", mode: "thinking" },
     ],
+    thinking: runningThinking,
+    thinking_summary: null,
+  };
+}
+
+function failedSeed(summary: ChatSummary): Chat {
+  return {
+    ...summary,
+    messages: [
+      {
+        id: 5,
+        role: "user",
+        text: "Weekend vs weekday sales",
+        status: "done",
+        mode: "thinking",
+      },
+      { id: 6, role: "assistant", text: "", status: "failed", mode: "thinking" },
+    ],
+    thinking: failedThinking,
+    thinking_summary: null,
   };
 }
 
@@ -221,7 +252,12 @@ function rehydrate(): void {
         typeof (chat as Chat).id === "number" &&
         Array.isArray((chat as Chat).messages)
       ) {
-        created.set((chat as Chat).id, chat as Chat);
+        const stored = chat as Chat;
+        if (!Array.isArray(stored.thinking)) stored.thinking = [];
+        if ((stored as unknown as Record<string, unknown>).thinking_summary === undefined) {
+          stored.thinking_summary = null;
+        }
+        created.set(stored.id, stored);
       }
     }
   } catch {
@@ -255,7 +291,8 @@ export function forgetMockChats(): void {
 function seedDetail(summary: ChatSummary): Chat {
   if (summary.id === 1) return finishedSeed(summary);
   if (summary.id === 2) return thinkingSeed(summary);
-  return { ...summary, messages: [] };
+  if (summary.id === 4) return failedSeed(summary);
+  return { ...summary, messages: [], thinking: [], thinking_summary: null };
 }
 
 export function getMockChat(id: number): Chat | undefined {
@@ -285,6 +322,8 @@ export function createMockChat(): ChatSummary {
     created_at: now,
     updated_at: now,
     messages: [],
+    thinking: [],
+    thinking_summary: null,
   };
   nextChatId += 1;
   created.set(chat.id, chat);
