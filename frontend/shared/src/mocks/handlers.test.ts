@@ -2,7 +2,10 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } fr
 import { setupServer } from "msw/node";
 import { SESSION_KEY, handlers } from "./handlers";
 import type { ChatSummary } from "../api/types";
-import { resetMockChats, setMockQuestionsWaiting } from "./sampleChat";
+import { resetMockChats } from "./sampleChat";
+import { resetMockQuestions, waitingOverride } from "./sampleQuestions";
+import { resetMockKnowledge, mockSuggestions } from "./sampleKnowledge";
+import { resetMockUsage } from "./sampleUsage";
 
 const server = setupServer(...handlers);
 
@@ -19,6 +22,9 @@ afterEach(() => {
 
 beforeEach(() => {
   resetMockChats();
+  resetMockQuestions();
+  resetMockKnowledge();
+  resetMockUsage();
 });
 
 afterAll(() => {
@@ -158,6 +164,13 @@ describe("mock handlers", () => {
     await expect(response.json()).resolves.toEqual({
       questions_waiting: 3,
       data_through: "2025-10-26",
+      spending: {
+        state: "ok",
+        spent_usd: 41.2,
+        limit_usd: 150,
+        warn_percent: 80,
+        percent_used: 27.47,
+      },
     });
   });
 
@@ -221,9 +234,68 @@ describe("mock handlers", () => {
 
   test("GET /api/status reports the overridden waiting count", async () => {
     await signIn();
-    setMockQuestionsWaiting(1);
+    localStorage.setItem("charie-mock-waiting-override", "1");
+    expect(waitingOverride()).toBe(1);
     const response = await fetch(`${APP}/api/status`);
     await expect(response.json()).resolves.toMatchObject({ questions_waiting: 1 });
+  });
+
+  test("GET /api/usage returns the populated demo month and zeros", async () => {
+    await signIn();
+    const demo = await (await fetch(`${APP}/api/usage?month=2025-10`)).json();
+    expect(demo).toMatchObject({
+      month: "2025-10",
+      spent_usd: 41.2,
+      limit_usd: 150,
+      state: "ok",
+    });
+    expect(demo.per_day).toHaveLength(27);
+    expect(demo.top_questions[0]).toMatchObject({ chat_id: 3 });
+    const empty = await (await fetch(`${APP}/api/usage?month=2025-01`)).json();
+    expect(empty).toMatchObject({ month: "2025-01", spent_usd: 0, state: "ok" });
+    expect(empty.per_group).toEqual([]);
+    const bad = await fetch(`${APP}/api/usage?month=soon`);
+    expect(bad.status).toBe(400);
+    await expect(bad.json()).resolves.toMatchObject({ error: "bad_month" });
+  });
+
+  test("GET /api/knowledge lists, filters and 404s unknown keys", async () => {
+    await signIn();
+    const all = await (await fetch(`${APP}/api/knowledge`)).json();
+    expect(all.entries.length).toBeGreaterThan(10);
+    expect(all).toMatchObject({ version: 14, status: "published" });
+    const words = await (await fetch(`${APP}/api/knowledge?kind=word`)).json();
+    expect(words.entries.length).toBeGreaterThan(0);
+    expect(words.entries.every((e: { kind: string }) => e.kind === "word")).toBe(true);
+    const found = await (await fetch(`${APP}/api/knowledge?q=lunch`)).json();
+    expect(found.entries.map((e: { key: string }) => e.key)).toContain("default.lunch");
+    const stable = await (await fetch(`${APP}/api/knowledge/metric.net_sales`)).json();
+    expect(stable).toMatchObject({ key: "metric.net_sales", name: "Net sales" });
+    const missing = await fetch(`${APP}/api/knowledge/nope`);
+    expect(missing.status).toBe(404);
+    const suggested = await post("/api/knowledge/metric.net_sales/suggest", { text: "  Try this  " });
+    expect(suggested.status).toBe(200);
+    expect(mockSuggestions()).toHaveLength(1);
+    const empty = await post("/api/knowledge/metric.net_sales/suggest", { text: "   " });
+    expect(empty.status).toBe(400);
+  });
+
+  test("PATCH /api/settings validates the budget and clears paused", async () => {
+    await signIn();
+    const bad = await fetch(`${APP}/api/settings`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ spend_limit_usd: -5, spend_warn_percent: 150 }),
+    });
+    expect(bad.status).toBe(400);
+    await expect(bad.json()).resolves.toMatchObject({ error: "bad_limit" });
+    const ok = await fetch(`${APP}/api/settings`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ spend_limit_usd: 300, spend_warn_percent: 70 }),
+    });
+    expect(ok.status).toBe(200);
+    await expect(ok.json()).resolves.toMatchObject({ spend_limit_usd: 300, spend_warn_percent: 70 });
   });
 
   test("POST /api/chats needs a session", async () => {

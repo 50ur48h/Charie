@@ -3,6 +3,9 @@ import { LoginPage, NotFoundPage, PlaceholderPage, RequireLogin } from "@charie/
 import { ChatLayout } from "./ChatLayout";
 import { ChatPage } from "./pages/ChatPage";
 import { NewChatPage } from "./pages/NewChatPage";
+import { QuestionsPage } from "./pages/QuestionsPage";
+import { KnowledgePage } from "./pages/KnowledgePage";
+import { UsagePage } from "./pages/UsagePage";
 
 const KIT_ENABLED = import.meta.env.DEV || import.meta.env.VITE_MOCK === "1";
 
@@ -18,33 +21,15 @@ export const routes: RouteObject[] = [
       { path: "chat/:chatId", element: <ChatPage /> },
       {
         path: "questions",
-        element: (
-          <PlaceholderPage
-            app="chat"
-            title="Questions for you"
-            lead="While learning, Charie found a few things only you can answer. Each takes under a minute. If you skip one, Charie uses the default shown and says so in its answers."
-          />
-        ),
+        element: <QuestionsPage />,
       },
       {
         path: "knowledge",
-        element: (
-          <PlaceholderPage
-            app="chat"
-            title="Knowledge"
-            lead="Everything Charie has learned about your business, and how sure it is about each thing."
-          />
-        ),
+        element: <KnowledgePage />,
       },
       {
         path: "usage",
-        element: (
-          <PlaceholderPage
-            app="chat"
-            title="Usage"
-            lead="What Charie's AI has cost this month. Every number here comes from the log of each AI call."
-          />
-        ),
+        element: <UsagePage />,
       },
       {
         path: "settings",

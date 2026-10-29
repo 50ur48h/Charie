@@ -1,7 +1,7 @@
 // The new-chat page (Calm home.html): greeting, sample questions, the
 // question box, the questions notice and recent chats.
 import { useRef, useState } from "react";
-import { Link, useNavigate } from "react-router";
+import { Link, useNavigate, useSearchParams } from "react-router";
 import { Clock, Inbox, ScanSearch, TrendingUp, Utensils } from "lucide-react";
 import { ApiError } from "@charie/shared";
 import {
@@ -44,7 +44,9 @@ function relativeDay(isoDate: string): string {
 
 export function NewChatPage() {
   const navigate = useNavigate();
-  const [draft, setDraft] = useState("");
+  const [searchParams] = useSearchParams();
+  // "Ask Charie about this" links here with ?draft= filled in.
+  const [draft, setDraft] = useState(() => searchParams.get("draft") ?? "");
   const [sending, setSending] = useState(false);
   const sendingRef = useRef(false);
   const composerRef = useRef<HTMLTextAreaElement>(null);

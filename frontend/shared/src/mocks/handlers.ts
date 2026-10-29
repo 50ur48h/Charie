@@ -8,9 +8,29 @@ import {
   getMockChat,
   listMockChats,
   deleteMockChat,
-  mockQuestionsWaiting,
   renameMockChat,
 } from "./sampleChat";
+import {
+  answerMockQuestion,
+  listMockQuestions,
+  skipMockQuestion,
+  waitingMockCount,
+  waitingOverride,
+} from "./sampleQuestions";
+import {
+  currentMonth,
+  getMockBudgetSettings,
+  isUsageMonth,
+  mockSpending,
+  mockUsage,
+  updateMockBudgetSettings,
+} from "./sampleUsage";
+import {
+  KNOWLEDGE_VERSION,
+  getMockKnowledge,
+  listMockKnowledge,
+  suggestMockChange,
+} from "./sampleKnowledge";
 import { SAMPLE_PASSWORD } from "./password";
 import { openMockStream } from "./chat-stream";
 
@@ -22,6 +42,14 @@ export const MESSAGE_FINISH_URL = "*/api/messages/:id/finish";
 export const MESSAGE_STREAM_URL = "*/api/messages/:id/stream";
 export const MESSAGE_FEEDBACK_URL = "*/api/messages/:id/feedback";
 export const MESSAGE_WRONG_URL = "*/api/messages/:id/wrong";
+export const QUESTIONS_URL = "*/api/questions";
+export const QUESTION_ANSWER_URL = "*/api/questions/:id/answer";
+export const QUESTION_SKIP_URL = "*/api/questions/:id/skip";
+export const KNOWLEDGE_URL = "*/api/knowledge";
+export const KNOWLEDGE_ENTRY_URL = "*/api/knowledge/:key";
+export const KNOWLEDGE_SUGGEST_URL = "*/api/knowledge/:key/suggest";
+export const USAGE_URL = "*/api/usage";
+export const SETTINGS_URL = "*/api/settings";
 export const ME_URL = "*/api/me";
 export const HEALTH_URL = "*/api/health";
 export const LOGIN_URL = "*/api/login";
@@ -152,6 +180,148 @@ export const handlers = [
     if (blocked) return blocked;
     return HttpResponse.json(listMockChats());
   }),
+  http.get(QUESTIONS_URL, ({ request }) => {
+    const blocked = needSession();
+    if (blocked) return blocked;
+    const status = new URL(request.url).searchParams.get("status");
+    if (status !== null && status !== "waiting" && status !== "answered" && status !== "skipped") {
+      return HttpResponse.json(
+        { error: "bad_status", message: "Status must be waiting, answered or skipped." },
+        { status: 400 },
+      );
+    }
+    return HttpResponse.json({ questions: listMockQuestions(status ?? undefined) });
+  }),
+  http.post(QUESTION_ANSWER_URL, async ({ params, request }) => {
+    const blocked = needSession();
+    if (blocked) return blocked;
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
+      body = undefined;
+    }
+    const record = (body ?? {}) as { option_id?: unknown; text?: unknown };
+    const hasOption = typeof record.option_id === "string" && record.option_id !== "";
+    const hasText = typeof record.text === "string" && record.text.trim() !== "";
+    if (hasOption === hasText) {
+      return HttpResponse.json(
+        { error: "bad_answer", message: "Send exactly one of option_id or text." },
+        { status: 400 },
+      );
+    }
+    const outcome = hasOption
+      ? answerMockQuestion(Number(params.id), { optionId: record.option_id as string })
+      : answerMockQuestion(Number(params.id), { text: (record.text as string).trim() });
+    if (outcome === "not_found") {
+      return HttpResponse.json(
+        { error: "not_found", message: "That question is gone." },
+        { status: 404 },
+      );
+    }
+    if (outcome === "bad_answer") {
+      return HttpResponse.json(
+        { error: "bad_answer", message: "That answer does not fit this question." },
+        { status: 400 },
+      );
+    }
+    return HttpResponse.json({ ok: true });
+  }),
+  http.post(QUESTION_SKIP_URL, ({ params }) => {
+    const blocked = needSession();
+    if (blocked) return blocked;
+    if (skipMockQuestion(Number(params.id)) === "not_found") {
+      return HttpResponse.json(
+        { error: "not_found", message: "That question is gone." },
+        { status: 404 },
+      );
+    }
+    return HttpResponse.json({ ok: true });
+  }),
+  http.get(KNOWLEDGE_URL, ({ request }) => {
+    const blocked = needSession();
+    if (blocked) return blocked;
+    const url = new URL(request.url);
+    const kind = url.searchParams.get("kind") ?? undefined;
+    const q = url.searchParams.get("q") ?? undefined;
+    return HttpResponse.json({
+      entries: listMockKnowledge({ kind, q }),
+      version: KNOWLEDGE_VERSION,
+      status: "published",
+    });
+  }),
+  http.get(KNOWLEDGE_ENTRY_URL, ({ params }) => {
+    const blocked = needSession();
+    if (blocked) return blocked;
+    const entry = getMockKnowledge(String(params.key));
+    if (entry === undefined) {
+      return HttpResponse.json(
+        { error: "not_found", message: "No entry has that key." },
+        { status: 404 },
+      );
+    }
+    return HttpResponse.json(entry);
+  }),
+  http.post(KNOWLEDGE_SUGGEST_URL, async ({ params, request }) => {
+    const blocked = needSession();
+    if (blocked) return blocked;
+    let text: unknown;
+    try {
+      text = ((await request.json()) as { text?: unknown }).text;
+    } catch {
+      text = undefined;
+    }
+    if (typeof text !== "string" || text.trim() === "") {
+      return HttpResponse.json(
+        { error: "empty_text", message: "Write your suggestion first." },
+        { status: 400 },
+      );
+    }
+    const outcome = suggestMockChange(String(params.key), text.trim());
+    if (outcome === "not_found") {
+      return HttpResponse.json(
+        { error: "not_found", message: "No entry has that key." },
+        { status: 404 },
+      );
+    }
+    return HttpResponse.json({ ok: true });
+  }),
+  http.get(USAGE_URL, ({ request }) => {
+    const blocked = needSession();
+    if (blocked) return blocked;
+    const month = new URL(request.url).searchParams.get("month") ?? currentMonth();
+    if (!isUsageMonth(month)) {
+      return HttpResponse.json(
+        { error: "bad_month", message: "Use a month like 2025-10." },
+        { status: 400 },
+      );
+    }
+    return HttpResponse.json(mockUsage(month));
+  }),
+  http.get(SETTINGS_URL, () => {
+    const blocked = needSession();
+    if (blocked) return blocked;
+    return HttpResponse.json(getMockBudgetSettings());
+  }),
+  http.patch(SETTINGS_URL, async ({ request }) => {
+    const blocked = needSession();
+    if (blocked) return blocked;
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
+      body = undefined;
+    }
+    const record = (body ?? {}) as { spend_limit_usd?: unknown; spend_warn_percent?: unknown };
+    const outcome = updateMockBudgetSettings(record);
+    if ("error" in outcome) {
+      return HttpResponse.json(
+        { error: outcome.error, message: outcome.message },
+        { status: 400 },
+      );
+    }
+    return HttpResponse.json(getMockBudgetSettings());
+  }),
   http.post(CHATS_URL, () => {
     const blocked = needSession();
     if (blocked) return blocked;
@@ -218,6 +388,16 @@ export const handlers = [
     return HttpResponse.json(chat);
   }),
   http.post(CHAT_MESSAGES_URL, async ({ params, request }) => {
+    // At 100% the mock blocks new questions with the API shape.
+    if (mockSpending(41.2).state === "paused") {
+      return HttpResponse.json(
+        {
+          error: "spending_paused",
+          message: "Questions are paused: this month\u2019s credit is used up. Raise the limit to keep asking.",
+        },
+        { status: 409 },
+      );
+    }
     const blocked = needSession();
     if (blocked) return blocked;
     let text: unknown;
@@ -245,7 +425,12 @@ export const handlers = [
   http.get(STATUS_URL, () => {
     const blocked = needSession();
     if (blocked) return blocked;
-    return HttpResponse.json({ questions_waiting: mockQuestionsWaiting(), data_through: "2025-10-26" });
+    const demoSpending = mockSpending(41.2);
+    return HttpResponse.json({
+      questions_waiting: waitingOverride() ?? waitingMockCount(),
+      data_through: "2025-10-26",
+      spending: demoSpending,
+    });
   }),
   http.post(MESSAGE_FINISH_URL, ({ params }) => {
     const blocked = needSession();
