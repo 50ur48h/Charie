@@ -200,4 +200,78 @@ describe("learner setup mocks", () => {
       document: { file_name: "extra.pdf", file_type: "pdf", status: "new", pages: null },
     });
   });
-});
+  test("remove hides the document", async () => {
+    await signIn();
+    const listed = (await (await fetch(`${APP}/api/documents`)).json()) as {
+      documents: { id: number; file_name: string }[];
+    };
+    const target = listed.documents.find((doc) => doc.file_name === "Refund policy.docx");
+    expect(target).toBeDefined();
+    const removed = await fetch(`${APP}/api/documents/${target!.id}`, { method: "DELETE" });
+    expect(removed.status).toBe(204);
+    const again = (await (await fetch(`${APP}/api/documents`)).json()) as {
+      documents: { file_name: string }[];
+    };
+    expect(again.documents.map((doc) => doc.file_name)).not.toContain("Refund policy.docx");
+  });
+
+  test("retry only reads failed or unreadable documents", async () => {
+    await signIn();
+    const listed = (await (await fetch(`${APP}/api/documents`)).json()) as {
+      documents: { id: number; file_name: string }[];
+    };
+    const learned = listed.documents.find((doc) => doc.file_name === "Finance wiki.pdf");
+    const refused = await fetch(`${APP}/api/documents/${learned!.id}/retry`, { method: "POST" });
+    expect(refused.status).toBe(409);
+    await expect(refused.json()).resolves.toMatchObject({ error: "nothing_to_retry" });
+    const unreadable = listed.documents.find(
+      (doc) => doc.file_name === "Supplier contract scan.pdf",
+    );
+    const reading = await fetch(`${APP}/api/documents/${unreadable!.id}/retry`, {
+      method: "POST",
+    });
+    expect(reading.status).toBe(200);
+    await expect(reading.json()).resolves.toMatchObject({
+      document: { status: "reading", progress: 0, unreadable_pages: 0, error: null },
+    });
+  });
+
+  test("pause and resume need a running run", async () => {
+    resetLearnerMock("new");
+    await signIn();
+    const nothing = await fetch(`${APP}/api/learning/pause`, { method: "POST" });
+    expect(nothing.status).toBe(409);
+    await expect(nothing.json()).resolves.toMatchObject({ error: "not_running" });
+    resetLearnerMock("design");
+    const paused = await fetch(`${APP}/api/learning/pause`, { method: "POST" });
+    expect(paused.status).toBe(200);
+    const again = await fetch(`${APP}/api/learning/pause`, { method: "POST" });
+    expect(again.status).toBe(409);
+    const resumed = await fetch(`${APP}/api/learning/resume`, { method: "POST" });
+    expect(resumed.status).toBe(200);
+    const runs = (await (await fetch(`${APP}/api/learning`)).json()) as {
+      runs: { status: string }[];
+    };
+    expect(runs.runs[0].status).toBe("running");
+  });
+
+  test("the stream replays the run lines", async () => {
+    await signIn();
+    const response = await fetch(`${APP}/api/learning/stream`, {
+      headers: { Accept: "text/event-stream" },
+    });
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain("text/event-stream");
+    const reader = response.body!.getReader();
+    const decoder = new TextDecoder();
+    let text = "";
+    for (let i = 0; i < 20; i += 1) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      text += decoder.decode(value, { stream: true });
+      if (text.split("\n\n").length >= 6) break;
+    }
+    await reader.cancel();
+    expect(text).toContain("id: 1");
+    expect(text).toContain("Net sales matches the finance report");
+  });});

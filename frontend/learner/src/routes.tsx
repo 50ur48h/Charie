@@ -2,6 +2,7 @@ import { type RouteObject } from "react-router";
 import { LoginPage, NotFoundPage, PlaceholderPage, RequireLogin } from "@charie/shared";
 import { LearnerIndex } from "./LearnerIndex";
 import { LearnerLayout } from "./LearnerLayout";
+import { LearningPage } from "./pages/LearningPage";
 import { SetupPage } from "./pages/SetupPage";
 import { SourcesPage } from "./pages/SourcesPage";
 
@@ -16,16 +17,7 @@ export const routes: RouteObject[] = [
       { index: true, element: <LearnerIndex /> },
       { path: "setup", element: <SetupPage /> },
       { path: "sources", element: <SourcesPage /> },
-      {
-        path: "learning",
-        element: (
-          <PlaceholderPage
-            app="learner"
-            title="Learning"
-            lead="Live progress while Charie learns, in plain words."
-          />
-        ),
-      },
+      { path: "learning", element: <LearningPage /> },
       {
         path: "knowledge",
         element: (

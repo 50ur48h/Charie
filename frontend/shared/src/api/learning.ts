@@ -37,3 +37,23 @@ export function useRefreshLearning() {
     },
   });
 }
+// POST /api/learning/pause and /resume. 409 when there is nothing to do.
+export function usePauseLearning() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiFetch<{ ok: true }>("/api/learning/pause", { method: "POST" }),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ["learner-learning"] });
+    },
+  });
+}
+
+export function useResumeLearning() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiFetch<{ ok: true }>("/api/learning/resume", { method: "POST" }),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ["learner-learning"] });
+    },
+  });
+}

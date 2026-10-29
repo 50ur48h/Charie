@@ -9,15 +9,17 @@ import type {
 } from "./learner-types";
 
 // GET /api/documents (architecture 09): all but removed, newest uploaded
-// first. Polls every 2 s while a document is reading; the fake reader
-// advances progress in P04.5.
+// first. Polls every 2 s while a document is new or reading, so an upload
+// is seen moving to Reading and Learned without a reload.
 export function useDocuments() {
   return useQuery({
     queryKey: ["learner-documents"],
     queryFn: ({ signal }) =>
       apiFetch<{ documents: LearnerDocument[] }>("/api/documents", { signal }),
     refetchInterval: (query) =>
-      (query.state.data?.documents ?? []).some((doc) => doc.status === "reading") ? 2000 : false,
+      (query.state.data?.documents ?? []).some(
+        (doc) => doc.status === "new" || doc.status === "reading",
+      ) ? 2000 : false,
   });
 }
 
@@ -99,6 +101,30 @@ export function useSaveOwnerNotes() {
       apiFetch<OwnerNotes>("/api/owner-notes", { method: "PUT", body: { text } }),
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: ["learner-notes"] });
+      void client.invalidateQueries({ queryKey: ["learner-setup"] });
+    },
+  });
+}
+// DELETE /api/documents/{id}. The list refreshes; the row is gone for good.
+export function useRemoveDocument() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => apiFetch<void>(`/api/documents/${id}`, { method: "DELETE" }),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ["learner-documents"] });
+      void client.invalidateQueries({ queryKey: ["learner-setup"] });
+    },
+  });
+}
+
+// POST /api/documents/{id}/retry. Reading starts again, even with no run.
+export function useRetryDocument() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) =>
+      apiFetch<{ document: LearnerDocument }>(`/api/documents/${id}/retry`, { method: "POST" }),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ["learner-documents"] });
       void client.invalidateQueries({ queryKey: ["learner-setup"] });
     },
   });

@@ -58,7 +58,7 @@ test("every learner page opens with its title", async ({ page }) => {
   ];
   for (const [path, title] of pages) {
     await page.goto(`${LEARNER}${path}`);
-    await expect(page.getByRole("heading", { name: title })).toBeVisible();
+    await expect(page.getByRole("heading", { name: title, exact: true })).toBeVisible();
   }
 });
 
