@@ -14,10 +14,35 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy import create_engine, text
 
+from charie.shared.ai.errors import AiRealCallBlocked
+from charie.shared.ai.provider import MetaProvider
 from charie.shared.config import get_settings
 from charie.shared.db import Base, clear_engine_cache, psycopg_url
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
+
+# Methods that reach the network, patched in every unmarked test.
+BLOCKED_REAL_CALLS: list = [(MetaProvider, "complete")]
+
+
+@pytest.fixture(autouse=True)
+def _block_real_ai_calls(request, monkeypatch):
+    """Unmarked tests can't reach Meta; only `live_ai` tests can.
+
+    A provider with a stubbed test client still runs: the stub never
+    touches the network. Only a real call (no stub) raises.
+    """
+    if request.node.get_closest_marker("live_ai") is not None:
+        return
+    for cls, name in BLOCKED_REAL_CALLS:
+        original = getattr(cls, name)
+
+        def blocked(self, *args, _original=original, **kwargs):
+            if getattr(self, "_client", None) is None:
+                raise AiRealCallBlocked()
+            return _original(self, *args, **kwargs)
+
+        monkeypatch.setattr(cls, name, blocked)
 
 
 def alembic_config(url: str) -> Config:
