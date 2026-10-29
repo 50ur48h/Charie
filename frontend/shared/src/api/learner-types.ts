@@ -123,3 +123,16 @@ export interface OwnerNotes {
   sorted: SortedNotes | null;
   sorted_at: string | null;
 }
+
+// GET /api/learning/stream (architecture 09): the live feed. `at` is when
+// Charie found it; `step` is the 1-12 learning step; `seq` numbers the
+// lines so the client skips ones it already saw (Last-Event-ID).
+export type LearningEventKind = "info" | "found" | "question" | "warning" | "done";
+
+export interface LearningEvent {
+  seq: number;
+  at: string;
+  step: number;
+  kind: LearningEventKind;
+  message: string;
+}

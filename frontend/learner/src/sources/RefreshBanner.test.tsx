@@ -53,7 +53,7 @@ function run(status: LearningRun["status"]): LearningRun {
   };
 }
 
-function renderBanner(documents: LearnerDocument[], runs: LearningRun[]) {
+function renderBanner(documents: LearnerDocument[], runs: LearningRun[], savedAt: string | null = null) {
   const posted: string[] = [];
   const fetched: string[] = [];
   vi.stubGlobal(
@@ -65,7 +65,8 @@ function renderBanner(documents: LearnerDocument[], runs: LearningRun[]) {
         return Promise.resolve(json({ ok: true }));
       }
       if (url.includes("/api/learning")) return Promise.resolve(json({ runs }));
-      if (url.includes("/api/documents")) return Promise.resolve(json({ documents }));
+      if (url.includes("/api/documents")) return Promise.resolve(json({ documents })); if (url.includes("owner-notes"))
+        return Promise.resolve(json({ text: "My rule.", saved_at: savedAt, sorted: null, sorted_at: null }));
       return Promise.resolve(json({}));
     }),
   );
@@ -111,5 +112,23 @@ describe("RefreshBanner", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Refresh knowledge base" }));
     expect(await screen.findByText("Learning page")).toBeTruthy();
     expect(posted).toEqual([]);
+  });
+
+  test("says notes changed", async () => {
+    renderBanner([doc(1, "learned")], [run("done")], "2026-10-27T21:00:00+05:30");
+    expect(await screen.findByText("Your notes changed since the last learning")).toBeTruthy();
+  });
+
+  test("says documents and notes", async () => {
+    renderBanner([doc(1, "new"), doc(2, "new")], [], "2026-10-27T21:00:00+05:30");
+    expect(
+      await screen.findByText("2 new documents and changed notes since the last learning"),
+    ).toBeTruthy();
+  });
+
+  test("stays hidden when notes predate the run", async () => {
+    const { fetched } = renderBanner([doc(1, "learned")], [run("done")], "2025-10-26T21:00:00+05:30");
+    await waitFor(() => expect(fetched.some((url) => url.includes("owner-notes"))).toBe(true));
+    expect(screen.queryByText(/since the last learning/)).toBeNull();
   });
 });

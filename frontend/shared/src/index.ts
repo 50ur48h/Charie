@@ -70,6 +70,7 @@ export * from "./api/learner-types";
 export * from "./api/sources";
 export * from "./api/setup";
 export * from "./api/learning";
+export * from "./api/learning-feed";
 export * from "./api/password";
 export * from "./api/memories";
 export * from "./usage/SpendingBanner";

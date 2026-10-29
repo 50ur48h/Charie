@@ -21,7 +21,7 @@ export function backoffDelayMs(attempt: number): number {
   return Math.min(8000, 500 * 2 ** Math.max(0, attempt));
 }
 
-function sleep(ms: number, signal: AbortSignal): Promise<void> {
+export function sleep(ms: number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       signal.removeEventListener("abort", onAbort);
@@ -149,7 +149,7 @@ export async function readStreamEvents(
   }
 }
 
-function isAbort(error: unknown): boolean {
+export function isAbort(error: unknown): boolean {
   return (
     (error instanceof DOMException && error.name === "AbortError") ||
     (error instanceof ApiError && error.code === "AbortError")

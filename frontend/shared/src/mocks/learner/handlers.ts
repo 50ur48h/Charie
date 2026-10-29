@@ -1,11 +1,12 @@
 import { http, HttpResponse } from "msw";
 import { needSession } from "../session";
-import type { DatabaseInput, LearnerDocument } from "../../api/learner-types";
+import type { DatabaseInput, LearnerDocument, LearningEvent } from "../../api/learner-types";
 import { learner, saveLearner, saveSetup, setup, setupState } from "./state";
+import { getRunEvents, newestRun, subscribeRunEvents } from "./timers";
 
 // Fake learner addresses (mock only). One handler per address; the screens
-// read through the real client. Documents upload (with progress) and notes
-// saving work here; timers, the draft and run progress arrive later.
+// read through the real client. Documents, notes, runs and the live feed work
+// here; the reader and run clocks live in timers.ts. The draft arrives later.
 export const LEARNER_DOCUMENTS_URL = "*/api/documents";
 export const LEARNER_DOCUMENT_URL = "*/api/documents/:id";
 export const LEARNER_LEARNING_URL = "*/api/learning";
@@ -16,6 +17,9 @@ export const LEARNER_DATABASE_TEST_URL = "*/api/sources/database/test";
 export const LEARNER_NOTES_URL = "*/api/owner-notes";
 export const LEARNER_START_URL = "*/api/learning/start";
 export const LEARNER_REFRESH_URL = "*/api/learning/refresh";
+export const LEARNER_PAUSE_URL = "*/api/learning/pause";
+export const LEARNER_RESUME_URL = "*/api/learning/resume";
+export const LEARNER_STREAM_URL = "*/api/learning/stream";
 
 const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -73,6 +77,27 @@ function runningRun(): boolean {
   return learner().runs.some((run) => run.status === "running" || run.status === "paused");
 }
 
+// Notes count as changed when they were saved after the newest run started,
+// or when notes are saved and no run exists yet (P04.6: the banner shows).
+function notesChangedSinceRun(): boolean {
+  const slice = setup();
+  const savedAt = slice.notes.saved_at;
+  if (!savedAt) return false;
+  const newest = newestRun();
+  if (!newest) return true;
+  return Date.parse(savedAt) > Date.parse(newest.started_at);
+}
+
+function sse(event: LearningEvent): string {
+  const data = JSON.stringify({
+    seq: event.seq,
+    at: event.at,
+    step: event.step,
+    kind: event.kind,
+    message: event.message,
+  });
+  return `id: ${event.seq}\nevent: ${event.kind}\ndata: ${data}\n\n`;
+}
 export const learnerHandlers = [
   http.get(LEARNER_DOCUMENTS_URL, () => {
     const blocked = needSession();
@@ -177,11 +202,20 @@ export const learnerHandlers = [
     const count = store.documents.filter(
       (doc) => doc.status === "new" || doc.status === "reading",
     ).length;
+    const notesChanged = notesChangedSinceRun();
+    const reason =
+      count > 0 && notesChanged
+        ? `${count === 1 ? "1 new document" : `${count} new documents`} and changed notes`
+        : notesChanged
+          ? "changed notes"
+          : count === 1
+            ? "1 new document"
+            : `${count} new documents`;
     store.runs.push({
       id: store.runs.reduce((max, run) => Math.max(max, run.id), 0) + 1,
       kind: "refresh",
       status: "running",
-      reason: count === 1 ? "1 new document" : `${count} new documents`,
+      reason,
       step: 1,
       percent: 0,
       minutes_left: 66,
@@ -197,6 +231,112 @@ export const learnerHandlers = [
     return HttpResponse.json({ ok: true });
   }),
 
+  http.delete(LEARNER_DOCUMENT_URL, ({ params }) => {
+    const blocked = needSession();
+    if (blocked) return blocked;
+    const store = learner();
+    const document = store.documents.find((doc) => doc.id === Number(params.id));
+    if (!document) {
+      return HttpResponse.json(
+        { error: "not_found", message: "Charie couldn't find that document." },
+        { status: 404 },
+      );
+    }
+    document.status = "removed";
+    saveLearner();
+    return new HttpResponse(null, { status: 204 });
+  }),
+
+  http.post(`${LEARNER_DOCUMENT_URL}/retry`, ({ params }) => {
+    const blocked = needSession();
+    if (blocked) return blocked;
+    const store = learner();
+    const document = store.documents.find((doc) => doc.id === Number(params.id));
+    if (!document) {
+      return HttpResponse.json(
+        { error: "not_found", message: "Charie couldn't find that document." },
+        { status: 404 },
+      );
+    }
+    if (document.status !== "failed" && document.unreadable_pages === 0) {
+      return HttpResponse.json(
+        { error: "nothing_to_retry", message: "This document doesn't need another try." },
+        { status: 409 },
+      );
+    }
+    document.status = "reading";
+    document.progress = 0;
+    document.unreadable_pages = 0;
+    document.error = null;
+    saveLearner();
+    return HttpResponse.json({ document });
+  }),
+
+  http.post(LEARNER_PAUSE_URL, () => {
+    const blocked = needSession();
+    if (blocked) return blocked;
+    const run = newestRun();
+    if (!run || run.status !== "running") {
+      return HttpResponse.json(
+        { error: "not_running", message: "There's no learning run to pause." },
+        { status: 409 },
+      );
+    }
+    run.status = "paused";
+    saveLearner();
+    return HttpResponse.json({ ok: true });
+  }),
+
+  http.post(LEARNER_RESUME_URL, () => {
+    const blocked = needSession();
+    if (blocked) return blocked;
+    const run = newestRun();
+    if (!run || run.status !== "paused") {
+      return HttpResponse.json(
+        { error: "not_paused", message: "Learning isn't paused." },
+        { status: 409 },
+      );
+    }
+    run.status = "running";
+    saveLearner();
+    return HttpResponse.json({ ok: true });
+  }),
+
+  http.get(LEARNER_STREAM_URL, ({ request }) => {
+    const blocked = needSession();
+    if (blocked) return blocked;
+    const run = newestRun();
+    if (!run) {
+      return HttpResponse.json(
+        { error: "no_run", message: "Charie hasn't started learning yet." },
+        { status: 404 },
+      );
+    }
+    const lastId = Number(request.headers.get("last-event-id") ?? 0) || 0;
+    const history = getRunEvents(run.id)
+      .filter((event) => event.seq > lastId)
+      .slice(-20);
+    const encoder = new TextEncoder();
+    let stop: (() => void) | null = null;
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (const event of history) controller.enqueue(encoder.encode(sse(event)));
+        stop = subscribeRunEvents(run.id, (event) => {
+          if (event.seq > lastId) controller.enqueue(encoder.encode(sse(event)));
+        });
+      },
+      cancel() {
+        stop?.();
+      },
+    });
+    return new HttpResponse(stream, {
+      headers: {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+      },
+    });
+  }),
   http.get(LEARNER_SETUP_URL, () => {
     const blocked = needSession();
     if (blocked) return blocked;
