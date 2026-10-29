@@ -1,0 +1,91 @@
+"""Fixtures for tests that need our Postgres.
+
+Each run gets a fresh throwaway database (`charie_test_…`), migrated to
+`head` and dropped afterwards. The working `charie` database is never
+touched, and the practice database is never used here.
+"""
+
+import secrets
+from pathlib import Path
+from urllib.parse import urlparse, urlunparse
+
+import pytest
+from alembic import command
+from alembic.config import Config
+from sqlalchemy import create_engine, text
+
+from charie.shared.config import get_settings
+from charie.shared.db import Base, clear_engine_cache, psycopg_url
+
+BACKEND_DIR = Path(__file__).resolve().parents[1]
+
+
+def alembic_config(url: str) -> Config:
+    """An Alembic config for a database URL (% escaped for ConfigParser)."""
+    cfg = Config()
+    cfg.set_main_option("script_location", str(BACKEND_DIR / "migrations"))
+    cfg.set_main_option("sqlalchemy.url", url.replace("%", "%%"))
+    return cfg
+
+
+def _server_url() -> str:
+    url = get_settings().database_url
+    if not url:
+        pytest.fail("Our Postgres isn't running. Start it with: docker compose up -d db")
+    parts = urlparse(psycopg_url(url))
+    return urlunparse(parts._replace(path="/postgres"))
+
+
+def _make_engine(url: str):
+    return create_engine(url, isolation_level="AUTOCOMMIT")
+
+
+@pytest.fixture(scope="session")
+def test_db_url():
+    """A fresh database for the whole test run, gone afterwards."""
+    try:
+        server = _make_engine(_server_url())
+        server.connect().close()
+    except Exception:
+        pytest.fail("Our Postgres isn't running. Start it with: docker compose up -d db")
+    name = f"charie_test_{secrets.token_hex(4)}"
+    with server.connect() as conn:
+        conn.execute(text(f'CREATE DATABASE "{name}"'))
+    parts = urlparse(psycopg_url(get_settings().database_url or ""))
+    url = urlunparse(parts._replace(path=f"/{name}"))
+    command.upgrade(alembic_config(url), "head")
+    yield url
+    server.dispose()
+    dropper = _make_engine(_server_url())
+    with dropper.connect() as conn:
+        conn.execute(text(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)'))
+    dropper.dispose()
+    server.dispose()
+
+
+@pytest.fixture()
+def db(monkeypatch, test_db_url):
+    """Point all code at the throwaway database, empty after each test."""
+    monkeypatch.setenv("DATABASE_URL", test_db_url)
+    get_settings.cache_clear()
+    clear_engine_cache()
+    yield test_db_url
+    engine = create_engine(test_db_url)
+    names = ", ".join(f'"{name}"' for name in Base.metadata.tables)
+    with engine.begin() as conn:
+        conn.execute(text(f"TRUNCATE {names} RESTART IDENTITY CASCADE"))
+    engine.dispose()
+    monkeypatch.undo()
+    get_settings.cache_clear()
+    clear_engine_cache()
+
+
+@pytest.fixture()
+def db_session(db):
+    """A session on the throwaway database."""
+    from sqlalchemy.orm import Session
+
+    engine = create_engine(db)
+    with Session(engine) as session:
+        yield session
+    engine.dispose()
