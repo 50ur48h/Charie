@@ -38,7 +38,13 @@ function AnsweredRow({
         <div className="text-[14px] font-medium">{question.title}</div>
         <div className="truncate text-[13px] text-muted">{label}</div>
       </div>
-      <Button variant="ghost" size="sm" className="ml-auto flex-none" onClick={onChange}>
+      <Button
+        variant="ghost"
+        size="sm"
+        className="ml-auto flex-none"
+        onClick={onChange}
+        aria-label={`Change your answer to ${question.title}`}
+      >
         Change
       </Button>
     </div>

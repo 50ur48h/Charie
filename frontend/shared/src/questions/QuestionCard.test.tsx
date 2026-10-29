@@ -79,6 +79,43 @@ describe("QuestionCard", () => {
     expect(checked(/Including delivery fees/)).toBe(true);
   });
 
+  test("change_init_option: an answered card starts from the saved non-default choice", async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn();
+    const answered = {
+      ...waiting,
+      status: "answered" as const,
+      answer: { optionId: "without-fees" },
+    };
+    render(<QuestionCard question={answered} onSave={onSave} onSkip={vi.fn()} />);
+    // The saved non-default choice is selected; the default is not.
+    expect(checked(/Without delivery fees/)).toBe(true);
+    expect(checked(/Including delivery fees/)).toBe(false);
+    expect(onSave).not.toHaveBeenCalled();
+    // Saving untouched preserves the saved choice.
+    await user.click(screen.getByRole("button", { name: "Save answer" }));
+    expect(onSave).toHaveBeenCalledWith({ optionId: "without-fees" });
+  });
+
+  test("change_init_text: the text box shows the saved free-text answer", async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn();
+    const answered = {
+      ...seedQuestions[2],
+      status: "answered" as const,
+      answer: { text: "the digits are the store number" },
+    };
+    render(<QuestionCard question={answered} onSave={onSave} onSkip={vi.fn()} />);
+    expect(checked(/Something else/)).toBe(true);
+    expect(
+      (screen.getByLabelText("Your answer in your own words") as HTMLInputElement).value,
+    ).toBe("the digits are the store number");
+    expect(onSave).not.toHaveBeenCalled();
+    // Saving untouched preserves the free-text answer.
+    await user.click(screen.getByRole("button", { name: "Save answer" }));
+    expect(onSave).toHaveBeenCalledWith({ text: "the digits are the store number" });
+  });
+
   test("something_else: free text saves trimmed, blank text is refused", async () => {
     const user = userEvent.setup();
     const onSave = vi.fn();

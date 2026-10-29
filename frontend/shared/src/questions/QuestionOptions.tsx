@@ -12,14 +12,16 @@ export function QuestionOptions({
   options,
   allowText,
   value,
+  initialText,
   onChange,
 }: {
   options: QuestionOption[];
   allowText?: string;
   value: OptionSelection | null;
+  initialText?: string;
   onChange: (selection: OptionSelection | null) => void;
 }) {
-  const [draft, setDraft] = useState("");
+  const [draft, setDraft] = useState(initialText ?? "");
   const radioValue =
     value === null ? undefined : "optionId" in value ? value.optionId : allowText;
   return (
@@ -59,6 +61,22 @@ export function QuestionOptions({
       )}
     </div>
   );
+}
+
+export function savedSelection(question: {
+  options: QuestionOption[];
+  allowText?: string;
+  answer?: { optionId?: string; text?: string };
+}): OptionSelection | null {
+  const answer = question.answer;
+  if (!answer) return null;
+  if (answer.optionId !== undefined && question.options.some((o) => o.id === answer.optionId)) {
+    return { optionId: answer.optionId };
+  }
+  if (answer.text !== undefined && answer.text.trim() !== "" && question.allowText) {
+    return { text: answer.text };
+  }
+  return null;
 }
 
 export function initialSelection(

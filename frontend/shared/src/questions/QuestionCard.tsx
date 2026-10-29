@@ -4,7 +4,7 @@ import { Button } from "../components/Button";
 import { Card } from "../components/Card";
 import { Pill } from "../components/Pill";
 import { QuestionEvidence } from "./QuestionEvidence";
-import { initialSelection, QuestionOptions, type OptionSelection } from "./QuestionOptions";
+import { initialSelection, QuestionOptions, savedSelection, type OptionSelection } from "./QuestionOptions";
 import type { OwnerQuestion } from "./types";
 
 function answerLabel(question: OwnerQuestion): string | null {
@@ -35,8 +35,10 @@ export function QuestionCard({
   onCancel?: () => void;
   onAskAbout?: () => void;
 }) {
+  // Change starts from the saved answer (option or free text); the
+  // documented default applies only when nothing is saved yet.
   const [selection, setSelection] = useState<OptionSelection | null>(() =>
-    initialSelection(question.options, question.defaultOption),
+    savedSelection(question) ?? initialSelection(question.options, question.defaultOption),
   );
   const [blank, setBlank] = useState(false);
   const answered = answerLabel(question);
@@ -74,6 +76,7 @@ export function QuestionCard({
           options={question.options}
           allowText={question.allowText}
           value={selection}
+          initialText={question.answer?.text}
           onChange={(next) => {
             setSelection(next);
             setBlank(false);

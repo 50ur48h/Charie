@@ -40,6 +40,20 @@ test("answer_skip_change updates tabs and the badge", async ({ page }) => {
   // Change the earlier answer from the Answered tab.
   await page.getByRole("tab", { name: /Answered/ }).click();
   await expect(page.getByText("Last full week, Monday to Sunday")).toBeVisible();
+  // Change opens the saved answer for editing: exactly one option is pre-selected.
+  await page.getByRole("button", { name: /Change your answer to.*last week/ }).click();
+  const answered = page.getByRole("region", { name: /What does "last week" mean/ });
+  await expect(answered.getByRole("radio", { checked: true })).toHaveCount(1);
+  await expect(
+    answered.getByRole("radio", { name: "Last full week, Monday to Sunday", checked: true }),
+  ).toBeVisible();
+  // Pick a different option and save; the row shows the new saved answer.
+  await answered.getByRole("radio", { name: "The last 7 days" }).click();
+  await answered.getByRole("button", { name: "Save answer" }).click();
+  // Both saves toast, so the earlier toast may still be on screen; check the latest.
+  await expect(page.getByText("Saved. Charie is re-checking what this affects.").last()).toBeVisible();
+  await expect(page.getByText("The last 7 days")).toBeVisible();
+  await expect(page.getByText("Last full week, Monday to Sunday")).toBeHidden();
 });
 
 test("tabs_badge shows empty states and counts", async ({ page }) => {
