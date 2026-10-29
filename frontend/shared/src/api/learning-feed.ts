@@ -1,7 +1,14 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import type { LearningEvent } from "./learner-types";
-import { fetchStream, readStreamEvents } from "./stream";
+import {
+  MAX_STREAM_RETRIES,
+  backoffDelayMs,
+  fetchStream,
+  isAbort,
+  readStreamEvents,
+  sleep,
+} from "./stream";
 
 // Live feed for the Learning page (architecture 09, "The live stream").
 // The stream sends `event` (a feed line), `progress` and `status` messages;
@@ -19,10 +26,21 @@ export function emptyLearningFeed(): LearningFeedState {
   return { lines: [], lastSeq: 0, percent: null, step: null, done: false };
 }
 
-interface IncomingMessage {
+export interface IncomingMessage {
   event: string;
   data: string;
   id: string | null;
+}
+
+/** A message that means the run finished: a done line or a done status. */
+export function isTerminalMessage(message: IncomingMessage): boolean {
+  if (message.event === "done") return true;
+  if (message.event !== "status") return false;
+  try {
+    return (JSON.parse(message.data) as { status?: unknown }).status === "done";
+  } catch {
+    return false;
+  }
 }
 
 function parseData(data: string): Record<string, unknown> | null {
@@ -78,24 +96,27 @@ export function applyLearningEvent(
 
 /**
  * Follow a run's feed while it is going. Opens GET /api/learning/stream
- * with the last seen seq and refetches the run list when it finishes.
+ * with the last seen seq and refetches the run list when a terminal
+ * message says the run finished. A connection that ends first is cut,
+ * not done: reconnect with the last seq (bounded backoff, no duplicates).
  * Quiet when there is no run or the page goes away.
  */
 export function useLearningFeed(runId: number | null, active: boolean): LearningFeedState {
   const client = useQueryClient();
   const [feed, setFeed] = useState<LearningFeedState>(() => emptyLearningFeed());
+  const doneRef = useRef(false);
 
   useEffect(() => {
     setFeed(emptyLearningFeed());
+    doneRef.current = false;
     if (runId === null || !active) return;
     const controller = new AbortController();
     let stopped = false;
+    let lastEventId: string | null = null;
+    let attempts = 0;
 
     async function follow(): Promise<void> {
-      let lastEventId: string | null = null;
-      let failures = 0;
-      for (;;) {
-        if (stopped) return;
+      while (!stopped && !doneRef.current) {
         try {
           const response = await fetchStream("/api/learning/stream", {
             lastEventId,
@@ -106,20 +127,31 @@ export function useLearningFeed(runId: number | null, active: boolean): Learning
             (event) => {
               if (stopped) return;
               if (event.id !== null) lastEventId = event.id;
+              if (isTerminalMessage(event)) doneRef.current = true;
               setFeed((prev) => applyLearningEvent(prev, event));
             },
             controller.signal,
           );
-          if (stopped) return;
-          // The stream only ends when the run is done: refresh the runs.
-          await client.invalidateQueries({ queryKey: ["learner-learning"] });
-          return;
-        } catch {
-          if (stopped || controller.signal.aborted) return;
-          failures += 1;
-          if (failures > 3) return;
-          await new Promise((resolve) => setTimeout(resolve, failures * 1000));
+          if (stopped || doneRef.current) break;
+          attempts += 1;
+          if (attempts > MAX_STREAM_RETRIES) break;
+          await sleep(backoffDelayMs(attempts - 1), controller.signal);
+        } catch (error) {
+          if (stopped || isAbort(error) || controller.signal.aborted) break;
+          if (doneRef.current) break;
+          attempts += 1;
+          if (attempts > MAX_STREAM_RETRIES) break;
+          try {
+            await sleep(backoffDelayMs(attempts - 1), controller.signal);
+          } catch {
+            break;
+          }
         }
+      }
+      // A sidebar switch or unmount during these awaits must not let this
+      // completion touch the new run: re-check the stop flag each time.
+      if (doneRef.current && !stopped) {
+        await client.invalidateQueries({ queryKey: ["learner-learning"] });
       }
     }
 
