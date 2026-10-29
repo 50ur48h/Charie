@@ -20,9 +20,12 @@ def test_name_chat_real_call(db) -> None:
             .where(AiCall.job == "name_chat", AiCall.app == "tests")
             .order_by(AiCall.id.desc())
         )
-    assert row is not None and row.status == "ok"
-    assert row.prompt_tokens > 0 and row.completion_tokens > 0
-    assert row.cost_usd == call_cost(
-        row.model, row.prompt_tokens, row.cached_tokens, row.completion_tokens
-    )
-    assert 0 < row.cost_usd < 0.01
+        assert row is not None
+        status = row.status
+        tokens = (row.prompt_tokens, row.cached_tokens, row.completion_tokens)
+        cost = row.cost_usd
+        model = row.model
+    assert status == "ok"
+    assert tokens[0] > 0 and tokens[2] > 0
+    assert cost == call_cost(model, *tokens)
+    assert 0 < cost < 0.01

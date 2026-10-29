@@ -21,9 +21,13 @@ def test_row_saved_in_ai_calls(db) -> None:
     AiClient(provider=fake, sleep=lambda s: None).run(JOB, {"topic": "hi"}, ChatTitle, app="chat")
     with session_scope() as session:
         row = session.scalar(select(AiCall).where(AiCall.job == JOB))
-    assert row is not None and row.status == "ok"
-    assert (row.prompt_tokens, row.cached_tokens, row.completion_tokens) == (100, 0, 20)
-    assert row.cost_usd == call_cost("muse-wonder-1.0", 100, 0, 20)
+        assert row is not None
+        status = row.status
+        tokens = (row.prompt_tokens, row.cached_tokens, row.completion_tokens)
+        cost = row.cost_usd
+    assert status == "ok"
+    assert tokens == (100, 0, 20)
+    assert cost == call_cost("muse-wonder-1.0", 100, 0, 20)
 
 
 def test_month_spent_from_database(db) -> None:
