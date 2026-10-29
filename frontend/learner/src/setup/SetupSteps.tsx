@@ -23,7 +23,7 @@ export function SetupSteps({
   onOpen: (step: number) => void;
 }) {
   return (
-    <nav aria-label="Setup steps" className="grid content-start gap-1 lg:sticky lg:top-6">
+    <nav aria-label="Setup steps" className="grid content-start gap-1 min-[1200px]:sticky min-[1200px]:top-6">
       <span className="sr-only">
         Step {open} of 5
       </span>

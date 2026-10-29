@@ -55,7 +55,7 @@ export function RefreshBanner() {
   }
 
   return (
-    <div className="mb-[22px] flex items-center gap-3.5 rounded-[16px] bg-accent-soft p-[16px_20px]">
+    <div className="mb-[22px] flex flex-wrap items-center gap-3.5 rounded-[16px] bg-accent-soft p-[16px_20px]">
       <IconBox icon={RefreshCw} tone="accent" size={40} />
       <div className="min-w-0 flex-1">
         <b className="block text-text">{title}</b>
@@ -64,7 +64,7 @@ export function RefreshBanner() {
           learned.
         </span>
       </div>
-      <Button disabled={refresh.isPending} onClick={onRefresh} className="ml-auto flex-none">
+      <Button disabled={refresh.isPending} onClick={onRefresh} className="ml-auto flex-none max-[640px]:ml-0 max-[640px]:w-full">
         <RefreshCw aria-hidden="true" className="[--icon:16px]" />
         {refresh.isPending ? "Refreshing…" : "Refresh knowledge base"}
       </Button>

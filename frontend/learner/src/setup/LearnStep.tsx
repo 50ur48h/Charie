@@ -103,12 +103,12 @@ export function LearnStep({ onBack, onNext }: { onBack: () => void; onNext: () =
           </div>
         )}
       </div>
-      <div className="mt-6 flex gap-2.5 border-t border-border-soft pt-[18px]">
+      <div className="mt-6 flex flex-wrap gap-2.5 border-t border-border-soft pt-[18px]">
         <Button variant="ghost" onClick={onBack}>
           <ArrowLeft aria-hidden="true" className="[--icon:16px]" />
           Back
         </Button>
-        <Button className="ml-auto" onClick={onNext}>
+        <Button className="ml-auto max-[640px]:ml-0 max-[640px]:w-full" onClick={onNext}>
           Continue
           <ArrowRight aria-hidden="true" className="[--icon:16px]" />
         </Button>

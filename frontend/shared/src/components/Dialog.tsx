@@ -33,7 +33,7 @@ const DialogContent = forwardRef<
     >
       <div
         className={cn(
-          "relative w-full max-w-[460px] animate-[pop-in_.2s_var(--ease-calm)] rounded-card border border-border bg-surface p-[22px_24px] shadow-pop",
+          "relative max-h-full w-full max-w-[460px] animate-[pop-in_.2s_var(--ease-calm)] overflow-y-auto rounded-card border border-border bg-surface p-[22px_24px] shadow-pop",
           className,
         )}
       >

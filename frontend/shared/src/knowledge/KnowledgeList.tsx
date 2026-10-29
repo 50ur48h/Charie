@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   Calendar,
   Database,
@@ -36,12 +37,15 @@ export function kindIcon(kind: KnowledgeKind): LucideIcon {
 
 // The knowledge browser list: search, kind filters and entry rows.
 // Selection is by stable key; the parent loads detail for the chosen key.
+// The learner's editable list adds "All" / "Needs review" tabs under the
+// search (guessed entries and disagreements first).
 export function KnowledgeList({
   entries,
   counts,
   kind,
   query,
   selectedKey,
+  editable = false,
   onKindChange,
   onQueryChange,
   onSelect,
@@ -51,10 +55,16 @@ export function KnowledgeList({
   kind: KnowledgeKind | "all";
   query: string;
   selectedKey: string | null;
+  editable?: boolean;
   onKindChange: (kind: KnowledgeKind | "all") => void;
   onQueryChange: (query: string) => void;
   onSelect: (key: string) => void;
 }) {
+  const [reviewOnly, setReviewOnly] = useState(false);
+  const reviewEntries = entries.filter(
+    (entry) => entry.confidence === "guess" || entry.confidence === "conflict",
+  );
+  const shown = reviewOnly ? reviewEntries : entries;
   return (
     <div>
       <div className="mb-3">
@@ -66,6 +76,35 @@ export function KnowledgeList({
           onChange={(event) => onQueryChange(event.target.value)}
         />
       </div>
+      {editable && (
+        <div className="mb-3 flex gap-1.5" role="group" aria-label="Review filter">
+          <button
+            type="button"
+            onClick={() => setReviewOnly(false)}
+            aria-pressed={!reviewOnly}
+            className={
+              !reviewOnly
+                ? "inline-flex items-center gap-1.5 rounded-full bg-accent px-3 py-1.5 text-[13px] font-semibold text-white"
+                : "inline-flex items-center gap-1.5 rounded-full border border-border bg-surface px-3 py-1.5 text-[13px] font-medium text-text-2"
+            }
+          >
+            All
+          </button>
+          <button
+            type="button"
+            onClick={() => setReviewOnly(true)}
+            aria-pressed={reviewOnly}
+            className={
+              reviewOnly
+                ? "inline-flex items-center gap-1.5 rounded-full bg-accent px-3 py-1.5 text-[13px] font-semibold text-white"
+                : "inline-flex items-center gap-1.5 rounded-full border border-border bg-surface px-3 py-1.5 text-[13px] font-medium text-text-2"
+            }
+          >
+            Needs review
+            <span className={reviewOnly ? undefined : "text-muted"}>{reviewEntries.length}</span>
+          </button>
+        </div>
+      )}
       <div className="mb-3 flex flex-wrap gap-1.5" role="group" aria-label="Kinds">
         {KNOWLEDGE_KINDS.map(({ key, label, icon: Icon }) => {
           const active = kind === key;
@@ -88,13 +127,15 @@ export function KnowledgeList({
           );
         })}
       </div>
-      {entries.length === 0 ? (
+      {shown.length === 0 ? (
         <Card padded>
-          <p className="text-[14px] text-muted">Nothing matches. Try another word.</p>
+          <p className="text-[14px] text-muted">
+            {reviewOnly ? "Nothing needs review right now." : "Nothing matches. Try another word."}
+          </p>
         </Card>
       ) : (
         <div className="grid gap-px" role="listbox" aria-label="Knowledge entries">
-          {entries.map((entry) => {
+          {shown.map((entry) => {
             const Icon = kindIcon(entry.kind);
             const selected = entry.key === selectedKey;
             return (

@@ -166,6 +166,7 @@ describe("mock handlers", () => {
     await expect(response.json()).resolves.toEqual({
       questions_waiting: 3,
       data_through: "2025-10-26",
+      knowledge_version: 14,
       spending: {
         state: "ok",
         spent_usd: 41.2,

@@ -92,7 +92,7 @@ export function DatabaseForm({
 
   return (
     <div>
-      <div className="mb-[18px] flex flex-wrap gap-2.5" role="group" aria-label="Database type">
+      <div className="mb-[18px] flex flex-wrap gap-2.5 max-[640px]:flex-col max-[640px]:*:w-full" role="group" aria-label="Database type">
         <span className="inline-flex items-center gap-2.5 rounded-[14px] border-[1.5px] border-accent bg-surface px-4 py-3 text-[14.5px] font-semibold shadow-[0_0_0_3px_var(--accent-soft)]" aria-current="true">
           <Database aria-hidden="true" className="[--icon:17px] text-accent-ink" />
           Postgres
@@ -163,7 +163,7 @@ export function DatabaseForm({
           {result.message}
         </p>
       )}
-      <div className="mt-6 flex gap-2.5 border-t border-border-soft pt-[18px]">
+      <div className="mt-6 flex flex-wrap gap-2.5 border-t border-border-soft pt-[18px]">
         <Button variant="outline" disabled={!valid || busy} onClick={runTest}>
           {test.isPending ? (
             <><Spinner label="Testing" /> Testing…</>
@@ -173,7 +173,7 @@ export function DatabaseForm({
             <><Plug aria-hidden="true" className="[--icon:16px]" /> Test connection</>
           )}
         </Button>
-        <span className="ml-auto flex gap-2.5">
+        <span className="ml-auto flex gap-2.5 max-[640px]:ml-0 max-[640px]:w-full max-[640px]:*:flex-1">
           {cancel}
           <Button disabled={!valid || busy} onClick={submit}>
             {save.isPending ? "Saving…" : submitLabel}

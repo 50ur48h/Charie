@@ -94,6 +94,7 @@ export function DocumentsCard() {
     {
       id: "document",
       header: "Document",
+      meta: { className: "min-w-[220px]" },
       cell: ({ row }) => (
         <span className="flex items-center gap-2.5 font-medium">
           <FileText aria-hidden="true" className="flex-none text-muted [--icon:17px]" />

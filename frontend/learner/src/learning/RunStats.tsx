@@ -10,7 +10,7 @@ export function RunStats({ run }: { run: LearningRun }) {
     { label: "Questions for you", value: stepValue(run, 10) },
   ];
   return (
-    <div className="mb-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+    <div className="mb-4 grid gap-4 grid-cols-2 min-[1000px]:grid-cols-4">
       {stats.map((stat) => (
         <StatCard key={stat.label} label={stat.label} value={stat.value} />
       ))}

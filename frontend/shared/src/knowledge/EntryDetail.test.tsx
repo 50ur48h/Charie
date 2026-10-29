@@ -41,4 +41,63 @@ describe("EntryDetail", () => {
     await user.click(screen.getByRole("button", { name: "Suggest a change" }));
     expect(onSuggest).toHaveBeenCalled();
   });
+
+  test("editable: shows Edit, Mark as wrong and Approve with the draft version", () => {
+    const lunch = getMockKnowledge("metric.labor_cost_percent")!;
+    render(
+      <EntryDetail
+        entry={lunch}
+        version={{ number: 15, status: "draft" }}
+        editable
+        onSuggest={vi.fn()}
+        onStartEdit={vi.fn()}
+        onApprove={vi.fn()}
+        onWrong={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("Draft version 15")).not.toBeNull();
+    expect(screen.getByRole("button", { name: /Edit/ })).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Mark as wrong" })).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Approve" })).not.toBeNull();
+    expect(screen.queryByRole("button", { name: "Suggest a change" })).toBeNull();
+  });
+
+  test("editable: Approve is disabled when confirmed", () => {
+    const onApprove = vi.fn();
+    const { rerender } = render(
+      <EntryDetail
+        entry={netSales}
+        version={{ number: 15, status: "draft" }}
+        editable
+        onSuggest={vi.fn()}
+        onApprove={onApprove}
+      />,
+    );
+    const approve = screen.getByRole("button", { name: "Approve" });
+    expect(approve.hasAttribute("disabled")).toBe(true);
+    expect(approve.getAttribute("title")).toBe("Already confirmed by you");
+    const guess = getMockKnowledge("metric.labor_cost_percent")!;
+    rerender(
+      <EntryDetail
+        entry={guess}
+        version={{ number: 15, status: "draft" }}
+        editable
+        onSuggest={vi.fn()}
+        onApprove={onApprove}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Approve" }).hasAttribute("disabled")).toBe(false);
+  });
+
+  test("editable: the published version label stays", () => {
+    render(
+      <EntryDetail
+        entry={netSales}
+        version={{ number: 14, status: "published" }}
+        editable
+        onSuggest={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("Version 14")).not.toBeNull();
+  });
 });

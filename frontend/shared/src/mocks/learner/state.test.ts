@@ -48,6 +48,14 @@ describe("learner mock store", () => {
     const world = designWorld();
     const pages = world.documents.reduce((sum, doc) => sum + (doc.pages ?? 0), 0);
     expect(pages).toBe(286);
-    expect(newWorld()).toEqual({ documents: [], runs: [] });
+    expect(newWorld()).toEqual({
+      documents: [],
+      runs: [],
+      versions: [],
+      draftEntries: null,
+      publishedEntries: null,
+      changesByVersion: {},
+      todos: [],
+    });
   });
 });

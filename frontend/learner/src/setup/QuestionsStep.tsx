@@ -125,7 +125,7 @@ export function QuestionsStep({ onBack, onNext }: { onBack: () => void; onNext: 
             </a>
           </Button>
         )}
-        <Button className="ml-auto" onClick={onNext}>
+        <Button className="ml-auto max-[640px]:ml-0 max-[640px]:w-full" onClick={onNext}>
           Continue
           <ArrowRight aria-hidden="true" className="[--icon:16px]" />
         </Button>

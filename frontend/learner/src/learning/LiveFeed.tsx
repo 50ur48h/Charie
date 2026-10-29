@@ -15,7 +15,7 @@ export function LiveFeed({ runId, active }: { runId: number | null; active: bool
       {lines.length === 0 ? (
         <p className="mt-3 text-[14px] text-muted">Nothing yet. Lines appear here as Charie works.</p>
       ) : (
-        <div className="mt-3 flex max-h-[420px] flex-col justify-end gap-2 overflow-hidden" aria-live="polite">
+        <div className="mt-3 flex max-h-[420px] max-[640px]:max-h-[320px] flex-col justify-end gap-2 overflow-hidden" aria-live="polite">
           {lines.map((line) => (
             <FeedLine key={line.seq} line={line} />
           ))}
