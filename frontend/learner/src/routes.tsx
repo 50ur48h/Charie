@@ -1,6 +1,9 @@
-import { Navigate, type RouteObject } from "react-router";
+import { type RouteObject } from "react-router";
 import { LoginPage, NotFoundPage, PlaceholderPage, RequireLogin } from "@charie/shared";
+import { LearnerIndex } from "./LearnerIndex";
 import { LearnerLayout } from "./LearnerLayout";
+import { SetupPage } from "./pages/SetupPage";
+import { SourcesPage } from "./pages/SourcesPage";
 
 export const routes: RouteObject[] = [
   {
@@ -10,27 +13,9 @@ export const routes: RouteObject[] = [
       </RequireLogin>
     ),
     children: [
-      { index: true, element: <Navigate to="setup" replace /> },
-      {
-        path: "setup",
-        element: (
-          <PlaceholderPage
-            app="learner"
-            title="Set up Charie"
-            lead="Five short steps. Charie learns your business before it answers any questions."
-          />
-        ),
-      },
-      {
-        path: "sources",
-        element: (
-          <PlaceholderPage
-            app="learner"
-            title="Sources"
-            lead="Where Charie learns from. Add or change anything here, then refresh so Charie learns the changes."
-          />
-        ),
-      },
+      { index: true, element: <LearnerIndex /> },
+      { path: "setup", element: <SetupPage /> },
+      { path: "sources", element: <SourcesPage /> },
       {
         path: "learning",
         element: (

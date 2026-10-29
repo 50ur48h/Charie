@@ -5,6 +5,7 @@ import {
   useSidebarHidden,
   type LearnerSidebarPage,
 } from "@charie/shared";
+import { learnerRoutes, useMe } from "@charie/shared";
 import { useChatUrl } from "./layout/useChatUrl";
 import { useLearnerBadges } from "./layout/useLearnerBadges";
 
@@ -20,11 +21,13 @@ export function LearnerLayout() {
   const { pathname } = useLocation();
   const badges = useLearnerBadges();
   const chatUrl = useChatUrl();
+  const me = useMe();
   return (
     <AppShell
       app="learner"
       sidebarHidden={hidden}
       onShowSidebar={() => setHidden(false)}
+      logoHref={(me.data?.setup_done ?? false) ? learnerRoutes.sources : learnerRoutes.setup}
       sidebar={() => (
         <LearnerSidebar
           active={pageFromPath(pathname)}
@@ -32,6 +35,7 @@ export function LearnerLayout() {
           learningLive={badges.learningNow}
           reviewCount={badges.needsReview}
           charieUrl={chatUrl ?? undefined}
+          setupDone={me.data?.setup_done ?? false}
         />
       )}
     >

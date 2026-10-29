@@ -35,6 +35,7 @@ import { clearMockMemories, deleteMockMemory, listMockMemories } from "./sampleM
 import { openMockStream } from "./chat-stream";
 import { needSession, SESSION_KEY } from "./session";
 import { learnerHandlers } from "./learner/handlers";
+import { setup } from "./learner/state";
 
 export { SESSION_KEY };
 
@@ -164,7 +165,7 @@ export const handlers = [
     if (blocked) return blocked;
     return HttpResponse.json({
       logged_in: true,
-      setup_done: true,
+      setup_done: setup().setupDone,
       theme: readSavedTheme(),
       chat_url: "http://localhost:5173",
       learner_url: "http://localhost:5174",

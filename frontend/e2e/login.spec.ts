@@ -43,7 +43,7 @@ test("signing in takes you back to the page you wanted", async ({ page }) => {
 
 test("the learner opens the setup guide after signing in", async ({ page }) => {
   await signedIn(page, LEARNER, "/setup");
-  await expect(page).toHaveURL(`${LEARNER}/setup`);
+  await expect(page).toHaveURL(new RegExp(`${LEARNER}/setup(\\?step=\\d)?$`));
   await expect(page.getByRole("heading", { name: "Set up Charie" })).toBeVisible();
 });
 

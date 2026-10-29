@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "./client";
 import type { LearningOverview } from "./learner-types";
 
@@ -10,5 +10,30 @@ export function useLearning() {
     queryFn: ({ signal }) => apiFetch<LearningOverview>("/api/learning", { signal }),
     refetchInterval: (query) =>
       query.state.data?.runs?.[0]?.status === "running" ? 5000 : false,
+  });
+}
+
+// POST /api/learning/start: begins the first run (409 while one runs).
+// On success the run list refreshes.
+export function useStartLearning() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiFetch<{ ok: true }>("/api/learning/start", { method: "POST" }),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ["learner-learning"] });
+      void client.invalidateQueries({ queryKey: ["learner-setup"] });
+    },
+  });
+}
+
+// POST /api/learning/refresh: starts a refresh run (409 while one runs).
+export function useRefreshLearning() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiFetch<{ ok: true }>("/api/learning/refresh", { method: "POST" }),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ["learner-learning"] });
+      void client.invalidateQueries({ queryKey: ["learner-setup"] });
+    },
   });
 }

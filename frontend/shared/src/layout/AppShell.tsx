@@ -11,15 +11,18 @@ export function AppShell({
   sidebarHidden,
   onShowSidebar,
   children,
+  logoHref,
 }: {
   app: "chat" | "learner";
   sidebar: (place: "column" | "drawer") => React.ReactNode;
   sidebarHidden: boolean;
   onShowSidebar: () => void;
   children: React.ReactNode;
+  logoHref?: string;
 }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const openerRef = useRef<HTMLButtonElement | null>(null);
+  const home = logoHref ?? (app === "learner" ? learnerRoutes.setup : chatRoutes.home);
   return (
     <div
       className={
@@ -70,11 +73,7 @@ export function AppShell({
             {sidebar("drawer")}
           </MobileDrawer>
           <div className="mx-auto">
-            <Brand
-              app={app}
-              markSize={24}
-              href={app === "learner" ? learnerRoutes.setup : chatRoutes.home}
-            />
+            <Brand app={app} markSize={24} href={home} />
           </div>
           <div className="w-8" aria-hidden="true" />
         </div>

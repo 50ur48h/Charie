@@ -12,5 +12,9 @@ export async function signedIn(page: Page, app: string, target = "/"): Promise<v
   await expect(page).toHaveURL(`${app}/login`);
   await page.getByLabel("Password", { exact: true }).fill(SAMPLE_PASSWORD);
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
-  await expect(page).toHaveURL(`${app}${target}`);
+  // The setup guide resolves a bare /setup to ?step=<n> once its state
+  // loads; accept either, since the redirect always follows.
+  await expect(page).toHaveURL(
+    target === "/setup" ? new RegExp(`^${app}/setup(\\?step=\\d)?$`) : `${app}${target}`,
+  );
 }

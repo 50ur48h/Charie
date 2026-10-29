@@ -1,7 +1,10 @@
+export * from "./format";
+
 export function appName(app: "chat" | "learner"): string {
   return app === "learner" ? "Charie Learner" : "Charie";
 }
 
+export * from "./components/cn";
 export * from "./components/Button";
 export * from "./components/Card";
 export * from "./components/ChoiceCard";
@@ -65,6 +68,7 @@ export * from "./api/usage";
 export * from "./api/settings";
 export * from "./api/learner-types";
 export * from "./api/sources";
+export * from "./api/setup";
 export * from "./api/learning";
 export * from "./api/password";
 export * from "./api/memories";
