@@ -54,6 +54,15 @@ for (const theme of THEMES) {
   });
 }
 
+test("chat_pages_have_no_serious_violations", async ({ page }) => {
+  await signedIn(page, CHAT, "/");
+  for (const route of ["/", "/chat/1", "/questions", "/knowledge", "/settings"]) {
+    await page.goto(`${CHAT}${route}`);
+    await expect(page.locator("#main")).toBeVisible();
+    await check(page);
+  }
+});
+
 test("no axe problems on phones", async ({ page }) => {
   test.skip((page.viewportSize()?.width ?? 0) >= 900, "phone viewport only");
   await page.goto(`${CHAT}/login`);
