@@ -24,9 +24,9 @@ describe("LearnerSidebar", () => {
     );
     expect(screen.getByRole("link", { name: "Charie Learner" })).toBeTruthy();
     expect(screen.getByRole("link", { name: "Setup guide" })).toBeTruthy();
-    expect(screen.getByRole("link", { name: "Sources 3 new" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Sources 3 new documents" })).toBeTruthy();
     expect(screen.getByRole("link", { name: "Learning Learning now" })).toBeTruthy();
-    expect(screen.getByRole("link", { name: "Knowledge 4 to review" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Knowledge 4 entries need review" })).toBeTruthy();
     expect(
       screen.getByRole("link", { name: "Open Charie" }).getAttribute("href"),
     ).toBe("http://chat.example");
@@ -51,8 +51,8 @@ describe("LearnerSidebar", () => {
       </MemoryRouter>,
     );
     expect(screen.getByText("3 new")).toBeTruthy();
-    expect(screen.getByText("Learning now")).toBeTruthy();
-    expect(screen.getByText("to review")).toBeTruthy();
+    expect(screen.getByRole("img", { name: "Learning now" })).toBeTruthy();
+    expect(screen.getByText("entries need review")).toBeTruthy();
   });
 
   test("hides Open Charie until the URL is loaded", () => {

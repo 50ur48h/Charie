@@ -12,10 +12,14 @@ afterEach(() => {
 function renderAt(path: string) {
   vi.stubGlobal(
     "fetch",
-    vi.fn().mockResolvedValue(
-      new Response('{"logged_in": true, "setup_done": true, "theme": "sage"}', {
-        headers: { "Content-Type": "application/json" },
-      }),
+    // A fresh Response per call: bodies can only be read once, and the
+    // frame now fires several queries (me, documents, runs, knowledge).
+    vi.fn().mockImplementation(() =>
+      Promise.resolve(
+        new Response('{"logged_in": true, "setup_done": true, "theme": "sage"}', {
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
     ),
   );
   const client = new QueryClient({
