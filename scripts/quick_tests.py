@@ -31,6 +31,18 @@ def commands_for(path):
         commands.add(BACKEND_TEST + f"tests/integration -k {job}")
     elif p.startswith("backend/tests/questions/"):
         commands.add(BACKEND_TEST + "tests/unit/questions")
+    elif p.startswith("backend/charie/shared/"):
+        rest = p[len("backend/charie/shared/"):]
+        if "/" in rest:
+            folder = rest.split("/")[0]
+            commands.add(BACKEND_TEST + f"tests/unit/{folder}")
+            commands.add(BACKEND_TEST + f"tests/integration/{folder}")
+        else:
+            commands.add(BACKEND_TEST + "tests/unit/shared")
+            commands.add(BACKEND_TEST + "tests/integration/shared")
+    elif p.startswith("backend/migrations/"):
+        commands.add(BACKEND_TEST + "tests/unit/shared")
+        commands.add(BACKEND_TEST + "tests/integration/shared")
     elif p.startswith("backend/"):
         commands.add(BACKEND_TEST + "tests/unit")
     elif p.startswith("frontend/shared/"):
@@ -113,6 +125,8 @@ def stop_reason(hook_payload, status, detail=""):
 def self_test():
     cases = [
         ("backend/charie/shared/safety/sql_check.py", ["tests/unit/safety"]),
+        ("backend/charie/shared/text/numbers.py", ["tests/unit/text", "tests/integration/text"]),
+        ("backend/charie/shared/config.py", ["tests/unit/shared", "tests/integration/shared"]),
         ("frontend/shared/src/components/Button.tsx", ["npm", "test"]),
         ("frontend/chat/src/pages/Chat.tsx", ["npm", "e2e:mock"]),
         ("backend/charie/prompts/plan_round.md", ["tests/integration", "plan_round"]),

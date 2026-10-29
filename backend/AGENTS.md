@@ -23,6 +23,8 @@ Read the top AGENTS.md first. This file adds the back-end rules; where they conf
 
 ## Tests
 - `charie/shared/safety/` → `tests/unit/safety/` · `charie/shared/ai/` → `tests/unit/ai/`
+- `charie/shared/<folder>/` → `tests/unit/<folder>/` + `tests/integration/<folder>/`
+- any other file in `charie/shared/`, and `backend/migrations/` → `tests/unit/shared/` + `tests/integration/shared/`
 - `charie/learner/` → `tests/unit/learner/` + `tests/integration/learner/`
 - `charie/chat/` → `tests/unit/chat/` + `tests/integration/chat/`
 - `charie/prompts/<job>.md` → the integration tests that use that job, in replay mode
