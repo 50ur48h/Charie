@@ -1,5 +1,19 @@
+import {
+  applyApprove,
+  applyOwnerFix,
+  draftWorkingCopy,
+  liveVersion,
+  openDraft,
+  publishedBase,
+} from "./learner/versions";
+import { filterKnowledgeEntries } from "./sampleKnowledge";
+
+
+
 import { http, HttpResponse } from "msw";
+
 import { readSavedTheme } from "../theme/theme";
+
 import {
   addMockMessage,
   countMockPosts,
@@ -10,6 +24,7 @@ import {
   deleteMockChat,
   renameMockChat,
 } from "./sampleChat";
+
 import {
   answerMockQuestion,
   listMockQuestions,
@@ -17,25 +32,33 @@ import {
   waitingMockCount,
   waitingOverride,
 } from "./sampleQuestions";
+
 import {
   currentMonth,
   isUsageMonth,
   mockSpending,
   mockUsage,
 } from "./sampleUsage";
+
 import {
   KNOWLEDGE_VERSION,
-  getMockKnowledge,
-  listMockKnowledge,
   suggestMockChange,
 } from "./sampleKnowledge";
+
 import { getMockPassword, setMockPassword } from "./password";
+
 import { getMockSettings, updateMockSettings } from "./sampleSettings";
+
 import { clearMockMemories, deleteMockMemory, listMockMemories } from "./sampleMemories";
+
 import { openMockStream } from "./chat-stream";
+
 import { needSession, SESSION_KEY } from "./session";
+
 import { learnerHandlers } from "./learner/handlers";
-import { setup } from "./learner/state";
+
+import { learner, saveLearner, setup } from "./learner/state";
+import type { LearnerTodo } from "../api/learner-types";
 
 export { SESSION_KEY };
 
@@ -53,6 +76,13 @@ export const QUESTION_SKIP_URL = "*/api/questions/:id/skip";
 export const KNOWLEDGE_URL = "*/api/knowledge";
 export const KNOWLEDGE_ENTRY_URL = "*/api/knowledge/:key";
 export const KNOWLEDGE_SUGGEST_URL = "*/api/knowledge/:key/suggest";
+export const KNOWLEDGE_APPROVE_URL = "*/api/knowledge/:key/approve";
+export const KNOWLEDGE_WRONG_URL = "*/api/knowledge/:key/wrong";
+export const VERSIONS_URL = "*/api/versions";
+export const VERSION_CHANGES_URL = "*/api/versions/:id/changes";
+export const VERSION_PUBLISH_URL = "*/api/versions/:number/publish";
+export const TODOS_URL = "*/api/todos";
+export const TODO_DISMISS_URL = "*/api/todos/:id/dismiss";
 export const USAGE_URL = "*/api/usage";
 export const SETTINGS_URL = "*/api/settings";
 export const ME_URL = "*/api/me";
@@ -240,16 +270,27 @@ export const handlers = [
     const url = new URL(request.url);
     const kind = url.searchParams.get("kind") ?? undefined;
     const q = url.searchParams.get("q") ?? undefined;
+    const draft = openDraft();
+    if (url.searchParams.get("version") === "draft" && draft) {
+      return HttpResponse.json({
+        entries: filterKnowledgeEntries(draftWorkingCopy() ?? [], { kind, q }),
+        version: draft.number,
+        status: "draft",
+      });
+    }
+    const live = liveVersion();
     return HttpResponse.json({
-      entries: listMockKnowledge({ kind, q }),
-      version: KNOWLEDGE_VERSION,
+      entries: filterKnowledgeEntries(publishedBase(), { kind, q }),
+      version: live?.number ?? KNOWLEDGE_VERSION,
       status: "published",
     });
   }),
-  http.get(KNOWLEDGE_ENTRY_URL, ({ params }) => {
+  http.get(KNOWLEDGE_ENTRY_URL, ({ params, request }) => {
     const blocked = needSession();
     if (blocked) return blocked;
-    const entry = getMockKnowledge(String(params.key));
+    const url = new URL(request.url);
+    const draftEntries = url.searchParams.get("version") === "draft" ? (draftWorkingCopy() ?? undefined) : undefined;
+    const entry = (draftEntries ?? publishedBase()).find((item) => item.key === String(params.key));
     if (entry === undefined) {
       return HttpResponse.json(
         { error: "not_found", message: "No entry has that key." },
@@ -257,6 +298,186 @@ export const handlers = [
       );
     }
     return HttpResponse.json(entry);
+  }),
+  http.get(VERSIONS_URL, () => {
+    const blocked = needSession();
+    if (blocked) return blocked;
+    const store = learner();
+    const versions = [...store.versions].sort((a, b) => b.number - a.number);
+    return HttpResponse.json({
+      versions,
+      live: versions.find((version) => version.status === "published")?.number ?? null,
+      draft: versions.find((version) => version.status === "draft")?.number ?? null,
+    });
+  }),
+
+  http.get(VERSION_CHANGES_URL, ({ params }) => {
+    const blocked = needSession();
+    if (blocked) return blocked;
+    const store = learner();
+    const version = store.versions.find((entry) => entry.id === Number(params.id));
+    if (!version) {
+      return HttpResponse.json(
+        { error: "not_found", message: "Charie couldn't find that version." },
+        { status: 404 },
+      );
+    }
+    return HttpResponse.json({
+      version: version.number,
+      status: version.status,
+      changes: store.changesByVersion[version.number] ?? [],
+    });
+  }),
+
+  http.post(VERSION_PUBLISH_URL, ({ params }) => {
+    const blocked = needSession();
+    if (blocked) return blocked;
+    const store = learner();
+    const draft = store.versions.find(
+      (version) => version.number === Number(params.number) && version.status === "draft",
+    );
+    if (!draft) {
+      return HttpResponse.json(
+        { error: "not_draft", message: "Only a draft can be published." },
+        { status: 409 },
+      );
+    }
+    const live = store.versions.find((version) => version.status === "published");
+    if (live) live.status = "archived";
+    draft.status = "published";
+    draft.published_at = new Date().toISOString();
+    store.publishedEntries = store.draftEntries;
+    store.draftEntries = null;
+    saveLearner();
+    return HttpResponse.json({ version: draft });
+  }),
+
+  http.patch(KNOWLEDGE_ENTRY_URL, async ({ params, request }) => {
+    const blocked = needSession();
+    if (blocked) return blocked;
+    const key = String(params.key);
+    const entries = draftWorkingCopy() ?? publishedBase();
+    if (!entries.some((entry) => entry.key === key)) {
+      return HttpResponse.json(
+        { error: "not_found", message: "No entry has that key." },
+        { status: 404 },
+      );
+    }
+    let patch: { title?: unknown; meaning?: unknown };
+    try {
+      patch = (await request.json()) as { title?: unknown; meaning?: unknown };
+    } catch {
+      patch = {};
+    }
+    const title = typeof patch.title === "string" ? patch.title.trim() : undefined;
+    const meaning = typeof patch.meaning === "string" ? patch.meaning.trim() : undefined;
+    if (title === undefined && meaning === undefined) {
+      return HttpResponse.json(
+        { error: "empty_edit", message: "Change the title or the meaning first." },
+        { status: 400 },
+      );
+    }
+    if (title !== undefined && title === "") {
+      return HttpResponse.json(
+        { error: "empty_title", message: "The entry still needs a title." },
+        { status: 400 },
+      );
+    }
+    if (meaning !== undefined && meaning === "") {
+      return HttpResponse.json(
+        { error: "empty_meaning", message: "The entry still needs a meaning." },
+        { status: 400 },
+      );
+    }
+    const entry = applyOwnerFix(key, { title, meaning }, "Changed by you.");
+    return HttpResponse.json({ entry });
+  }),
+
+  http.post(KNOWLEDGE_APPROVE_URL, ({ params }) => {
+    const blocked = needSession();
+    if (blocked) return blocked;
+    const key = String(params.key);
+    const entries = draftWorkingCopy() ?? publishedBase();
+    if (!entries.some((entry) => entry.key === key)) {
+      return HttpResponse.json(
+        { error: "not_found", message: "No entry has that key." },
+        { status: 404 },
+      );
+    }
+    const working = draftWorkingCopy() ?? publishedBase();
+    const current = working.find((item) => item.key === key);
+    const draft = openDraft();
+    const changes = draft ? learner().changesByVersion[draft.number] ?? [] : [];
+    if (current?.confidence === "owner" && !changes.some((change) => change.key === key)) {
+      return HttpResponse.json(
+        { error: "nothing_to_approve", message: "This entry is already confirmed." },
+        { status: 409 },
+      );
+    }
+    const entry = applyApprove(key);
+    return HttpResponse.json({ entry });
+  }),
+
+  http.post(KNOWLEDGE_WRONG_URL, async ({ params, request }) => {
+    const blocked = needSession();
+    if (blocked) return blocked;
+    const key = String(params.key);
+    const base = [...(draftWorkingCopy() ?? []), ...publishedBase()];
+    const entry = base.find((item) => item.key === key);
+    if (!entry) {
+      return HttpResponse.json(
+        { error: "not_found", message: "That entry is gone." },
+        { status: 404 },
+      );
+    }
+    let note: unknown = null;
+    try {
+      note = ((await request.json()) as { note?: unknown }).note ?? null;
+    } catch {
+      note = null;
+    }
+    const store = learner();
+    const clean = typeof note === "string" && note.trim() !== "" ? note.trim() : null;
+    const todo: LearnerTodo = {
+      id: store.todos.reduce((max, item) => Math.max(max, item.id), 0) + 1,
+      kind: "correction",
+      text: clean === null ? `${entry.name}: marked as wrong` : `${entry.name}: ${clean}`,
+      details: { chat_title: null, words: clean },
+      status: "open",
+      result: null,
+      created_at: new Date().toISOString(),
+      done_at: null,
+    };
+    store.todos.push(todo);
+    saveLearner();
+    return HttpResponse.json({ todo }, { status: 201 });
+  }),
+
+  http.get(TODOS_URL, () => {
+    const blocked = needSession();
+    if (blocked) return blocked;
+    const todos = learner()
+      .todos.filter((todo) => todo.status === "open")
+      .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
+    return HttpResponse.json({ todos });
+  }),
+
+  http.post(TODO_DISMISS_URL, ({ params }) => {
+    const blocked = needSession();
+    if (blocked) return blocked;
+    const store = learner();
+    const todo = store.todos.find((item) => item.id === Number(params.id));
+    if (!todo) {
+      return HttpResponse.json(
+        { error: "not_found", message: "That item is gone." },
+        { status: 404 },
+      );
+    }
+    todo.status = "dismissed";
+    todo.done_at = new Date().toISOString();
+    todo.result = "Dismissed by you";
+    saveLearner();
+    return HttpResponse.json({ todo });
   }),
   http.post(KNOWLEDGE_SUGGEST_URL, async ({ params, request }) => {
     const blocked = needSession();
@@ -472,6 +693,7 @@ export const handlers = [
     return HttpResponse.json({
       questions_waiting: waitingOverride() ?? waitingMockCount(),
       data_through: "2025-10-26",
+      knowledge_version: liveVersion()?.number ?? KNOWLEDGE_VERSION,
       spending: demoSpending,
     });
   }),

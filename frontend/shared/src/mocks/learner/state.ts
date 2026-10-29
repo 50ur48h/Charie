@@ -29,7 +29,7 @@ function load(): LearnerWorld | null {
     const raw = storage()?.getItem(STORE_KEY);
     if (!raw) return null;
     const data = JSON.parse(raw) as LearnerWorld;
-    if (!Array.isArray(data?.documents) || !Array.isArray(data?.runs)) return null;
+    if (!Array.isArray(data?.documents) || !Array.isArray(data?.runs) || !Array.isArray(data?.versions) || !Array.isArray(data?.todos)) return null;
     return data;
   } catch {
     return null;
@@ -76,7 +76,7 @@ export function initLearnerWorld(search = ""): "new" | "still" | null {
 
 // Setup slice (mock only): the saved database connection (the password lives
 // here, never in a response), the readiness report, the done flag, the owner
-// notes and the draft/live version numbers (P04.4 replaces the last two).
+// notes. Knowledge versions live on the world, not here (P04.4's numbers are gone).
 const SETUP_KEY = "charie-learner-setup";
 
 export interface SetupSlice {
@@ -85,8 +85,6 @@ export interface SetupSlice {
   readiness: Readiness | null;
   setupDone: boolean;
   notes: OwnerNotes;
-  draftNumber: number | null;
-  liveNumber: number | null;
 }
 
 const DESIGN_NOTES_TEXT = `# Notes for Charie
@@ -158,8 +156,6 @@ function designSetup(): SetupSlice {
       sorted: DESIGN_SORTED,
       sorted_at: "2026-10-03T10:00:00+05:30",
     },
-    draftNumber: 15,
-    liveNumber: 14,
   };
 }
 
@@ -170,8 +166,6 @@ function newSetup(): SetupSlice {
     readiness: null,
     setupDone: false,
     notes: { text: "", saved_at: null, sorted: null, sorted_at: null },
-    draftNumber: null,
-    liveNumber: null,
   };
 }
 

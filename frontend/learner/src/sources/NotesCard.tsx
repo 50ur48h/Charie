@@ -87,7 +87,7 @@ export function NotesCard() {
                 You changed your notes. Charie sorts them again when it next learns.
               </p>
             )}
-          <div className="mt-3.5 grid gap-3 md:grid-cols-3">
+          <div className="mt-3.5 grid gap-3 min-[1000px]:grid-cols-3">
             <NoteColumn
               icon={ShieldCheck}
               heading="Hard rules"

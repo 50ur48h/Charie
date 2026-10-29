@@ -48,7 +48,7 @@ describe("KnowledgeList", () => {
       <KnowledgeList
         entries={listMockKnowledge({ kind: "number" })}
         counts={{ all: 14 }}
-        kind="number"
+        kind="table"
         query=""
         selectedKey={null}
         onKindChange={onKindChange}
@@ -84,5 +84,61 @@ describe("KnowledgeList", () => {
     const onSelect = renderList();
     await user.click(screen.getByRole("option", { name: /Average order/ }));
     expect(onSelect).toHaveBeenCalledWith("metric.avg_order");
+  });
+
+  test("editable: Needs review shows 4", async () => {
+    const user = userEvent.setup();
+    render(
+      <KnowledgeList
+        entries={listMockKnowledge({})}
+        counts={{ all: 14 }}
+        kind="all"
+        query=""
+        selectedKey={null}
+        editable
+        onKindChange={vi.fn()}
+        onQueryChange={vi.fn()}
+        onSelect={vi.fn()}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: /Needs review/ })).not.toBeNull();
+    await user.click(screen.getByRole("button", { name: /Needs review 4/ }));
+    expect(screen.getAllByRole("option")).toHaveLength(4);
+  });
+
+  test("editable: an empty Needs review explains itself", async () => {
+    const user = userEvent.setup();
+    render(
+      <KnowledgeList
+        entries={listMockKnowledge({ kind: "table" })}
+        counts={{ all: 2 }}
+        kind="table"
+        query=""
+        selectedKey={null}
+        editable
+        onKindChange={vi.fn()}
+        onQueryChange={vi.fn()}
+        onSelect={vi.fn()}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: /Needs review/ }));
+    expect(screen.getByText("Nothing needs review right now.")).not.toBeNull();
+    expect(screen.queryByRole("option")).toBeNull();
+  });
+
+  test("read_only: no review tabs without editable", () => {
+    render(
+      <KnowledgeList
+        entries={listMockKnowledge({})}
+        counts={{ all: 14 }}
+        kind="all"
+        query=""
+        selectedKey={null}
+        onKindChange={vi.fn()}
+        onQueryChange={vi.fn()}
+        onSelect={vi.fn()}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: /Needs review/ })).toBeNull();
   });
 });

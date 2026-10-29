@@ -274,4 +274,150 @@ describe("learner setup mocks", () => {
     await reader.cancel();
     expect(text).toContain("id: 1");
     expect(text).toContain("Net sales matches the finance report");
-  });});
+  });
+
+
+describe("learner knowledge mocks", () => {
+  test("the first fix makes a draft from the live entries", async () => {
+    resetLearnerMock("new");
+    await signIn();
+    const patched = await fetch(`${APP}/api/knowledge/metric.net_sales`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ meaning: "Sales without delivery fees." }),
+    });
+    expect(patched.status).toBe(200);
+    const versions = (await (await fetch(`${APP}/api/versions`)).json()) as {
+      versions: { number: number; status: string; made_by: string; summary: { note: string } }[];
+      draft: number | null;
+    };
+    expect(versions.draft).toBe(1);
+    expect(versions.versions[0].made_by).toBe("owner_edit");
+    expect(versions.versions[0].summary.note).toBe("Your changes");
+    const draft = (await (
+      await fetch(`${APP}/api/knowledge/metric.net_sales?version=draft`)
+    ).json()) as { meaning: string; confidence: string };
+    expect(draft.meaning).toBe("Sales without delivery fees.");
+    expect(draft.confidence).toBe("owner");
+    const changes = (await (await fetch(`${APP}/api/versions/1/changes`)).json()) as {
+      changes: { key: string; change: string; reason: string }[];
+    };
+    expect(changes.changes).toHaveLength(1);
+    expect(changes.changes[0]).toMatchObject({
+      key: "metric.net_sales",
+      change: "changed",
+      reason: "Changed by you.",
+    });
+    // A second fix of the same entry updates its change, and the note follows.
+    await fetch(`${APP}/api/knowledge/metric.net_sales`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: "Net sales (owner)" }),
+    });
+    const again = (await (await fetch(`${APP}/api/versions/1/changes`)).json()) as {
+      changes: { key: string; title: string }[];
+    };
+    expect(again.changes).toHaveLength(1);
+    expect(again.changes[0].title).toBe("Net sales (owner)");
+    const versionsAgain = (await (await fetch(`${APP}/api/versions`)).json()) as {
+      versions: { number: number; summary: { note: string } }[];
+    };
+    expect(versionsAgain.versions[0].summary.note).toBe("Your changes");
+    // Unknown keys get a plain 404.
+    const missing = await fetch(`${APP}/api/knowledge/no.such.key`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ meaning: "Nope." }),
+    });
+    expect(missing.status).toBe(404);
+    await expect(missing.json()).resolves.toMatchObject({ error: "not_found" });
+    resetLearnerMock("design");
+  });
+
+  test("mark as wrong adds a to-do item and leaves the draft alone", async () => {
+    await signIn();
+    const note = "Net sales should leave out refunds.";
+    const marked = await fetch(`${APP}/api/knowledge/metric.net_sales/wrong`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ note }),
+    });
+    expect(marked.status).toBe(201);
+    await expect(marked.json()).resolves.toMatchObject({
+      todo: { kind: "correction", text: `Net sales: ${note}` },
+    });
+    const todos = (await (await fetch(`${APP}/api/todos`)).json()) as {
+      todos: { kind: string; text: string; status: string; details: { chat_title: null; words: string } }[];
+    };
+    expect(todos.todos.some((item) => item.text === `Net sales: ${note}`)).toBe(true);
+    expect(todos.todos.every((item) => item.status === "open")).toBe(true);
+    // The entry and the draft are untouched: still 6 changes on draft 15.
+    const entry = (await (
+      await fetch(`${APP}/api/knowledge/metric.net_sales?version=draft`)
+    ).json()) as { confidence: string };
+    expect(entry.confidence).toBe("owner");
+    const changes = (await (await fetch(`${APP}/api/versions/15/changes`)).json()) as {
+      changes: unknown[];
+    };
+    expect(changes.changes).toHaveLength(6);
+    // With no note, only the flag goes on the list.
+    const flagged = await fetch(`${APP}/api/knowledge/metric.avg_order/wrong`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    expect(flagged.status).toBe(201);
+    await expect(flagged.json()).resolves.toMatchObject({
+      todo: { text: "Average order: marked as wrong" },
+    });
+  });
+
+  test("an owner fix on a refresh draft names the change in the note", async () => {
+    await signIn();
+    const patched = await fetch(`${APP}/api/knowledge/metric.net_sales`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ meaning: "Sales without delivery fees." }),
+    });
+    expect(patched.status).toBe(200);
+    const versions = (await (await fetch(`${APP}/api/versions`)).json()) as {
+      versions: { number: number; summary: { added: number; changed: number; removed: number; note: string } }[];
+    };
+    const draft = versions.versions.find((version) => version.number === 15);
+    expect(draft?.summary.changed).toBe(3);
+    expect(draft?.summary.note).toBe(
+      "3 new facts from new documents · 2 updated meanings · 1 removed · 1 change by you",
+    );
+    const changes = (await (await fetch(`${APP}/api/versions/15/changes`)).json()) as {
+      changes: unknown[];
+    };
+    expect(changes.changes).toHaveLength(7);
+  });
+  test("publish makes the draft live and archives the old one", async () => {
+    await signIn();
+    const missing = await fetch(`${APP}/api/versions/999/publish`, { method: "POST" });
+    expect(missing.status).toBe(409);
+    await expect(missing.json()).resolves.toMatchObject({ error: "not_draft" });
+    const published = await fetch(`${APP}/api/versions/15/publish`, { method: "POST" });
+    expect(published.status).toBe(200);
+    await expect(published.json()).resolves.toMatchObject({
+      version: { number: 15, status: "published" },
+    });
+    const versions = (await (await fetch(`${APP}/api/versions`)).json()) as {
+      versions: { number: number; status: string }[];
+      live: number | null;
+      draft: number | null;
+    };
+    expect(versions.live).toBe(15);
+    expect(versions.draft).toBeNull();
+    expect(versions.versions.find((version) => version.number === 14)?.status).toBe("archived");
+    // The draft list is gone; the published one has draft 15's entries.
+    const list = (await (await fetch(`${APP}/api/knowledge`)).json()) as {
+      entries: { key: string }[];
+      version: number;
+    };
+    expect(list.version).toBe(15);
+    expect(list.entries.some((entry) => entry.key === "rule.refunds_out_of_sales")).toBe(true);
+  });
+});
+});

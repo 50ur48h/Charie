@@ -58,7 +58,7 @@ export function ReadyStep({ readiness }: { readiness: Readiness | null }) {
           It learned your business and tested itself. Here&rsquo;s how well it did.
         </p>
       </div>
-      <div className="mt-[22px] grid gap-3 text-left sm:grid-cols-3">
+      <div className="mt-[22px] grid gap-3 text-left min-[1000px]:grid-cols-3">
         <StatCard
           label="Business numbers checked"
           value={`${readiness.numbers_checked} of ${readiness.numbers_total}`}

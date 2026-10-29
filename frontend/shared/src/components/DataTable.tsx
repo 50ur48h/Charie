@@ -113,6 +113,7 @@ export function DataTable<T>({
                     className={cn(
                       "border-b border-border-soft px-3 py-3 align-middle",
                       numeric(cell.column.columnDef) && "text-right",
+                      columnClass(cell.column.columnDef),
                     )}
                   >
                     {flexRender(cell.column.columnDef.cell, cell.getContext())}
@@ -125,6 +126,10 @@ export function DataTable<T>({
       </table>
     </div>
   );
+}
+
+function columnClass<T>(def: ColumnDef<T, unknown>): string | undefined {
+  return (def.meta as { className?: string } | undefined)?.className;
 }
 
 function numeric<T>(def: ColumnDef<T, unknown>): boolean {

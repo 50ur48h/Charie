@@ -1,21 +1,43 @@
-import { Check, FileText } from "lucide-react";
+import { Check, FileText, SquarePen } from "lucide-react";
 import { Button } from "../components/Button";
 import { Card } from "../components/Card";
 import { ConfidencePill, kindLabel } from "./KnowledgeList";
 import type { KnowledgeEntry } from "./types";
+import { EntryEditForm } from "./EntryEditForm";
 
 // One entry's evidence: meanings, how it is worked out, recipe tests,
-// sources with quotes and history. Read-only here: no Edit, Approve or
-// Mark as wrong controls (the learner editor adds them in P04.8).
+// sources with quotes and history. Read-only shows "Suggest a change";
+// the learner editor adds Edit, Mark as wrong and Approve (P04.8).
 export function EntryDetail({
   entry,
   version,
+  editable = false,
+  editing = false,
+  savingEdit = false,
+  editError = null,
+  approving = false,
   onSuggest,
+  onStartEdit,
+  onCancelEdit,
+  onSaveEdit,
+  onApprove,
+  onWrong,
 }: {
   entry: KnowledgeEntry;
-  version: number | null;
+  version: { number: number; status: string } | number | null;
+  editable?: boolean;
+  editing?: boolean;
+  savingEdit?: boolean;
+  editError?: string | null;
+  approving?: boolean;
   onSuggest: () => void;
+  onStartEdit?: () => void;
+  onCancelEdit?: () => void;
+  onSaveEdit?: (patch: { title: string; meaning: string }) => void;
+  onApprove?: () => void;
+  onWrong?: () => void;
 }) {
+  const confirmed = entry.confidence === "owner";
   return (
     <Card padded aria-label={entry.name}>
       <div className="flex flex-wrap items-center gap-2">
@@ -24,11 +46,24 @@ export function EntryDetail({
           {kindLabel(entry.kind)}
         </span>
         {version !== null && (
-          <span className="ml-auto text-[12.5px] text-muted">Version {version}</span>
+          <span className="ml-auto text-[12.5px] text-muted">{versionLabel(version)}</span>
         )}
       </div>
-      <h2 className="mt-2.5 font-serif text-[22px] font-semibold leading-[1.3]">{entry.name}</h2>
-      <p className="mt-1.5 text-[14.5px]">{entry.meaning ?? entry.short}</p>
+      {editing && editable ? (
+        <EntryEditForm
+          title={entry.name}
+          meaning={entry.meaning ?? entry.short}
+          saving={savingEdit}
+          serverError={editError}
+          onSave={(patch) => onSaveEdit?.(patch)}
+          onCancel={() => onCancelEdit?.()}
+        />
+      ) : (
+        <>
+          <h2 className="mt-2.5 font-serif text-[22px] font-semibold leading-[1.3]">{entry.name}</h2>
+          <p className="mt-1.5 text-[14.5px]">{entry.meaning ?? entry.short}</p>
+        </>
+      )}
       {entry.how && entry.how.length > 0 && (
         <div className="mt-4">
           <div className="text-[12.5px] font-semibold uppercase tracking-wide text-muted">
@@ -103,12 +138,38 @@ export function EntryDetail({
           </ul>
         </div>
       )}
-      <div className="mt-4 flex items-center gap-2 border-t border-border pt-3.5">
+      <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-border pt-3.5">
         <span className="text-[12.5px] text-muted">Used in {entry.used} answers</span>
-        <Button variant="outline" size="sm" className="ml-auto" onClick={onSuggest}>
-          Suggest a change
-        </Button>
+        {editable ? (
+          <span className="ml-auto inline-flex flex-wrap gap-2">
+            <Button variant="outline" size="sm" onClick={() => onStartEdit?.()}>
+              <SquarePen aria-hidden="true" className="[--icon:15px]" />
+              Edit
+            </Button>
+            <Button variant="danger" size="sm" onClick={() => onWrong?.()}>
+              Mark as wrong
+            </Button>
+            <Button
+              size="sm"
+              disabled={confirmed || approving}
+              title={confirmed ? "Already confirmed by you" : undefined}
+              onClick={() => onApprove?.()}
+            >
+              <Check aria-hidden="true" className="[--icon:15px]" />
+              {approving ? "Approving…" : "Approve"}
+            </Button>
+          </span>
+        ) : (
+          <Button variant="outline" size="sm" className="ml-auto" onClick={onSuggest}>
+            Suggest a change
+          </Button>
+        )}
       </div>
     </Card>
   );
+}
+
+function versionLabel(version: { number: number; status: string } | number): string {
+  if (typeof version === "number") return `Version ${version}`;
+  return version.status === "draft" ? `Draft version ${version.number}` : `Version ${version.number}`;
 }

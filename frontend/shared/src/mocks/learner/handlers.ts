@@ -2,6 +2,7 @@ import { http, HttpResponse } from "msw";
 import { needSession } from "../session";
 import type { DatabaseInput, LearnerDocument, LearningEvent } from "../../api/learner-types";
 import { learner, saveLearner, saveSetup, setup, setupState } from "./state";
+import { ensureDraft, openDraft } from "./versions";
 import { getRunEvents, newestRun, subscribeRunEvents } from "./timers";
 
 // Fake learner addresses (mock only). One handler per address; the screens
@@ -176,7 +177,7 @@ export const learnerHandlers = [
       progress: Array.from({ length: 12 }, (_, i) => ({ step: i + 1, done: 0, total: null, note: "Waiting" })),
       cost_usd: 0,
       summary: null,
-      version_number: 1,
+      version_number: ensureDraft("first_learning", "First learning").number,
       new_version: true,
       started_at: new Date().toISOString(),
       finished_at: null,
@@ -197,7 +198,6 @@ export const learnerHandlers = [
         { status: 409 },
       );
     }
-    const slice = setup();
     const store = learner();
     const count = store.documents.filter(
       (doc) => doc.status === "new" || doc.status === "reading",
@@ -211,18 +211,20 @@ export const learnerHandlers = [
           : count === 1
             ? "1 new document"
             : `${count} new documents`;
+    const draftNote = openDraft()?.summary.note ?? null;
+    const draft = ensureDraft("refresh", reason);
     store.runs.push({
       id: store.runs.reduce((max, run) => Math.max(max, run.id), 0) + 1,
       kind: "refresh",
       status: "running",
-      reason,
+      reason: draftNote === null ? reason : `${reason} · ${draftNote}`,
       step: 1,
       percent: 0,
       minutes_left: 66,
       progress: [],
       cost_usd: 0,
       summary: null,
-      version_number: slice.draftNumber ?? (slice.liveNumber ?? 0) + 1,
+      version_number: draft.number,
       new_version: true,
       started_at: new Date().toISOString(),
       finished_at: null,

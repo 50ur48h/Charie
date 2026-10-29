@@ -163,13 +163,28 @@ function matches(entry: KnowledgeEntry, query: string): boolean {
     .every((word) => hay.includes(word));
 }
 
-export function listMockKnowledge(options?: { kind?: string; q?: string }): KnowledgeEntry[] {
+// Newest first is the caller's job; this keeps kind and search in one place
+// for the published list and the learner's draft and published copies.
+export function filterKnowledgeEntries(
+  all: KnowledgeEntry[],
+  options?: { kind?: string; q?: string },
+): KnowledgeEntry[] {
   const kind = options?.kind;
   const q = options?.q?.trim() ?? "";
-  return entries.filter(
+  return all.filter(
     (entry) =>
       (!kind || kind === "all" || entry.kind === kind) && (q === "" || matches(entry, q)),
   );
+}
+
+export function listMockKnowledge(options?: { kind?: string; q?: string }): KnowledgeEntry[] {
+  return filterKnowledgeEntries(entries, options);
+}
+
+// A deep copy of every entry: drafts start from the published list without
+// touching it.
+export function snapshotMockKnowledge(): KnowledgeEntry[] {
+  return JSON.parse(JSON.stringify(entries)) as KnowledgeEntry[];
 }
 
 export function getMockKnowledge(key: string): KnowledgeEntry | undefined {

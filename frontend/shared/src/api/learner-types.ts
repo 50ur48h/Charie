@@ -1,3 +1,5 @@
+import type { KnowledgeEntry } from "../knowledge/types";
+
 // Learner API bodies (architecture 09, learner addresses). P04.1 writes them;
 // Phases 5, 7, 8 and 9 build the back end to match (C005: this file wins).
 
@@ -135,4 +137,42 @@ export interface LearningEvent {
   step: number;
   kind: LearningEventKind;
   message: string;
+}
+// A knowledge version (architecture 02, "Versions"): a full copy of the
+// entries. Only one version is published at a time; the draft waits for
+// the owner unless every change is small (P04.9 auto-publishes; the mock
+// always waits).
+export interface KbVersion {
+  id: number;
+  number: number;
+  status: "draft" | "published" | "archived";
+  made_by: "first_learning" | "refresh" | "nightly" | "owner_edit";
+  created_at: string;
+  published_at: string | null;
+  summary: { added: number; changed: number; removed: number; note: string };
+}
+
+// What changed in one version, for Review changes. `before` and `after`
+// are entries, or null when the entry is new or gone.
+export interface KbChange {
+  key: string;
+  title: string;
+  change: "added" | "changed" | "removed";
+  before: KnowledgeEntry | null;
+  after: KnowledgeEntry | null;
+  reason: string;
+  is_big: boolean;
+}
+
+// One item on the learner's to-do list (Mark as wrong, or a correction
+// from a chat). Open items show on the Knowledge page.
+export interface LearnerTodo {
+  id: number;
+  kind: "correction" | "unknown_word" | "new_metric" | "meaning_change";
+  text: string;
+  details: { chat_title: string | null; words: string | null };
+  status: "open" | "done" | "dismissed";
+  result: string | null;
+  created_at: string;
+  done_at: string | null;
 }

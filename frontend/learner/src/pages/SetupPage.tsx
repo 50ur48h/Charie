@@ -68,7 +68,7 @@ export function SetupPage() {
         title="Set up Charie"
         lead="Five short steps. Charie learns your business before it answers any questions."
       />
-      <div className="grid items-start gap-4 xl:grid-cols-[280px_minmax(0,1fr)]">
+      <div className="grid items-start gap-4 min-[1200px]:grid-cols-[280px_minmax(0,1fr)]">
         <Card padded={false} className="p-[14px]">
           <SetupSteps current={current} open={open} done={false} onOpen={go} />
         </Card>
