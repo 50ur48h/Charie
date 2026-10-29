@@ -5,6 +5,8 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from charie.shared.ai.errors import AiError, SpendingPaused
+
 
 class ApiError(Exception):
     """A known failure with its status, code and plain message."""
@@ -23,6 +25,14 @@ def install_error_handlers(app: FastAPI) -> None:
     async def api_error(request: Request, error: ApiError) -> JSONResponse:
         return JSONResponse(
             status_code=error.status,
+            content={"error": error.code, "message": error.message},
+        )
+
+    @app.exception_handler(AiError)
+    async def ai_error(request: Request, error: AiError) -> JSONResponse:
+        status = 409 if isinstance(error, SpendingPaused) else 503
+        return JSONResponse(
+            status_code=status,
             content={"error": error.code, "message": error.message},
         )
 

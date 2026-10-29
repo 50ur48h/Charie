@@ -8,10 +8,12 @@ dependencies = [
     "argon2-cffi>=25.1.0",
     "fastapi>=0.162.0",
     "itsdangerous>=2.2.0",
+    "openai>=3.41.0",
     "pgvector>=0.5.1",
     "psycopg[binary]>=3.3.6",
     "pydantic-settings>=2.16.2",
     "sqlalchemy>=2.1.6",
+    "tenacity>=9.2.1",
     "uvicorn>=0.54.0",
 ]
 
