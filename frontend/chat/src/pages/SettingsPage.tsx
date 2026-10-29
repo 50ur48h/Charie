@@ -393,14 +393,15 @@ export function SettingsPage() {
                 <div className="flex items-center gap-3.5 rounded-[14px] bg-surface-2 p-[14px_16px]">
                   <IconBox icon={Database} tone="good" />
                   <div className="min-w-0">
-                    <div className="text-[14px] font-semibold">Bella Forno database</div>
+                    <div className="text-[14px] font-semibold">{status.data?.data?.name ?? "No database connected"}</div>
                     <div className="text-[12.5px] text-muted">
-                      Postgres · read-only
-                      {status.data?.data_through ? ` · data up to ${status.data.data_through}` : ""}
+                      {status.data?.data
+                        ? `${status.data.data.kind === "postgres" ? "Postgres" : status.data.data.kind} · read-only${status.data.data.data_through ? ` · data up to ${status.data.data.data_through}` : ""}`
+                        : "Connect one in the Learner."}
                     </div>
                   </div>
-                  <Pill tone="good" className="ml-auto flex-none">
-                    Connected
+                  <Pill tone={status.data?.data ? "good" : "neutral"} className="ml-auto flex-none">
+                    {status.data?.data ? "Connected" : "Not connected"}
                   </Pill>
                 </div>
                 <div className="flex items-center gap-3.5 rounded-[14px] bg-surface-2 p-[14px_16px]">

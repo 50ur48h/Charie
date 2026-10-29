@@ -44,7 +44,24 @@ function stubFetch(startRunning = false) {
     vi.fn().mockImplementation((url: string, init?: RequestInit) => {
       const method = init?.method ?? "GET";
       if (url.includes("/api/status")) {
-        return Promise.resolve(json({ questions_waiting: 0, data_through: "2025-10-26" }));
+        return Promise.resolve(json({
+            questions_waiting: 0,
+            knowledge: { version: null, entries: 0, documents: 0, published_at: null },
+            data: {
+              name: "Bella Forno database",
+              kind: "postgres",
+              status: "connected",
+              data_through: "2025-10-26",
+            },
+            learning: null,
+            spending: {
+              state: "ok",
+              spent_usd: 1,
+              limit_usd: 150,
+              warn_percent: 80,
+              percent_used: 1,
+            },
+          }));
       }
       if (url.includes("/messages") && method === "POST") {
         posts.push(url);
@@ -135,7 +152,24 @@ describe("ChatPage", () => {
         Promise.resolve(
           url.includes("/api/chats/999")
             ? json({ error: "not_found", message: "That chat is gone." }, 404)
-            : json({ questions_waiting: 0, data_through: null }),
+            : json({
+            questions_waiting: 0,
+            knowledge: { version: null, entries: 0, documents: 0, published_at: null },
+            data: {
+              name: "Bella Forno database",
+              kind: "postgres",
+              status: "connected",
+              data_through: null,
+            },
+            learning: null,
+            spending: {
+              state: "ok",
+              spent_usd: 1,
+              limit_usd: 150,
+              warn_percent: 80,
+              percent_used: 1,
+            },
+          }),
         ),
       ),
     );

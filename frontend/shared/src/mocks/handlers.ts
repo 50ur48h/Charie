@@ -509,7 +509,7 @@ export const handlers = [
     const month = new URL(request.url).searchParams.get("month") ?? currentMonth();
     if (!isUsageMonth(month)) {
       return HttpResponse.json(
-        { error: "bad_month", message: "Use a month like 2025-10." },
+        { error: "bad_month", message: "Month must look like 2026-10." },
         { status: 400 },
       );
     }
@@ -692,8 +692,14 @@ export const handlers = [
     const demoSpending = mockSpending(41.2);
     return HttpResponse.json({
       questions_waiting: waitingOverride() ?? waitingMockCount(),
-      data_through: "2025-10-26",
-      knowledge_version: liveVersion()?.number ?? KNOWLEDGE_VERSION,
+      knowledge: { version: null, entries: 0, documents: 0, published_at: null },
+      data: {
+        name: "Bella Forno database",
+        kind: "postgres",
+        status: "connected",
+        data_through: "2025-10-26",
+      },
+      learning: null,
       spending: demoSpending,
     });
   }),

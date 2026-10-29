@@ -44,7 +44,14 @@ const ME = {
 
 const STATUS = {
   questions_waiting: 0,
-  data_through: "2025-10-26",
+  knowledge: { version: null, entries: 0, documents: 0, published_at: null },
+  data: {
+    name: "Bella Forno database",
+    kind: "postgres",
+    status: "connected",
+    data_through: "2025-10-26",
+  },
+  learning: null,
   spending: { state: "ok", spent_usd: 1, limit_usd: 150, warn_percent: 80, percent_used: 1 },
 };
 

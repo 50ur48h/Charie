@@ -1,8 +1,14 @@
+import { useState } from "react";
 import { Outlet, useLocation } from "react-router";
 import {
   AppShell,
   LearnerSidebar,
+  SpendingBanner,
+  SpendingLimitsDialog,
+  useBudgetSettings,
   useSidebarHidden,
+  useStatus,
+  useUpdateBudgetSettings,
   type LearnerSidebarPage,
 } from "@charie/shared";
 import { learnerRoutes, useMe } from "@charie/shared";
@@ -22,6 +28,12 @@ export function LearnerLayout() {
   const badges = useLearnerBadges();
   const chatUrl = useChatUrl();
   const me = useMe();
+  const statusQuery = useStatus();
+  const budgetQuery = useBudgetSettings();
+  const updateBudget = useUpdateBudgetSettings();
+  const [managing, setManaging] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const spending = statusQuery.data?.spending ?? null;
   return (
     <AppShell
       app="learner"
@@ -39,7 +51,32 @@ export function LearnerLayout() {
         />
       )}
     >
+      {spending && spending.state !== "ok" && (
+        <SpendingBanner spending={spending} onManage={() => {
+          setSaveError(null);
+          setManaging(true);
+        }} />
+      )}
       <Outlet />
+      {managing && budgetQuery.data && (
+        <SpendingLimitsDialog
+          limitUsd={budgetQuery.data.spend_limit_usd}
+          warnPercent={budgetQuery.data.spend_warn_percent}
+          saving={updateBudget.isPending}
+          serverError={saveError}
+          onSave={(patch) => {
+            setSaveError(null);
+            updateBudget.mutate(patch, {
+              onSuccess: () => setManaging(false),
+              onError: (error) => setSaveError(error.message),
+            });
+          }}
+          onClose={() => {
+            setManaging(false);
+            setSaveError(null);
+          }}
+        />
+      )}
     </AppShell>
   );
 }
