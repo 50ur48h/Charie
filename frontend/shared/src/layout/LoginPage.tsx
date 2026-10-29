@@ -95,8 +95,13 @@ export function LoginPage({ app }: { app: "chat" | "learner" }) {
 
   const state = location.state as { from?: unknown } | null;
   const from = state?.from;
-  const target =
+  const mock = new URLSearchParams(location.search).get("mock");
+  const base =
     typeof from === "string" && from.startsWith("/") && from !== "/login" ? from : "/";
+  // Learner mock worlds (?mock=new, ?mock=still) survive the sign-in so the
+  // store resets to the requested world instead of the saved one.
+  const target =
+    mock && !base.includes("mock=") ? `${base}${base.includes("?") ? "&" : "?"}mock=${mock}` : base;
 
   if (me.data?.logged_in) {
     return <Navigate to={target} replace />;

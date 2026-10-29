@@ -33,6 +33,10 @@ import { getMockPassword, setMockPassword } from "./password";
 import { getMockSettings, updateMockSettings } from "./sampleSettings";
 import { clearMockMemories, deleteMockMemory, listMockMemories } from "./sampleMemories";
 import { openMockStream } from "./chat-stream";
+import { needSession, SESSION_KEY } from "./session";
+import { learnerHandlers } from "./learner/handlers";
+
+export { SESSION_KEY };
 
 export const CHATS_URL = "*/api/chats";
 export const CHAT_DETAIL_URL = "*/api/chats/:id";
@@ -59,7 +63,6 @@ export const MEMORIES_URL = "*/api/memories";
 export const MEMORY_DETAIL_URL = "*/api/memories/:id";
 export const CATCH_ALL_URL = "*/api/*";
 
-export const SESSION_KEY = "charie-mock-session";
 const TRIES_KEY = "charie-mock-tries";
 const MAX_TRIES = 5;
 const WINDOW_MS = 5 * 60 * 1000;
@@ -112,19 +115,6 @@ function endSession(): void {
   }
 }
 
-function hasSession(): boolean {
-  try {
-    return localStorage.getItem(SESSION_KEY) === "1";
-  } catch {
-    return false;
-  }
-}
-
-const NOT_LOGGED_IN = {
-  error: "not_logged_in",
-  message: "Please sign in again.",
-};
-
 // Test-only delay (milliseconds in localStorage "charie-mock-delay-ms"), so
 // browser tests can hold a chat-detail response back and prove the page stays
 // locked while it refreshes. Meaningless outside mock mode.
@@ -137,12 +127,8 @@ async function mockDelay(): Promise<void> {
   }
 }
 
-function needSession(): Response | null {
-  if (hasSession()) return null;
-  return HttpResponse.json(NOT_LOGGED_IN, { status: 401 });
-}
-
 export const handlers = [
+  ...learnerHandlers,
   http.get(HEALTH_URL, () => HttpResponse.json({ ok: true })),
   http.post(LOGIN_URL, async ({ request }) => {
     const now = Date.now();

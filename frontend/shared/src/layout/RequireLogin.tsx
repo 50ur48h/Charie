@@ -7,7 +7,7 @@ import { isThemeKey, setTheme, useTheme } from "../theme/theme";
 
 export function RequireLogin({ children }: { children: React.ReactNode }) {
   const me = useMe();
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
   const [theme] = useTheme();
 
   useEffect(() => {
@@ -39,7 +39,7 @@ export function RequireLogin({ children }: { children: React.ReactNode }) {
     );
   }
   if (!me.data.logged_in) {
-    return <Navigate to="/login" replace state={{ from: pathname }} />;
+    return <Navigate to="/login" replace state={{ from: `${pathname}${search}` }} />;
   }
   return <>{children}</>;
 }

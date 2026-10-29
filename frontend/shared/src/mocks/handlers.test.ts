@@ -6,6 +6,7 @@ import { resetMockChats } from "./sampleChat";
 import { resetMockQuestions, waitingOverride } from "./sampleQuestions";
 import { resetMockKnowledge, mockSuggestions } from "./sampleKnowledge";
 import { resetMockUsage } from "./sampleUsage";
+import { resetLearnerMock } from "./learner/state";
 
 const server = setupServer(...handlers);
 
@@ -18,6 +19,7 @@ beforeAll(() => {
 afterEach(() => {
   server.resetHandlers();
   localStorage.clear();
+  resetLearnerMock("design");
 });
 
 beforeEach(() => {
@@ -413,6 +415,42 @@ describe("mock handlers", () => {
       chat_url: "http://localhost:5173",
       learner_url: "http://localhost:5174",
     });
+  });
+
+  test("GET /api/documents returns the 14 design documents, newest first", async () => {
+    await signIn();
+    const response = await fetch(`${APP}/api/documents`);
+    expect(response.status).toBe(200);
+    const { documents } = (await response.json()) as {
+      documents: { file_name: string; status: string; uploaded_at: string }[];
+    };
+    expect(documents).toHaveLength(14);
+    expect(documents[0]).toMatchObject({
+      file_name: "Promotions calendar 2026.xlsx",
+      status: "new",
+    });
+    const times = documents.map((doc) => Date.parse(doc.uploaded_at));
+    expect([...times].sort((a, b) => b - a)).toEqual(times);
+    expect(documents.some((doc) => doc.status === "removed")).toBe(false);
+  });
+
+  test("GET /api/learning returns the 4 runs, newest first", async () => {
+    await signIn();
+    const response = await fetch(`${APP}/api/learning`);
+    expect(response.status).toBe(200);
+    const { runs } = (await response.json()) as {
+      runs: { id: number; kind: string; status: string }[];
+    };
+    expect(runs.map((run) => run.id)).toEqual([4, 3, 2, 1]);
+    expect(runs[0]).toMatchObject({ kind: "refresh", status: "running" });
+  });
+
+  test("learner addresses need a session", async () => {
+    for (const path of ["/api/documents", "/api/learning"]) {
+      const response = await fetch(`${APP}${path}`);
+      expect(response.status).toBe(401);
+      await expect(response.json()).resolves.toMatchObject({ error: "not_logged_in" });
+    }
   });
 
   test("POST /api/chats needs a session", async () => {
