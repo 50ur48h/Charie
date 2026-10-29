@@ -48,5 +48,5 @@ def default_dir() -> Path:
     raw = get_settings().ai_replay_dir or "backend/tests/replays/"
     folder = Path(raw)
     if not folder.is_absolute():
-        folder = Path(__file__).resolve().parents[3] / folder
+        folder = Path(__file__).resolve().parents[4] / folder
     return folder

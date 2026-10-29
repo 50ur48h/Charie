@@ -101,7 +101,8 @@ class AiClient:
             prompt_cache_key=cache_key,
             job=job,
         )
-        provider = self.provider_for(settings.provider)
+        # The real provider is built only for a real call: replays need no key.
+        provider = self._provider
         context = {
             "app": app,
             "message_id": message_id,
@@ -110,7 +111,7 @@ class AiClient:
         }
         try:
             started = time.monotonic()
-            reply, free = self._attempt(provider, request)
+            reply, free = self._attempt(provider, request, settings.provider)
             first_ms = _elapsed_ms(started)
         except (AiUnavailable, AiApiError, AiOutOfCredit) as err:
             self._save_row(request, None, "failed", 0, err.message, context)
@@ -120,7 +121,9 @@ class AiClient:
         except (ValueError, ValidationError) as err:
             problems = _problems(err)
             self._save_row(request, reply, "retried", first_ms, None, context, free)
-            repaired = self._repair(provider, request, reply.content, problems, context)
+            repaired = self._repair(
+                provider, request, reply.content, problems, context, settings.provider
+            )
             try:
                 obj = form.model_validate(json.loads(repaired.content))
             except (ValueError, ValidationError):
@@ -131,19 +134,28 @@ class AiClient:
         self._save_row(request, reply, "ok", first_ms, None, context, free)
         return obj
 
-    def _attempt(self, provider: Provider, request: AiRequest) -> tuple[AiReply, bool]:
+    def _attempt(
+        self,
+        provider: Provider | None,
+        request: AiRequest,
+        provider_name: str,
+    ) -> tuple[AiReply, bool]:
         """One provider call: replayed, recorded, or real — with retries.
 
         Returns the reply and whether it was free (a replay costs $0).
+        Without an explicit provider the real one is built only when a
+        call is actually made, so replays never need an API key.
         """
         mode = self.replay_mode()
-        if mode != "off" and getattr(provider, "replayable", False):
+        if mode != "off" and (provider is None or getattr(provider, "replayable", False)):
             if mode == "replay":
                 return self._load_replay(request), True
-            outcome = self._complete_with_retries(provider, request)
+            real = provider if provider is not None else self.provider_for(provider_name)
+            outcome = self._complete_with_retries(real, request)
             self._save_replay(request, outcome.reply)
             return outcome.reply, False
-        return self._complete_with_retries(provider, request).reply, False
+        real = provider if provider is not None else self.provider_for(provider_name)
+        return self._complete_with_retries(real, request).reply, False
 
     def _load_replay(self, request: AiRequest) -> AiReply:
         store = ReplayStore(default_dir())
@@ -203,13 +215,17 @@ class AiClient:
 
     def _repair(
         self,
-        provider: Provider,
+        provider: Provider | None,
         request: AiRequest,
         bad: str,
         problems: list[str],
         context: dict[str, Any],
+        provider_name: str,
     ) -> AiReply:
         _ = context
+        limit, warn = self._cost_log.limits()
+        if spending_state(self._cost_log.month_spent(datetime.now(UTC)), limit, warn) == "paused":
+            raise SpendingPaused()
         detail = "; ".join(problems)
         messages = request.messages + [
             {
@@ -231,7 +247,7 @@ class AiClient:
             prompt_cache_key=request.prompt_cache_key,
             job=request.job,
         )
-        return self._attempt(provider, repair_request)[0]
+        return self._attempt(provider, repair_request, provider_name)[0]
 
     def _save_row(
         self,

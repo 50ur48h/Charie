@@ -103,6 +103,31 @@ def test_replay_uses_file_without_calling(tmp_path, monkeypatch) -> None:
     assert transport.calls == 1
 
 
+def test_replay_needs_no_api_key(tmp_path, monkeypatch) -> None:
+    """A replay loads the file without building a provider (no key needed)."""
+    from charie.shared.config import get_settings
+
+    monkeypatch.setenv("AI_REPLAY_DIR", str(tmp_path / "replays"))
+    get_settings.cache_clear()
+    prompts = tmp_path / "prompts"
+    prompts.mkdir()
+    _write_prompt(prompts)
+    _client(FakeTransport(), prompts, MemoryCostLog(), "record").run(
+        "name_chat", {"topic": "hi"}, ChatTitle, app="chat"
+    )
+    monkeypatch.delenv("META_API_KEY", raising=False)
+    get_settings.cache_clear()
+    assert get_settings().meta_api_key is None
+    keyless = AiClient(
+        provider=None,
+        prompts_dir=prompts,
+        sleep=lambda s: None,
+        cost_log=MemoryCostLog(),
+        replay_mode="replay",
+    )
+    assert keyless.run("name_chat", {"topic": "hi"}, ChatTitle, app="chat").title == "Hi"
+
+
 def test_replays_cost_zero(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("AI_REPLAY_DIR", str(tmp_path / "replays"))
     get_settings.cache_clear()

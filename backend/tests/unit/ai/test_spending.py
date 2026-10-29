@@ -46,6 +46,37 @@ def test_month_follows_time_zone() -> None:
     assert month_spent_rows(rows, datetime(2026, 10, 15), "America/New_York") == Decimal("0")
 
 
+def test_repair_rechecks_spending(provider, prompts_dir) -> None:
+    """The first reply's cost can hit the limit; the repair then stops."""
+    log = MemoryCostLog(
+        limit=0.001,
+        warn_percent=80,
+        rows=[
+            usage_row(
+                job="name_chat",
+                app="chat",
+                model="m",
+                prompt_tokens=0,
+                cached_tokens=0,
+                completion_tokens=0,
+                reasoning_tokens=0,
+                cost_usd=Decimal("0.0008"),
+                duration_ms=0,
+                status="ok",
+            )
+        ],
+    )
+    provider.reply("not json", prompt_tokens=100, completion_tokens=20)
+    provider.reply('{"title": "Hi"}', prompt_tokens=100, completion_tokens=20)
+    client = AiClient(
+        provider=provider, prompts_dir=prompts_dir, sleep=lambda s: None, cost_log=log
+    )
+    with pytest.raises(SpendingPaused):
+        client.run("name_chat", {"topic": "t"}, ChatTitle, app="chat")
+    assert len(provider.calls) == 1
+    assert [row["status"] for row in log.rows] == ["ok", "retried"]
+
+
 def test_paused_makes_no_request(provider, prompts_dir) -> None:
     log = MemoryCostLog(
         limit=10,
