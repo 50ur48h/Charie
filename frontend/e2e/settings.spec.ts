@@ -67,6 +67,32 @@ test("clear_memories forgets one, then everything", async ({ page }) => {
   await expect(page.getByText("Nothing remembered yet.")).toBeVisible();
 });
 
+test("show_reading_hides_the_reading_line", async ({ page }) => {
+  const reading = page.getByText("net sales, orders and average order");
+  const toggle = page.getByRole("switch", { name: "Show I read this as" });
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-checked", "false");
+
+  await page.goto(`${CHAT}/chat/1`);
+  await expect(page.getByRole("heading", { name: "How are we doing this month?" })).toBeVisible();
+  // Only the reading line hides; the rest of the answer still renders.
+  await expect(reading).toBeHidden();
+  await expect(page.getByText("October is a good month so far")).toBeVisible();
+
+  // The preference persists after reload.
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "How are we doing this month?" })).toBeVisible();
+  await expect(reading).toBeHidden();
+  await expect(page.getByText("October is a good month so far")).toBeVisible();
+
+  // Turning it back on restores the line.
+  await page.goto(`${CHAT}/settings`);
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-checked", "true");
+  await page.goto(`${CHAT}/chat/1`);
+  await expect(reading).toBeVisible();
+});
+
 test("sign_out returns to login", async ({ page }) => {
   await page.getByRole("button", { name: "Sign out", exact: true }).click();
   await expect(page).toHaveURL(`${CHAT}/login`);

@@ -38,10 +38,12 @@ export function MessageList({
   messages,
   onFollowUp,
   live,
+  showReading = true,
 }: {
   messages: ChatMessage[];
   onFollowUp: (text: string) => void;
   live?: { messageId: number; feed: FeedState } | null;
+  showReading?: boolean;
 }) {
   const scrollerRef = useRef<HTMLDivElement>(null);
   const [stuck, setStuck] = useState(true);
@@ -99,7 +101,7 @@ export function MessageList({
                         />
                       )}
                       <AssistantStatus message={message} />
-                      <LiveAnswer feed={live.feed} onFollowUp={onFollowUp} />
+                      <LiveAnswer feed={live.feed} onFollowUp={onFollowUp} showReading={showReading} />
                       {live.feed.error !== null && (
                         <p role="alert" className="text-[14.5px] text-bad-ink">
                           {live.feed.error.message}
@@ -117,7 +119,7 @@ export function MessageList({
                       )}
                       <AssistantStatus message={message} />
                       {message.status === "done" && message.answer !== null && (
-                        <AnswerView answer={message.answer} onFollowUp={onFollowUp} />
+                        <AnswerView answer={message.answer} onFollowUp={onFollowUp} showReading={showReading} />
                       )}
                       {message.status === "done" && message.answer !== null && (
                         <AnswerActions messageId={message.id} answer={message.answer} />

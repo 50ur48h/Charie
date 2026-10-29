@@ -14,6 +14,7 @@ import {
   useChat,
   useFinishMessage,
   useSendMessage,
+  useSettings,
   useStatus,
 } from "@charie/shared";
 import { ChatHeader } from "../chat/ChatHeader";
@@ -38,6 +39,8 @@ export function ChatPage() {
   const client = useQueryClient();
   const chatQuery = useChat(Number.isInteger(id) ? id : -1);
   const statusQuery = useStatus();
+  const settingsQuery = useSettings();
+  const showReading = settingsQuery.data?.show_reading ?? true;
   const [drafts, setDrafts] = useState<Record<number, string>>({});
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const [sending, setSending] = useState(false);
@@ -191,6 +194,7 @@ export function ChatPage() {
         messages={chat.messages}
         onFollowUp={followUp}
         live={streamMessageId === null ? null : { messageId: streamMessageId, feed: liveFeed }}
+        showReading={showReading}
       />
       <div className="flex-none px-7 pb-4 print:hidden">
         <div className="mx-auto max-w-[800px]">
