@@ -78,10 +78,22 @@ function expandExponent(abs: string): string {
 }
 
 function shiftPointDigits(digits: string, point: number): string {
-  const clean = digits.replace(/^0+(?=\d)/, "") || "0";
-  if (point <= 0) return `0.${"0".repeat(-point)}${clean}`;
-  if (point >= clean.length) return clean + "0".repeat(point - clean.length);
-  return `${clean.slice(0, point)}.${clean.slice(point)}`;
+  // Split first, strip zeros after: stripping before the split moves the
+  // point ("0.042e3" must become "42", not "0420").
+  let int: string;
+  let frac: string;
+  if (point <= 0) {
+    int = "0";
+    frac = "0".repeat(-point) + digits;
+  } else if (point >= digits.length) {
+    int = digits + "0".repeat(point - digits.length);
+    frac = "";
+  } else {
+    int = digits.slice(0, point);
+    frac = digits.slice(point);
+  }
+  int = int.replace(/^0+/, "") || "0";
+  return frac === "" ? int : `${int}.${frac}`;
 }
 
 function shiftPoint(abs: string, exp: number): string {
