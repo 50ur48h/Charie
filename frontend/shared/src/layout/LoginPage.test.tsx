@@ -10,7 +10,7 @@ afterEach(() => {
 });
 
 function loggedOut() {
-  return { logged_in: false, setup_done: false, theme: "sage" };
+  return { logged_in: false, setup_done: false, theme: "sage", chat_url: "http://localhost:5173", learner_url: "http://localhost:5174" };
 }
 
 function renderLogin(app: "chat" | "learner", me: unknown = loggedOut()) {

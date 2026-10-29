@@ -1,4 +1,5 @@
 import type { Spending, SpendingState, TopQuestion, UsageDay, UsageGroup, UsageSummary } from "../api/usage";
+import { getMockBudgetSettings } from "./sampleSettings";
 
 // Usage fixtures (mock only) matching the Calm usage design and the P05.9
 // shapes. The populated demo month mirrors October: $41.20 spent of a $150
@@ -36,62 +37,12 @@ function monthStorage(): Storage | null {
   }
 }
 
-export interface BudgetStore {
-  spend_limit_usd: number;
-  spend_warn_percent: number;
-}
+// The budget lives in the shared settings store now (P03.13); usage reads it
+// from there so the Usage dialog and Settings save the same values.
+export type { BudgetStore } from "./sampleSettings";
+export { getMockBudgetSettings, updateMockBudgetSettings } from "./sampleSettings";
 
-const SETTINGS_KEY = "charie-mock-budget-settings";
 const SPENDING_KEY = "charie-mock-spending";
-
-export function getMockBudgetSettings(): BudgetStore {
-  const store = monthStorage();
-  const fallback = { spend_limit_usd: 150, spend_warn_percent: 80 };
-  if (store === null) return fallback;
-  try {
-    const raw = store.getItem(SETTINGS_KEY);
-    if (!raw) return fallback;
-    const data = JSON.parse(raw) as Partial<BudgetStore>;
-    const limit = Number(data.spend_limit_usd);
-    const warn = Number(data.spend_warn_percent);
-    return {
-      spend_limit_usd: Number.isFinite(limit) && limit > 0 ? limit : 150,
-      spend_warn_percent: Number.isInteger(warn) && warn >= 1 && warn <= 99 ? warn : 80,
-    };
-  } catch {
-    return fallback;
-  }
-}
-
-// Update the mock budget (validation mirrors the real API).
-export function updateMockBudgetSettings(patch: {
-  spend_limit_usd?: unknown;
-  spend_warn_percent?: unknown;
-}): { ok: true } | { error: "bad_limit" | "bad_warn"; message: string } {
-  const store = monthStorage();
-  const current = getMockBudgetSettings();
-  const next = { ...current };
-  if (patch.spend_limit_usd !== undefined) {
-    const limit = Number(patch.spend_limit_usd);
-    if (!Number.isFinite(limit) || limit <= 0) {
-      return { error: "bad_limit", message: "The monthly credit must be more than $0." };
-    }
-    next.spend_limit_usd = Math.round(limit * 100) / 100;
-  }
-  if (patch.spend_warn_percent !== undefined) {
-    const warn = Number(patch.spend_warn_percent);
-    if (!Number.isInteger(warn) || warn < 1 || warn > 99) {
-      return { error: "bad_warn", message: "The warning level must be between 1 and 99 percent." };
-    }
-    next.spend_warn_percent = warn;
-  }
-  try {
-    store?.setItem(SETTINGS_KEY, JSON.stringify(next));
-  } catch {
-    // Test-only state; ignore.
-  }
-  return { ok: true };
-}
 
 interface SpendingOverride {
   spent_usd?: number;
@@ -119,7 +70,8 @@ function overrideSpent(): number | null {
 
 export function resetMockUsage(): void {
   try {
-    monthStorage()?.removeItem(SETTINGS_KEY);
+    monthStorage()?.removeItem("charie-mock-settings");
+    monthStorage()?.removeItem("charie-mock-budget-settings");
     monthStorage()?.removeItem(SPENDING_KEY);
   } catch {
     // Nothing to clear.

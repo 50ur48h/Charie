@@ -4,7 +4,13 @@ import { readSavedTheme } from "../theme/theme";
 import type { ChatSummary, Me } from "./types";
 
 export function loggedOutMe(): Me {
-  return { logged_in: false, setup_done: false, theme: readSavedTheme() };
+  return {
+    logged_in: false,
+    setup_done: false,
+    theme: readSavedTheme(),
+    chat_url: "http://localhost:5173",
+    learner_url: "http://localhost:5174",
+  };
 }
 
 function isUnauthorized(error: unknown): boolean {

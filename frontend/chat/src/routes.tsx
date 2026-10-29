@@ -1,9 +1,10 @@
 import type { RouteObject } from "react-router";
-import { LoginPage, NotFoundPage, PlaceholderPage, RequireLogin } from "@charie/shared";
+import { LoginPage, NotFoundPage, RequireLogin } from "@charie/shared";
 import { ChatLayout } from "./ChatLayout";
 import { ChatPage } from "./pages/ChatPage";
 import { NewChatPage } from "./pages/NewChatPage";
 import { QuestionsPage } from "./pages/QuestionsPage";
+import { SettingsPage } from "./pages/SettingsPage";
 import { KnowledgePage } from "./pages/KnowledgePage";
 import { UsagePage } from "./pages/UsagePage";
 
@@ -33,13 +34,7 @@ export const routes: RouteObject[] = [
       },
       {
         path: "settings",
-        element: (
-          <PlaceholderPage
-            app="chat"
-            title="Settings"
-            lead="Make Charie look and answer the way you like."
-          />
-        ),
+        element: <SettingsPage />,
       },
       { path: "*", element: <NotFoundPage app="chat" /> },
     ],
