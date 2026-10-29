@@ -36,8 +36,10 @@ export function usePublishVersion() {
         method: "POST",
       }),
     onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ["knowledge"] });
+      void client.invalidateQueries({ queryKey: ["knowledge-entry"] });
       void client.invalidateQueries({ queryKey: ["learner-versions"] });
-      void client.invalidateQueries({ queryKey: ["learner-knowledge"] });
+      void client.invalidateQueries({ queryKey: ["learner-changes"] });
       void client.invalidateQueries({ queryKey: ["learner-setup"] });
     },
   });

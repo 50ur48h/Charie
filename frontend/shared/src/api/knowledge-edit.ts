@@ -17,8 +17,10 @@ export function useEditEntry() {
         body: { title, meaning },
       }),
     onSuccess: () => {
-      void client.invalidateQueries({ queryKey: ["learner-knowledge"] });
+      void client.invalidateQueries({ queryKey: ["knowledge"] });
+      void client.invalidateQueries({ queryKey: ["knowledge-entry"] });
       void client.invalidateQueries({ queryKey: ["learner-versions"] });
+      void client.invalidateQueries({ queryKey: ["learner-changes"] });
     },
   });
 }
@@ -32,8 +34,10 @@ export function useApproveEntry() {
         method: "POST",
       }),
     onSuccess: () => {
-      void client.invalidateQueries({ queryKey: ["learner-knowledge"] });
+      void client.invalidateQueries({ queryKey: ["knowledge"] });
+      void client.invalidateQueries({ queryKey: ["knowledge-entry"] });
       void client.invalidateQueries({ queryKey: ["learner-versions"] });
+      void client.invalidateQueries({ queryKey: ["learner-changes"] });
     },
   });
 }
