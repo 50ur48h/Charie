@@ -29,7 +29,9 @@ export default defineConfig(({ mode }) => {
   server: {
     port: 5173,
     proxy: {
-      "/api": "http://localhost:8001",
+      // changeOrigin: false keeps the screen's Host, so the API's
+      // Origin check sees our own address through the proxy.
+      "/api": { target: "http://localhost:8001", changeOrigin: false },
     },
   },
   preview: {

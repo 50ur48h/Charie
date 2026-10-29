@@ -7,8 +7,9 @@ export function createQueryClient(): QueryClient {
   const client = new QueryClient({
     queryCache: new QueryCache({
       onError: (error) => {
-        // Any query that answers 401 means the login lapsed everywhere.
+        // Any 401 means the login lapsed: drop cached data, mark logged out.
         if (error instanceof ApiError && error.status === 401) {
+          client.clear();
           client.setQueryData<Me>(["me"], loggedOutMe());
         }
       },

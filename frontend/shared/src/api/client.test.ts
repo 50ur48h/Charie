@@ -1,5 +1,9 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { cleanup, render, screen } from "@testing-library/react";
+import React from "react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { ApiError, apiFetch } from "./client";
+import { useMe } from "./hooks";
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -9,7 +13,9 @@ function jsonResponse(status: number, body: unknown): Response {
 }
 
 afterEach(() => {
+  cleanup();
   vi.unstubAllGlobals();
+  localStorage.clear();
 });
 
 describe("apiFetch", () => {
@@ -77,5 +83,30 @@ describe("apiFetch", () => {
     const error = await apiFetch("/api/x").catch((e: unknown) => e);
     expect((error as ApiError).status).toBe(429);
     expect((error as ApiError).message).toContain("Too many tries");
+  });
+});
+
+describe("useMe", () => {
+  test("a 401 from /api/me means logged out", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ error: "login_needed", message: "Please sign in." }), {
+          status: 401,
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    );
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } },
+    });
+    function Probe() {
+      const me = useMe();
+      if (me.isPending) return React.createElement("p", null, "loading");
+      if (me.isError) return React.createElement("p", null, "broke");
+      return React.createElement("p", null, me.data.logged_in ? "in" : "out");
+    }
+    render(React.createElement(QueryClientProvider, { client }, React.createElement(Probe)));
+    expect(await screen.findByText("out")).toBeTruthy();
   });
 });

@@ -8,7 +8,7 @@ afterEach(() => {
 });
 
 describe("createQueryClient", () => {
-  test("a 401 from any query marks you as logged out", async () => {
+  test("a 401 from any query clears cached data and marks you logged out", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(
@@ -19,9 +19,11 @@ describe("createQueryClient", () => {
       ),
     );
     const client = createQueryClient();
+    client.setQueryData(["settings"], { theme: "mist" });
     await client
       .fetchQuery({ queryKey: ["thing"], queryFn: () => apiFetch("/api/thing") })
       .catch(() => undefined);
     expect(client.getQueryData(["me"])).toMatchObject({ logged_in: false });
+    expect(client.getQueryData(["settings"])).toBeUndefined();
   });
 });

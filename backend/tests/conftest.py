@@ -81,6 +81,50 @@ def db(monkeypatch, test_db_url):
 
 
 @pytest.fixture()
+def _test_passwords(monkeypatch, db):
+    """A throwaway password and cookie secret, never the real ones."""
+    monkeypatch.setenv("CHARIE_PASSWORD", "test-password")
+    monkeypatch.setenv("CHARIE_SECRET_KEY", "test-secret-key-for-tests-only")
+    get_settings.cache_clear()
+    clear_engine_cache()
+    yield
+    get_settings.cache_clear()
+    clear_engine_cache()
+
+
+@pytest.fixture()
+def chat_client(_test_passwords):
+    """The chat API on the throwaway database, logged out."""
+    from fastapi.testclient import TestClient
+
+    from charie.chat.app import build_app
+
+    with TestClient(
+        build_app(), base_url="http://testserver", headers={"Origin": "http://testserver"}
+    ) as client:
+        yield client
+
+
+@pytest.fixture()
+def learner_client(_test_passwords):
+    """The learner API on the throwaway database, logged out."""
+    from fastapi.testclient import TestClient
+
+    from charie.learner.app import build_app
+
+    with TestClient(
+        build_app(), base_url="http://testserver", headers={"Origin": "http://testserver"}
+    ) as client:
+        yield client
+
+
+def log_in(client) -> None:
+    """Sign the test client in with the throwaway password."""
+    response = client.post("/api/login", json={"password": "test-password"})
+    assert response.status_code == 200, response.text
+
+
+@pytest.fixture()
 def db_session(db):
     """A session on the throwaway database."""
     from sqlalchemy.orm import Session

@@ -3,18 +3,15 @@ import { Navigate, useLocation } from "react-router";
 import { Button } from "../components/Button";
 import { Spinner } from "../components/Spinner";
 import { useMe } from "../api/hooks";
-import { isThemeKey, setTheme, useTheme } from "../theme/theme";
+import { applyServerTheme } from "../theme/serverTheme";
 
 export function RequireLogin({ children }: { children: React.ReactNode }) {
   const me = useMe();
   const { pathname, search } = useLocation();
-  const [theme] = useTheme();
 
   useEffect(() => {
-    if (me.data?.logged_in && isThemeKey(me.data.theme) && me.data.theme !== theme) {
-      setTheme(me.data.theme);
-    }
-  }, [me.data, theme]);
+    if (me.data?.logged_in) applyServerTheme(me.data.theme);
+  }, [me.data]);
 
   if (me.isPending) {
     return (
