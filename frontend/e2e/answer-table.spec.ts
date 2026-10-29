@@ -14,7 +14,7 @@ test("sort_csv sorts numerically and downloads the rows", async ({ page }) => {
   await expect(firstCell()).toHaveText("Uptown");
   const download = page.waitForEvent("download");
   await page
-    .getByRole("button", { name: "Download table as CSV: Top restaurants" })
+    .getByRole("button", { name: "Download as CSV: Top restaurants" })
     .click();
   const file = await download;
   expect(file.suggestedFilename()).toBe("top-restaurants.csv");

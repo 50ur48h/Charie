@@ -19,11 +19,9 @@ import {
 } from "./sampleQuestions";
 import {
   currentMonth,
-  getMockBudgetSettings,
   isUsageMonth,
   mockSpending,
   mockUsage,
-  updateMockBudgetSettings,
 } from "./sampleUsage";
 import {
   KNOWLEDGE_VERSION,
@@ -31,7 +29,9 @@ import {
   listMockKnowledge,
   suggestMockChange,
 } from "./sampleKnowledge";
-import { SAMPLE_PASSWORD } from "./password";
+import { getMockPassword, setMockPassword } from "./password";
+import { getMockSettings, updateMockSettings } from "./sampleSettings";
+import { clearMockMemories, deleteMockMemory, listMockMemories } from "./sampleMemories";
 import { openMockStream } from "./chat-stream";
 
 export const CHATS_URL = "*/api/chats";
@@ -54,6 +54,9 @@ export const ME_URL = "*/api/me";
 export const HEALTH_URL = "*/api/health";
 export const LOGIN_URL = "*/api/login";
 export const LOGOUT_URL = "*/api/logout";
+export const PASSWORD_URL = "*/api/password";
+export const MEMORIES_URL = "*/api/memories";
+export const MEMORY_DETAIL_URL = "*/api/memories/:id";
 export const CATCH_ALL_URL = "*/api/*";
 
 export const SESSION_KEY = "charie-mock-session";
@@ -155,7 +158,7 @@ export const handlers = [
     } catch {
       password = undefined;
     }
-    if (password !== SAMPLE_PASSWORD) {
+    if (password !== getMockPassword()) {
       recordTry(now);
       return HttpResponse.json(
         { error: "wrong_password", message: "That password didn't work. Try again." },
@@ -173,7 +176,13 @@ export const handlers = [
   http.get(ME_URL, () => {
     const blocked = needSession();
     if (blocked) return blocked;
-    return HttpResponse.json({ logged_in: true, setup_done: true, theme: readSavedTheme() });
+    return HttpResponse.json({
+      logged_in: true,
+      setup_done: true,
+      theme: readSavedTheme(),
+      chat_url: "http://localhost:5173",
+      learner_url: "http://localhost:5174",
+    });
   }),
   http.get(CHATS_URL, () => {
     const blocked = needSession();
@@ -301,7 +310,54 @@ export const handlers = [
   http.get(SETTINGS_URL, () => {
     const blocked = needSession();
     if (blocked) return blocked;
-    return HttpResponse.json(getMockBudgetSettings());
+    return HttpResponse.json(getMockSettings());
+  }),
+  http.post(PASSWORD_URL, async ({ request }) => {
+    const blocked = needSession();
+    if (blocked) return blocked;
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
+      body = undefined;
+    }
+    const record = (body ?? {}) as { current?: unknown; new?: unknown };
+    if (record.current !== getMockPassword()) {
+      return HttpResponse.json(
+        { error: "wrong_password", message: "The current password isn't right." },
+        { status: 400 },
+      );
+    }
+    if (typeof record.new !== "string" || record.new.length < 8) {
+      return HttpResponse.json(
+        { error: "password_too_short", message: "The new password needs at least 8 characters." },
+        { status: 400 },
+      );
+    }
+    setMockPassword(record.new);
+    return HttpResponse.json({ ok: true });
+  }),
+  http.get(MEMORIES_URL, () => {
+    const blocked = needSession();
+    if (blocked) return blocked;
+    return HttpResponse.json(listMockMemories());
+  }),
+  http.delete(MEMORY_DETAIL_URL, ({ params }) => {
+    const blocked = needSession();
+    if (blocked) return blocked;
+    if (!deleteMockMemory(Number(params.id))) {
+      return HttpResponse.json(
+        { error: "not_found", message: "That memory is gone." },
+        { status: 404 },
+      );
+    }
+    return HttpResponse.json({ ok: true });
+  }),
+  http.delete(MEMORIES_URL, () => {
+    const blocked = needSession();
+    if (blocked) return blocked;
+    clearMockMemories();
+    return HttpResponse.json({ ok: true });
   }),
   http.patch(SETTINGS_URL, async ({ request }) => {
     const blocked = needSession();
@@ -312,15 +368,15 @@ export const handlers = [
     } catch {
       body = undefined;
     }
-    const record = (body ?? {}) as { spend_limit_usd?: unknown; spend_warn_percent?: unknown };
-    const outcome = updateMockBudgetSettings(record);
+    const record = (body ?? {}) as Record<string, unknown>;
+    const outcome = updateMockSettings(record);
     if ("error" in outcome) {
       return HttpResponse.json(
         { error: outcome.error, message: outcome.message },
         { status: 400 },
       );
     }
-    return HttpResponse.json(getMockBudgetSettings());
+    return HttpResponse.json(getMockSettings());
   }),
   http.post(CHATS_URL, () => {
     const blocked = needSession();

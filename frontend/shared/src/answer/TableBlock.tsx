@@ -99,7 +99,7 @@ export function TableBlock({ block }: { block: TableBlockType }) {
           variant="outline"
           size="sm"
           onClick={() => downloadCsv(block.title, tableCsv(block))}
-          aria-label={`Download table as CSV: ${block.title}`}
+          aria-label={`Download as CSV: ${block.title}`}
         >
           <Download aria-hidden="true" />
           Download as CSV

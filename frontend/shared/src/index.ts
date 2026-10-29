@@ -63,6 +63,8 @@ export * from "./knowledge/EntryDetail";
 export * from "./knowledge/SuggestChangeDialog";
 export * from "./api/usage";
 export * from "./api/settings";
+export * from "./api/password";
+export * from "./api/memories";
 export * from "./usage/SpendingBanner";
 export * from "./usage/SpendingLimitsDialog";
 export * from "./chat/QuestionComposer";

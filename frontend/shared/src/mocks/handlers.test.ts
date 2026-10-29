@@ -288,7 +288,7 @@ describe("mock handlers", () => {
       body: JSON.stringify({ spend_limit_usd: -5, spend_warn_percent: 150 }),
     });
     expect(bad.status).toBe(400);
-    await expect(bad.json()).resolves.toMatchObject({ error: "bad_limit" });
+    await expect(bad.json()).resolves.toMatchObject({ error: "bad_setting" });
     const ok = await fetch(`${APP}/api/settings`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -296,6 +296,123 @@ describe("mock handlers", () => {
     });
     expect(ok.status).toBe(200);
     await expect(ok.json()).resolves.toMatchObject({ spend_limit_usd: 300, spend_warn_percent: 70 });
+  });
+
+  test("GET /api/settings returns the full defaults", async () => {
+    await signIn();
+    const response = await fetch(`${APP}/api/settings`);
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      theme: "sage",
+      answer_length: "normal",
+      number_format: "short",
+      thinking_minutes: 10,
+      show_reading: true,
+      memory_on: true,
+      spend_limit_usd: 150,
+      spend_warn_percent: 80,
+      time_zone: null,
+    });
+    const body = (await (await fetch(`${APP}/api/settings`)).json()) as Record<string, unknown>;
+    expect("password_hash" in body).toBe(false);
+  });
+
+  test("PATCH /api/settings refuses each bad value with the exact message", async () => {
+    await signIn();
+    const cases: [Record<string, unknown>, string][] = [
+      [{ theme: "banana" }, "Theme must be one of: sage, lavender, mist, seafoam, mauve, slate."],
+      [{ answer_length: "brief" }, "Answer length must be short, normal or detailed."],
+      [{ number_format: "long" }, "Number format must be short or full."],
+      [{ thinking_minutes: 16 }, "Thinking time must be a whole number of minutes from 2 to 15."],
+      [{ thinking_minutes: 2.5 }, "Thinking time must be a whole number of minutes from 2 to 15."],
+      [{ show_reading: "yes" }, "`show_reading` must be true or false."],
+      [{ memory_on: 1 }, "`memory_on` must be true or false."],
+      [{ spend_limit_usd: 0 }, "The monthly limit must be between $0.01 and $100,000."],
+      [{ spend_limit_usd: 200000 }, "The monthly limit must be between $0.01 and $100,000."],
+      [{ spend_warn_percent: 0 }, "The warning level must be a whole number from 1 to 99."],
+      [{ spend_warn_percent: 100 }, "The warning level must be a whole number from 1 to 99."],
+      [{ time_zone: "Mars/Olympus" }, "Unknown time zone: `Mars/Olympus`. Use a name like Asia/Kolkata."],
+      [{ setup_done: true }, "This setting can't be changed here: `setup_done`."],
+      [{ password_hash: "x" }, "This setting can't be changed here: `password_hash`."],
+      [{ nope: 1 }, "Unknown setting: `nope`."],
+    ];
+    for (const [patch, message] of cases) {
+      const response = await fetch(`${APP}/api/settings`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+      expect(response.status).toBe(400);
+      await expect(response.json()).resolves.toMatchObject({ error: "bad_setting", message });
+    }
+  });
+
+  test("PATCH /api/settings saves all or nothing", async () => {
+    await signIn();
+    const response = await fetch(`${APP}/api/settings`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ answer_length: "detailed", thinking_minutes: 99 }),
+    });
+    expect(response.status).toBe(400);
+    const saved = (await (await fetch(`${APP}/api/settings`)).json()) as {
+      answer_length: string;
+    };
+    expect(saved.answer_length).toBe("normal");
+    const ok = await fetch(`${APP}/api/settings`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ answer_length: "detailed", thinking_minutes: 12, time_zone: "Asia/Kolkata" }),
+    });
+    expect(ok.status).toBe(200);
+    await expect(ok.json()).resolves.toMatchObject({
+      answer_length: "detailed",
+      thinking_minutes: 12,
+      time_zone: "Asia/Kolkata",
+    });
+  });
+
+  test("POST /api/password changes the mock password", async () => {
+    await signIn();
+    const wrong = await post("/api/password", { current: "nope", new: "new-password-1" });
+    expect(wrong.status).toBe(400);
+    await expect(wrong.json()).resolves.toMatchObject({ error: "wrong_password" });
+    const short = await post("/api/password", { current: "bella-forno", new: "short" });
+    expect(short.status).toBe(400);
+    await expect(short.json()).resolves.toMatchObject({ error: "password_too_short" });
+    const changed = await post("/api/password", { current: "bella-forno", new: "new-password-1" });
+    expect(changed.status).toBe(200);
+    const oldLogin = await post("/api/login", { password: "bella-forno" });
+    expect(oldLogin.status).toBe(401);
+    const newLogin = await post("/api/login", { password: "new-password-1" });
+    expect(newLogin.status).toBe(200);
+  });
+
+  test("memories list, delete one, and forget everything", async () => {
+    await signIn();
+    const listed = await fetch(`${APP}/api/memories`);
+    expect(listed.status).toBe(200);
+    const memories = (await listed.json()) as { id: number }[];
+    expect(memories).toHaveLength(3);
+    const missing = await fetch(`${APP}/api/memories/999`, { method: "DELETE" });
+    expect(missing.status).toBe(404);
+    const deleted = await fetch(`${APP}/api/memories/${memories[0].id}`, { method: "DELETE" });
+    expect(deleted.status).toBe(200);
+    const after = (await (await fetch(`${APP}/api/memories`)).json()) as unknown[];
+    expect(after).toHaveLength(2);
+    const cleared = await fetch(`${APP}/api/memories`, { method: "DELETE" });
+    expect(cleared.status).toBe(200);
+    const empty = (await (await fetch(`${APP}/api/memories`)).json()) as unknown[];
+    expect(empty).toHaveLength(0);
+  });
+
+  test("GET /api/me names the app addresses", async () => {
+    await signIn();
+    const response = await fetch(`${APP}/api/me`);
+    await expect(response.json()).resolves.toMatchObject({
+      chat_url: "http://localhost:5173",
+      learner_url: "http://localhost:5174",
+    });
   });
 
   test("POST /api/chats needs a session", async () => {

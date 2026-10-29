@@ -83,7 +83,7 @@ export function KnowledgeList({
             >
               <Icon aria-hidden="true" />
               {label}
-              <span className={active ? "opacity-80" : "text-muted"}>{counts[key] ?? 0}</span>
+              <span className={active ? undefined : "text-muted"}>{counts[key] ?? 0}</span>
             </button>
           );
         })}

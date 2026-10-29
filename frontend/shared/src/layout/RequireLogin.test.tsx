@@ -46,20 +46,20 @@ function renderGuarded(me: unknown) {
 
 describe("RequireLogin", () => {
   test("sends you to /login when you're logged out", async () => {
-    renderGuarded({ logged_in: false, setup_done: false, theme: "sage" });
+    renderGuarded({ logged_in: false, setup_done: false, theme: "sage", chat_url: "http://localhost:5173", learner_url: "http://localhost:5174" });
     expect(await screen.findByText("the login page")).toBeTruthy();
     expect(screen.queryByText("the page")).toBeNull();
   });
 
   test("shows the page when you're logged in", async () => {
-    renderGuarded({ logged_in: true, setup_done: true, theme: "sage" });
+    renderGuarded({ logged_in: true, setup_done: true, theme: "sage", chat_url: "http://localhost:5173", learner_url: "http://localhost:5174" });
     expect(await screen.findByText("the page")).toBeTruthy();
     expect(screen.queryByText("the login page")).toBeNull();
   });
 
   test("switches to the theme from /api/me", async () => {
     document.documentElement.dataset.theme = "sage";
-    renderGuarded({ logged_in: true, setup_done: true, theme: "lavender" });
+    renderGuarded({ logged_in: true, setup_done: true, theme: "lavender", chat_url: "http://localhost:5173", learner_url: "http://localhost:5174" });
     await screen.findByText("the page");
     expect(document.documentElement.dataset.theme).toBe("lavender");
   });

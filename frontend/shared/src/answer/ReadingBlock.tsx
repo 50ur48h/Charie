@@ -3,7 +3,7 @@ import { Markup } from "./markup";
 
 // show_reading (settings key, architecture 05) controls only visibility:
 // false hides the line, everything else in the answer still renders. The
-// settings page (P03.13) will wire the real value; until then it defaults
+// chat wires the saved preference through AnswerView; it defaults
 // to true, matching the architecture default.
 export function ReadingBlock({
   block,

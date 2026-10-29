@@ -21,11 +21,13 @@ function LiveBlock({
   index,
   feed,
   onFollowUp,
+  showReading,
 }: {
   block: AnswerBlock;
   index: number;
   feed: FeedState;
   onFollowUp: (text: string) => void;
+  showReading: boolean;
 }) {
   switch (block.type) {
     case "text": {
@@ -34,6 +36,7 @@ function LiveBlock({
       return <LiveText text={buffer} />;
     }
     case "reading":
+      if (!showReading) return null;
       return <LiveText text={block.text} />;
     case "callout":
       return <CalloutBlock block={block} />;
@@ -62,9 +65,11 @@ function LiveBlock({
 export function LiveAnswer({
   feed,
   onFollowUp,
+  showReading = true,
 }: {
   feed: FeedState;
   onFollowUp: (text: string) => void;
+  showReading?: boolean;
 }) {
   return (
     <div>
@@ -77,6 +82,7 @@ export function LiveAnswer({
               index={index}
               feed={feed}
               onFollowUp={onFollowUp}
+              showReading={showReading}
             />
           ),
       )}
