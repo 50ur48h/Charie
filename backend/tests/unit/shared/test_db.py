@@ -34,7 +34,13 @@ def test_psycopg_url_leaves_other_forms_alone():
 
 
 def test_missing_database_url_message(monkeypatch):
+    from charie.shared.config import ConfigError
+
+    def missing(name: str) -> str:
+        raise ConfigError(f"{name} is missing.")
+
     monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.setattr(db, "require_env", missing)
     get_settings.cache_clear()
     with pytest.raises(Exception) as raised:
         get_engine()
