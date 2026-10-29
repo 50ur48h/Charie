@@ -3,8 +3,20 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from charie.shared.config import get_settings
+from charie.shared.db import clear_engine_cache
 from charie.shared.errors import ApiError, install_error_handlers
 from charie.shared.web import create_app
+
+
+@pytest.fixture(autouse=True)
+def _test_secret(monkeypatch):
+    monkeypatch.setenv("CHARIE_SECRET_KEY", "test-secret-for-unit-tests")
+    get_settings.cache_clear()
+    clear_engine_cache()
+    yield
+    get_settings.cache_clear()
+    clear_engine_cache()
 
 
 @pytest.fixture()

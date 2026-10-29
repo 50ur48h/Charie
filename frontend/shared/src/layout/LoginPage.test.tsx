@@ -1,4 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { createQueryClient } from "../api/queryClient";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { MemoryRouter } from "react-router";
@@ -36,6 +37,39 @@ function renderLogin(app: "chat" | "learner", me: unknown = loggedOut()) {
 }
 
 describe("LoginPage", () => {
+  test("a wrong password shows the API message", async () => {
+    const fetchMock = vi.fn(async (url: unknown) => {
+      if (String(url).endsWith("/api/login")) {
+        return new Response(
+          JSON.stringify({ error: "wrong_password", message: "That password didn't work. Try again." }),
+          { status: 401, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      return new Response(JSON.stringify(loggedOut()), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const client = createQueryClient();
+    function Wrapper({ children }: { children: React.ReactNode }) {
+      return (
+        <QueryClientProvider client={client}>
+          <MemoryRouter>{children}</MemoryRouter>
+        </QueryClientProvider>
+      );
+    }
+    render(<LoginPage app="chat" />, { wrapper: Wrapper });
+    await screen.findByRole("heading", { name: "Welcome back" });
+    fireEvent.change(screen.getByPlaceholderText("Enter the password"), {
+      target: { value: "nope" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "That password didn't work. Try again.",
+    );
+  });
+
   test("shows the chat words", async () => {
     renderLogin("chat");
     expect(await screen.findByRole("heading", { name: "Welcome back" })).toBeTruthy();

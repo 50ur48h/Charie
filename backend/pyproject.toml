@@ -5,7 +5,9 @@ description = "Charie: an AI data and business analyst"
 requires-python = ">=3.13"
 dependencies = [
     "alembic>=1.20.1",
+    "argon2-cffi>=25.1.0",
     "fastapi>=0.162.0",
+    "itsdangerous>=2.2.0",
     "pgvector>=0.5.1",
     "psycopg[binary]>=3.3.6",
     "pydantic-settings>=2.16.2",
@@ -34,6 +36,8 @@ target-version = "py313"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "SIM"]
+# B008 flags FastAPI's Depends() in defaults, which every address uses.
+ignore = ["B008"]
 
 [tool.ruff.format]
 quote-style = "double"

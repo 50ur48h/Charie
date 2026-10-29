@@ -1,10 +1,12 @@
-"""The shared app builder: health, errors and the built screens."""
+"""The shared app builder: health, login, errors and the built screens."""
 
 from pathlib import Path
 
-from fastapi import APIRouter, FastAPI
+from fastapi import APIRouter, Depends, FastAPI
 from fastapi.responses import FileResponse, JSONResponse
+from starlette.middleware.sessions import SessionMiddleware
 
+from charie.shared.auth import OriginAndJsonCheck, require_login, session_middleware_kwargs
 from charie.shared.errors import install_error_handlers
 from charie.shared.logs import setup_logging
 
@@ -23,15 +25,27 @@ def health_router() -> APIRouter:
 
 
 def create_app(
-    app_name: str, routers: tuple[APIRouter, ...] = (), static_dir: Path | None = None
+    app_name: str,
+    routers: tuple[APIRouter, ...] = (),
+    public_routers: tuple[APIRouter, ...] = (),
+    static_dir: Path | None = None,
 ) -> FastAPI:
-    """One app: logging, the error shape, `/api/health`, then the screens."""
+    """One app: logging, the error shape, `/api/health`, then the screens.
+
+    Every address needs login except `/api/health` and the public routers
+    (only `/api/login`). Changes must come from our own screens as JSON.
+    """
     setup_logging()
     app = FastAPI()
     install_error_handlers(app)
+    app.add_middleware(SessionMiddleware, **session_middleware_kwargs())
+    app.add_middleware(OriginAndJsonCheck)
     app.include_router(health_router())
-    for router in routers:
+    for router in public_routers:
         app.include_router(router)
+    need_login = [Depends(require_login)]
+    for router in routers:
+        app.include_router(router, dependencies=need_login)
 
     screens = static_dir or REPO / "frontend" / app_name / "dist"
 

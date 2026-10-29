@@ -70,13 +70,9 @@ const COPY: Record<"chat" | "learner", LoginCopy> = {
   },
 };
 
+// The API owns the sign-in words (the mock mirrors them); its message
+// wins, and anything else falls back to plain English.
 function messageFor(error: unknown): string {
-  if (error instanceof ApiError && error.status === 401) {
-    return "That password didn't work. Try again.";
-  }
-  if (error instanceof ApiError && error.status === 429) {
-    return "Too many tries. Please wait 5 minutes, then try again.";
-  }
   if (error instanceof ApiError) return error.message;
   return "Something went wrong on our side. Please try again.";
 }

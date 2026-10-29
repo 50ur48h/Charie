@@ -11,12 +11,12 @@ afterEach(() => {
   delete document.documentElement.dataset.theme;
 });
 
-function renderGuarded(me: unknown) {
+function renderGuarded(me: unknown, status = 200) {
   vi.stubGlobal(
     "fetch",
     vi.fn().mockResolvedValue(
       new Response(JSON.stringify(me), {
-        status: 200,
+        status,
         headers: { "Content-Type": "application/json" },
       }),
     ),
@@ -45,6 +45,12 @@ function renderGuarded(me: unknown) {
 }
 
 describe("RequireLogin", () => {
+  test("a 401 from /api/me sends you to /login", async () => {
+    renderGuarded({ error: "login_needed", message: "Please sign in." }, 401);
+    expect(await screen.findByText("the login page")).toBeTruthy();
+    expect(screen.queryByText("the page")).toBeNull();
+  });
+
   test("sends you to /login when you're logged out", async () => {
     renderGuarded({ logged_in: false, setup_done: false, theme: "sage", chat_url: "http://localhost:5173", learner_url: "http://localhost:5174" });
     expect(await screen.findByText("the login page")).toBeTruthy();
