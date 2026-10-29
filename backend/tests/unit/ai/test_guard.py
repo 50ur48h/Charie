@@ -14,7 +14,11 @@ def test_unmarked_test_cannot_call_meta(prompts_dir, monkeypatch) -> None:
     monkeypatch.setenv("META_API_KEY", "fake-key-for-guard-test")
     get_settings.cache_clear()
     client = AiClient(
-        provider=None, prompts_dir=prompts_dir, sleep=lambda s: None, cost_log=MemoryCostLog()
+        provider=None,
+        prompts_dir=prompts_dir,
+        sleep=lambda s: None,
+        cost_log=MemoryCostLog(),
+        replay_mode="off",
     )
     with pytest.raises(AiRealCallBlocked):
         client.run("name_chat", {"topic": "hi"}, ChatTitle, app="chat")
