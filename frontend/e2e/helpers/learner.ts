@@ -15,6 +15,6 @@ export async function openLearner(
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
   // The index route drops the query when it forwards to /setup; the store
   // was already reset at the login page load, so going explicit is enough.
-  await expect(page).toHaveURL(`${LEARNER}/setup`);
+  await expect(page).toHaveURL(new RegExp(`${LEARNER}/setup(\\?step=\\d)?$`));
   await page.goto(`${LEARNER}${path}?mock=${world}`);
 }

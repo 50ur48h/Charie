@@ -46,7 +46,7 @@ describe("learner mock store", () => {
 
   test("design world totals match the plan", () => {
     const world = designWorld();
-    const pages = world.documents.reduce((sum, doc) => sum + doc.pages, 0);
+    const pages = world.documents.reduce((sum, doc) => sum + (doc.pages ?? 0), 0);
     expect(pages).toBe(286);
     expect(newWorld()).toEqual({ documents: [], runs: [] });
   });

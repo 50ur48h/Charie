@@ -44,6 +44,8 @@ function NavLink({
   );
 }
 
+// Once setup is done the guide never shows again (P04.3): no Setup guide
+// link, and the logo goes to Sources.
 export function LearnerSidebar({
   active,
   newSources,
@@ -51,6 +53,7 @@ export function LearnerSidebar({
   reviewCount,
   user,
   charieUrl,
+  setupDone = false,
 }: {
   active: LearnerSidebarPage;
   newSources?: number;
@@ -58,16 +61,19 @@ export function LearnerSidebar({
   reviewCount?: number;
   user?: SidebarUser;
   charieUrl?: string;
+  setupDone?: boolean;
 }) {
   return (
     <div className="flex h-full min-h-0 flex-col gap-1">
       <div className="flex items-center justify-between px-1 pb-2.5 pt-0.5">
-        <Brand app="learner" href={learnerRoutes.setup} />
+        <Brand app="learner" href={setupDone ? learnerRoutes.sources : learnerRoutes.setup} />
       </div>
       <nav className="grid gap-0.5" aria-label="Pages">
-        <NavLink to={learnerRoutes.setup} icon={ListChecks} active={active === "setup"}>
-          Setup guide
-        </NavLink>
+        {!setupDone && (
+          <NavLink to={learnerRoutes.setup} icon={ListChecks} active={active === "setup"}>
+            Setup guide
+          </NavLink>
+        )}
         <NavLink
           to={learnerRoutes.sources}
           icon={Database}

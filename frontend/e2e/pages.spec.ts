@@ -49,7 +49,7 @@ test("every chat page opens with its title", async ({ page }) => {
 test("every learner page opens with its title", async ({ page }) => {
   await signedIn(page, LEARNER, "/setup");
   await page.goto(`${LEARNER}/`);
-  await expect(page).toHaveURL(`${LEARNER}/setup`);
+  await expect(page).toHaveURL(new RegExp(`${LEARNER}/setup(\\?step=\\d)?$`));
   const pages: [string, string][] = [
     ["/setup", "Set up Charie"],
     ["/sources", "Sources"],

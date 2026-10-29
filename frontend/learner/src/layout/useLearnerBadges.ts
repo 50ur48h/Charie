@@ -1,4 +1,10 @@
-import { useDocuments, useKnowledge, useLearning } from "@charie/shared";
+import { useDocuments, useKnowledge, useLearning, type LearnerDocument } from "@charie/shared";
+
+// Documents that are new or still reading: the sidebar badge and the
+// Sources refresh banner share this count (P04.4).
+export function countNewDocuments(documents: LearnerDocument[]): number {
+  return documents.filter((doc) => doc.status === "new" || doc.status === "reading").length;
+}
 
 // Live sidebar badges (P04.1): counts from the fake API. Sources counts
 // documents that are new or still reading; Learning is a dot while the
@@ -8,9 +14,7 @@ export function useLearnerBadges() {
   const documents = useDocuments();
   const learning = useLearning();
   const knowledge = useKnowledge({ version: "draft" });
-  const newDocuments = (documents.data?.documents ?? []).filter(
-    (doc) => doc.status === "new" || doc.status === "reading",
-  ).length;
+  const newDocuments = countNewDocuments(documents.data?.documents ?? []);
   const learningNow = learning.data?.runs?.[0]?.status === "running";
   const needsReview = (knowledge.data?.entries ?? []).filter(
     (entry) => entry.confidence === "guess" || entry.confidence === "conflict",
