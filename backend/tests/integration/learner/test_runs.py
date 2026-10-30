@@ -4,7 +4,7 @@ import pytest
 
 from charie.learner import runs
 from charie.learner.runs import RunActiveError
-from charie.learner.steps.base import STEPS, Step, register_step
+from charie.learner.steps.base import STEPS, SkipItem, Step, register_step
 from charie.shared.db import session_scope
 from charie.shared.jobs.registry import HANDLERS, JobInfo
 from charie.shared.tables.learning import LearningEvent, LearningRun
@@ -144,6 +144,33 @@ def test_three_steps(db, three_steps) -> None:
     ]
     assert _run(run_id).status == "done"
     assert sum("All done in" in message for message in _events(run_id)) == 1
+
+
+def test_skipped_item_settles_job(db, three_steps) -> None:
+    old = STEPS["structure"]
+
+    def skip_job(info, ctx) -> None:
+        raise SkipItem("structure took too long to look at, so I skipped it.")
+
+    STEPS["structure"] = Step(
+        name=old.name,
+        title=old.title,
+        job_kind=old.job_kind,
+        make_jobs=old.make_jobs,
+        run_job=skip_job,
+        finish=old.finish,
+        empty_note=old.empty_note,
+    )
+    with session_scope() as session:
+        run = runs.start_run(session, "first", ["owner_notes", "structure"])
+        run_id = run.id
+    runs.run_step_job(_first_job(run_id, "owner_notes"))
+    runs.run_step_job(_first_job(run_id, "structure"))
+    assert _run(run_id).status == "done"
+    assert (
+        sum("took too long to look at, so I skipped it" in message for message in _events(run_id))
+        == 1
+    )
 
 
 def test_retry_idempotent(db, three_steps) -> None:
