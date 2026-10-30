@@ -1,0 +1,74 @@
+# Fake answers and verdicts for the mini set, one question per outcome.
+clear-901:
+  answer:
+    text: 'orders: 100. December.'
+    numbers:
+      - label: orders
+        value: '100'
+    asked_choice: false
+    status: ok
+    error: ''
+    seconds: 1.0
+  verdict: fake
+vague-901:
+  answer:
+    text: 'orders: 50.'
+    numbers:
+      - label: orders
+        value: '50'
+    asked_choice: false
+    status: ok
+    error: ''
+    seconds: 2.0
+  verdict:
+    answers_exactly: 'yes'
+    explains: 'no'
+    mentions_what_matters: partly
+    no_unsupported_claims: 'yes'
+    says_cannot_tell: false
+    wrong_claims: []
+    reason: 'Weak explanation.'
+trap-901:
+  answer:
+    text: 'I cannot tell.'
+    numbers: []
+    asked_choice: false
+    status: ok
+    error: ''
+    seconds: 1.5
+  verdict:
+    answers_exactly: 'partly'
+    explains: 'no'
+    mentions_what_matters: 'no'
+    no_unsupported_claims: 'yes'
+    says_cannot_tell: true
+    wrong_claims: []
+    reason: 'Honest.'
+why-901:
+  answer:
+    text: 'net sales: 5 because of the moon.'
+    numbers:
+      - label: net sales
+        value: '5'
+    asked_choice: false
+    status: ok
+    error: ''
+    seconds: 1.0
+  verdict:
+    answers_exactly: 'yes'
+    explains: 'yes'
+    mentions_what_matters: 'yes'
+    no_unsupported_claims: 'no'
+    says_cannot_tell: false
+    wrong_claims:
+      - the moon did it
+    reason: 'Invented.'
+new_kind-901:
+  answer:
+    text: ''
+    numbers: []
+    asked_choice: false
+    status: error
+    error: 'No saved reply; run it fresh.'
+    seconds: 0.0
+  verdict: null

@@ -1,0 +1,82 @@
+# Mini set: one question per outcome (correct, partly, don't know, wrong, error).
+- id: clear-901
+  kind: clear
+  smoke: false
+  chat: []
+  question: How many orders were there in December 2025?
+  expect:
+    numbers:
+      - name: orders
+        value: '100'
+        tolerance: '0.005'
+    must_say:
+      - December
+    must_not_say: []
+    should_ask: false
+  answer_key_sql: SELECT 100
+  checked_by: Muse Code, 2026-10-30
+  why_fair: A plain count in the mini set.
+- id: vague-901
+  kind: vague
+  smoke: false
+  chat: []
+  question: How are we doing?
+  expect:
+    numbers:
+      - name: orders
+        value: '50'
+        tolerance: '0.005'
+    must_say: []
+    must_not_say: []
+    should_ask: false
+  answer_key_sql: SELECT 50
+  checked_by: Muse Code, 2026-10-30
+  why_fair: A vague question in the mini set.
+- id: trap-901
+  kind: trap
+  smoke: false
+  chat: []
+  question: How are sales this week compared with last week?
+  expect:
+    numbers:
+      - name: net sales
+        value: '10'
+        tolerance: '0.005'
+    must_say: []
+    must_not_say: []
+    should_ask: false
+  answer_key_sql: SELECT 10
+  checked_by: Muse Code, 2026-10-30
+  why_fair: A trap in the mini set.
+- id: why-901
+  kind: why
+  smoke: false
+  chat: []
+  question: Why did sales grow?
+  expect:
+    numbers:
+      - name: net sales
+        value: '5'
+        tolerance: '0.005'
+    must_say: []
+    must_not_say: []
+    should_ask: false
+  answer_key_sql: SELECT 5
+  checked_by: Muse Code, 2026-10-30
+  why_fair: A why question in the mini set.
+- id: new_kind-901
+  kind: new_kind
+  smoke: false
+  chat: []
+  question: How many customers ordered twice?
+  expect:
+    numbers:
+      - name: customers
+        value: '7'
+        tolerance: '0.005'
+    must_say: []
+    must_not_say: []
+    should_ask: false
+  answer_key_sql: SELECT 7
+  checked_by: Muse Code, 2026-10-30
+  why_fair: A new kind in the mini set.
