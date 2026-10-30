@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Button,
   Dialog,
@@ -37,11 +37,22 @@ export function EditNotesDialog({
     setError(null);
     save.mutate(text, {
       onSuccess: () => {
-        toast("Notes saved. Charie uses them the next time it learns.");
+        toast("Saved. Charie reads your notes in the next learning run.");
         onOpenChange(false);
       },
-      onError: (saveError) => setError(saveError.message),
+      onError: (saveError) => {
+        setError(saveError.message);
+        toast("Couldn't save your notes. Try again.");
+      },
     });
+  }
+
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  async function loadFromFile(file: File | undefined): Promise<void> {
+    if (!file) return;
+    setText(await file.text());
+    if (fileRef.current) fileRef.current.value = '';
   }
 
   return (
@@ -71,12 +82,23 @@ export function EditNotesDialog({
             {error}
           </p>
         )}
-        <DialogFooter>
+        <DialogFooter className="flex-wrap">
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".md,.txt"
+            className="sr-only" tabIndex={-1}
+            aria-label="Load notes from a file"
+            onChange={(event) => void loadFromFile(event.target.files?.[0])}
+          />
+          <Button variant="ghost" onClick={() => fileRef.current?.click()}>
+            Load from a file
+          </Button>
           <Button variant="ghost" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
           <Button disabled={notes.isPending || save.isPending} onClick={saveNotes}>
-            {save.isPending ? "Saving…" : "Save notes"}
+            {save.isPending ? "Saving…" : "Save"}
           </Button>
         </DialogFooter>
       </DialogContent>

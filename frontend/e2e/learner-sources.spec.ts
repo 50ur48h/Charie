@@ -77,7 +77,17 @@ test("editing notes shows the changed line and the banner", async ({ page }) => 
   await page.getByRole("button", { name: "Edit notes" }).click();
   const dialog = page.getByRole("dialog", { name: "Your notes" });
   await dialog.getByRole("textbox").fill("Never convert currencies.\nAsk me if anything is unclear.");
-  await dialog.getByRole("button", { name: "Save notes" }).click();
+  await dialog.getByRole("button", { name: "Save", exact: true }).click();
   await expect(page.getByText("You changed your notes. Charie sorts them again when it next learns.")).toBeVisible();
   await expect(page.getByText("3 new documents and changed notes since the last learning")).toBeVisible();
+});
+// P07.5 loading a file fills the notes box in the browser.
+test("loading notes from a file fills the box", async ({ page }) => {
+  await openLearner(page, "/sources", "still");
+  await page.getByRole("button", { name: "Edit notes" }).click();
+  const dialog = page.getByRole("dialog", { name: "Your notes" });
+  await dialog.locator('input[type="file"]').setInputFiles([
+    { name: "notes.md", mimeType: "text/markdown", buffer: Buffer.from("# File notes\nA file rule.") },
+  ]);
+  await expect(dialog.getByRole("textbox")).toHaveValue("# File notes\nA file rule.");
 });

@@ -1,7 +1,7 @@
 import { http, HttpResponse } from "msw";
 import { needSession } from "../session";
 import type { DatabaseInput, LearnerDocument, LearningEvent } from "../../api/learner-types";
-import { learner, saveLearner, saveSetup, setup, setupState } from "./state";
+import { countSetupLines, learner, saveLearner, saveSetup, setup, setupState } from "./state";
 import { ensureDraft, openDraft } from "./versions";
 import { getRunEvents, newestRun, subscribeRunEvents } from "./timers";
 
@@ -433,9 +433,14 @@ export const learnerHandlers = [
     const text = typeof body?.text === "string" ? body.text : "";
     const slice = setup();
     if (text.trim() === "") {
-      slice.notes = { text: "", saved_at: null, sorted: null, sorted_at: null };
+      slice.notes = { text: "", saved_at: null, lines: 0, sorted: null, sorted_at: null };
     } else {
-      slice.notes = { ...slice.notes, text, saved_at: new Date().toISOString() };
+      slice.notes = {
+        ...slice.notes,
+        text,
+        saved_at: new Date().toISOString(),
+        lines: countSetupLines(text),
+      };
     }
     saveSetup();
     return HttpResponse.json(slice.notes);

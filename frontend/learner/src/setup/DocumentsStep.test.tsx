@@ -146,7 +146,7 @@ describe("DocumentsStep", () => {
     fireEvent.change(screen.getByRole("textbox"), {
       target: { value: "Never convert currencies." },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Save notes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save", exact: true }));
     expect(await screen.findByText("Notes added")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Edit notes" })).toBeTruthy();
   });

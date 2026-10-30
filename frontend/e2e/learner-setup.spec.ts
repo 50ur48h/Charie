@@ -57,8 +57,8 @@ test("step 2 adds a file and notes", async ({ page }) => {
   await page.getByRole("button", { name: "Add notes" }).click();
   const dialog = page.getByRole("dialog", { name: "Your notes" });
   await dialog.getByRole("textbox").fill("Never convert currencies.");
-  await dialog.getByRole("button", { name: "Save notes" }).click();
-  await expect(page.getByText("Notes saved. Charie uses them the next time it learns.")).toBeVisible();
+  await dialog.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.getByText("Saved. Charie reads your notes in the next learning run.")).toBeVisible();
   await expect(page.getByText("Notes added")).toBeVisible();
 });
 

@@ -19,6 +19,8 @@ from charie.shared.jobs.queue import (
 from charie.shared.jobs.registry import HANDLERS, JobInfo
 from charie.shared.tables.learning import Job
 
+from charie.learner.steps import owner_notes  # noqa: F401 (registers the step)
+
 HEARTBEAT_SECONDS = 30
 WATCH_SECONDS = 5
 

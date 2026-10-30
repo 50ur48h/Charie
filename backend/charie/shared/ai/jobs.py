@@ -61,6 +61,15 @@ JOB_SETTINGS: dict[str, JobSettings] = {
     job: _settings_for(effort) for job, effort in _DEFAULT_EFFORTS.items()
 }
 
+# P07.5 spends high effort on thinking; the sorted list itself stays small.
+JOB_SETTINGS["sort_owner_notes"] = JobSettings(
+    provider="meta",
+    model="muse-wonder-1.0",
+    reasoning_effort="high",
+    max_output_tokens=16_000,
+    timeout_seconds=300,
+)
+
 
 def get_job_settings(job: str) -> JobSettings:
     """The settings for a job, or an error naming the unknown job."""
