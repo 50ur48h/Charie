@@ -363,7 +363,7 @@ export const learnerHandlers = [
   http.get(LEARNER_DATABASE_URL, () => {
     const blocked = needSession();
     if (blocked) return blocked;
-    return HttpResponse.json({ source: setup().source });
+    return HttpResponse.json(setup().source);
   }),
 
   http.put(LEARNER_DATABASE_URL, async ({ request }) => {
@@ -395,7 +395,7 @@ export const learnerHandlers = [
       details: { tables: 57, rows: 2400000 },
     };
     saveSetup();
-    return HttpResponse.json({ source: slice.source });
+    return HttpResponse.json(slice.source);
   }),
 
   http.post(LEARNER_DATABASE_TEST_URL, async ({ request }) => {

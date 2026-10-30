@@ -29,7 +29,7 @@ function renderStep(runs: unknown[]) {
       }
       if (url.includes("/api/sources/database")) {
         return Promise.resolve(
-          json({ source: { details: { tables: 57, rows: 2400000 } } }),
+          json({ details: { tables: 57, rows: 2400000 } }),
         );
       }
       if (url.includes("/api/documents")) {

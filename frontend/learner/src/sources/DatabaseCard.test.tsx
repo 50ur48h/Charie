@@ -36,7 +36,7 @@ function renderCard(source: DatabaseSource | null) {
     "fetch",
     vi.fn().mockImplementation((url: string, init?: RequestInit) => {
       if (url.includes("/api/sources/database") && (init?.method ?? "GET") === "GET") {
-        return Promise.resolve(json({ source }));
+        return Promise.resolve(json(source));
       }
       return Promise.resolve(json({}));
     }),
