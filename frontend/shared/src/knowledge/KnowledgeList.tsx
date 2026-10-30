@@ -131,7 +131,7 @@ export function KnowledgeList({
           </p>
         </Card>
       ) : (
-        <div className="grid gap-px" role="listbox" aria-label="Knowledge entries">
+        <div className="grid grid-cols-[minmax(0,1fr)] gap-px" role="listbox" aria-label="Knowledge entries">
           {shown.map((entry) => {
             const Icon = kindIcon(entry.kind);
             const selected = entry.key === selectedKey;
