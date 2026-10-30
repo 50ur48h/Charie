@@ -19,5 +19,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_constraint("ck_learning_runs_paused_by_check", "learning_runs")
+    # The naming convention doubles the name: create rendered
+    # "ck_learning_runs_" + the name above, so drop needs the doubled name.
+    op.drop_constraint("ck_learning_runs_ck_learning_runs_paused_by_check", "learning_runs")
     op.drop_column("learning_runs", "paused_by")
