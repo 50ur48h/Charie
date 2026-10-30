@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
+import type { StepProgress } from "@charie/shared";
 
 afterEach(() => {
   cleanup();
@@ -7,6 +8,15 @@ afterEach(() => {
 import { MemoryRouter } from "react-router";
 import type { LearningRun } from "@charie/shared";
 import { RunHeader } from "./RunHeader";
+
+function fullProgress(): StepProgress[] {
+  return Array.from({ length: 12 }, (_, i) => ({
+    step: i + 1,
+    done: i < 7 ? 1 : 0,
+    total: 1,
+    note: "",
+  }));
+}
 
 function run(overrides: Partial<LearningRun>): LearningRun {
   return {
@@ -18,7 +28,7 @@ function run(overrides: Partial<LearningRun>): LearningRun {
     step: 8,
     percent: 62,
     minutes_left: 25,
-    progress: [],
+    progress: fullProgress(),
     cost_usd: 3.8,
     summary: "6 changes",
     version_number: 15,
@@ -56,6 +66,18 @@ describe("RunHeader", () => {
     expect(screen.getByText(/\$3\.80 so far/)).toBeTruthy();
     expect(screen.queryByText(/minutes left/)).toBeNull();
     expect(screen.queryByText(/hours left/)).toBeNull();
+  });
+
+  test("a one-step run shows its own position", () => {
+    renderHeader(
+      run({
+        step: 1,
+        percent: 100,
+        minutes_left: null,
+        progress: [{ step: 1, done: 1, total: 1, note: "" }],
+      }),
+    );
+    expect(screen.getByText("Step 1 of 1: reading your notes")).toBeTruthy();
   });
 
   test("done shows the finished summary", () => {
