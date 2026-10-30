@@ -69,6 +69,10 @@ class AiClient:
 
         return get_settings().ai_replay
 
+    def month_spent(self, now: datetime) -> Decimal:
+        """This month logged spend; callers use the delta for one call."""
+        return self._cost_log.month_spent(now)
+
     def run(
         self,
         job: str,

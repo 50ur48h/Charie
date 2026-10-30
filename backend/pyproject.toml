@@ -33,6 +33,7 @@ dev = [
     "httpx>=0.28.1",
     "pytest",
     "pytest-asyncio",
+    "pyyaml>=6.0.3",
     "ruff",
 ]
 
@@ -50,6 +51,7 @@ quote-style = "double"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
 addopts = "--strict-markers"
 markers = [
     "practice_db: needs the practice database on this laptop",

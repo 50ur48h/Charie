@@ -1,0 +1,11 @@
+- id: h01
+  kind: clear
+  smoke: true
+  chat: []
+  question: How many orders were delivered?
+  expect:
+    numbers:
+      - name: orders
+        value: 10
+  answer_key_sql: SELECT 1
+  checked_by: Muse Code, 2026-10-30

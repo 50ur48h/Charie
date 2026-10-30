@@ -1,0 +1,13 @@
+- id: clear-001
+  kind: clear
+  smoke: false
+  chat: []
+  question: How many orders were delivered?
+  expect:
+    numbers:
+      - name: orders
+        value: 10
+        tolerance: 0.5
+  answer_key_sql: SELECT 1
+  checked_by: Muse Code, 2026-10-30
+  why_fair: Plain.

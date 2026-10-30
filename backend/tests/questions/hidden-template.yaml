@@ -1,0 +1,48 @@
+# The owner's hidden test questions. Copy this file to
+# docs/hidden-tests/questions.yaml, delete the 2 examples, and write your own.
+# Every question has: an id like h01, a kind, the question itself, and who
+# checked it (name and date). Optional: smoke (hidden questions are never
+# smoke), chat (follow-ups only), expected numbers and labels, the SQL answer
+# key, and why the question is fair.
+- # An id like h01; never repeat an id.
+  id: h01
+  # One of: clear, vague, follow_up, why, documents, not_in_data, new_kind, trap.
+  kind: clear
+  # True only to rerun this question alone with --smoke.
+  smoke: false
+  # Earlier questions and answers this one follows on from (follow-ups only).
+  chat: []
+  # The question, word for word as Charie will hear it.
+  question: How many orders were delivered in December 2025?
+  # What the answer must hold: expected numbers with tolerances, labels that
+  # must or must not appear, or should_ask when Charie should ask a question.
+  expect:
+    numbers:
+      # A short name for the number, its exact value, and how close is close.
+      - name: orders
+        value: 33805
+        tolerance: 2
+  # The SQL that works out the expected numbers on the practice database.
+  answer_key_sql: SELECT COUNT(*) FROM public.orders WHERE created_at >= '2025-12-01' AND created_at < '2026-01-01'
+  # Who checked the key, and when.
+  checked_by: Your Name, 2026-10-30
+  # Why asking it this way is fair on Charie.
+  why_fair: A plain count with a plain date.
+- id: h02
+  kind: follow_up
+  smoke: false
+  # The question only makes sense after this chat happened: one plain string,
+  # with the earlier question on its own Q: line and the answer on an A: line.
+  chat:
+    - |
+      Q: How many orders were delivered in December 2025?
+      A: 33,805 orders.
+  question: And in November?
+  expect:
+    numbers:
+      - name: orders
+        value: 33144
+        tolerance: 2
+  answer_key_sql: SELECT COUNT(*) FROM public.orders WHERE created_at >= '2025-11-01' AND created_at < '2025-12-01'
+  checked_by: Your Name, 2026-10-30
+  why_fair: Short for last month; the chat above carries the rest.

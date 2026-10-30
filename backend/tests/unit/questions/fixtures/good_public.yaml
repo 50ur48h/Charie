@@ -1,0 +1,32 @@
+- id: clear-001
+  kind: clear
+  smoke: true
+  chat: []
+  question: How many orders were delivered in December 2025?
+  expect:
+    numbers:
+      - name: orders
+        value: 33805
+        tolerance: 2
+    must_say: []
+    must_not_say: []
+    should_ask: false
+  answer_key_sql: SELECT COUNT(*) FROM public.orders WHERE created_at >= '2025-12-01' AND created_at < '2026-01-01'
+  checked_by: Muse Code, 2026-10-30
+  why_fair: A plain count with a plain date.
+- id: vague-001
+  kind: vague
+  smoke: false
+  chat: []
+  question: How are we doing this month?
+  expect:
+    numbers:
+      - name: net sales
+        value: 100
+    must_say:
+      - December
+    must_not_say: []
+    should_ask: false
+  answer_key_sql: SELECT 1
+  checked_by: Muse Code, 2026-10-30
+  why_fair: Vague on purpose; the month is December.
