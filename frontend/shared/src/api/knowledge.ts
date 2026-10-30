@@ -1,38 +1,44 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { ApiError, apiFetch } from "./client";
-import type { KnowledgeEntry, KnowledgeKind, KnowledgeListResponse } from "../knowledge/types";
+import type { KnowledgeDetailResponse, KnowledgeListResponse } from "../knowledge/types";
+import { KIND_GROUPS, type KnowledgeGroup } from "../knowledge/groups";
 
 export interface KnowledgeFilters {
-  kind?: KnowledgeKind | "all";
+  group?: KnowledgeGroup;
   q?: string;
   version?: number | "draft";
 }
 
-// GET /api/knowledge?kind=&q=&version= (architecture 09). Returns entries
-// plus the published version number and status.
+// GET /api/knowledge?kind=&q=&version= (architecture 09). The screens
+// fetch the whole version once and filter on the screen (instant), so
+// pages leave group and q empty; the addresses still filter for direct
+// use. Returns the version, rows, whole-version counts and needs_review.
 export function useKnowledge(filters: KnowledgeFilters = {}) {
-  const { kind = "all", q = "", version } = filters;
+  const { group = "all", q = "", version } = filters;
   const params = new URLSearchParams();
-  if (kind !== "all") params.set("kind", kind);
+  if (group !== "all") {
+    const kinds = KIND_GROUPS.find((entry) => entry.key === group)?.kinds ?? [];
+    if (kinds.length > 0) params.set("kind", kinds.join(","));
+  }
   if (q.trim() !== "") params.set("q", q.trim());
   if (version !== undefined) params.set("version", String(version));
   const query = params.toString();
   return useQuery({
-    queryKey: ["knowledge", kind, q.trim(), version ?? "published"],
+    queryKey: ["knowledge", group, q.trim(), version ?? "published"],
     queryFn: ({ signal }) =>
       apiFetch<KnowledgeListResponse>(`/api/knowledge${query ? `?${query}` : ""}`, { signal }),
   });
 }
 
 // GET /api/knowledge/{key}?version= (architecture 09). Detail uses the
-// stable fixture key, never a list index.
+// stable entry key, never a list index.
 export function useKnowledgeEntry(key: string | null, version?: number | "draft") {
   return useQuery({
     queryKey: ["knowledge-entry", key, version ?? "published"],
     queryFn: ({ signal }) => {
       if (key === null) throw new Error("No entry selected.");
       const query = version !== undefined ? `?version=${version}` : "";
-      return apiFetch<KnowledgeEntry>(`/api/knowledge/${key}${query}`, { signal });
+      return apiFetch<KnowledgeDetailResponse>(`/api/knowledge/${key}${query}`, { signal });
     },
     enabled: key !== null,
     retry: (count, error) =>

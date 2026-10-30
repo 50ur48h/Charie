@@ -7,6 +7,8 @@ import {
   KnowledgeList,
   Page,
   PageHeader,
+  filterEntries,
+  groupCounts,
   toast,
   useApproveEntry,
   useEditEntry,
@@ -16,7 +18,7 @@ import {
   usePublishVersion,
   useVersionChanges,
   useVersions,
-  type KnowledgeKind,
+  type KnowledgeGroup,
 } from "@charie/shared";
 import { DraftBanner } from "../knowledge/DraftBanner";
 import { MarkWrongDialog } from "../knowledge/MarkWrongDialog";
@@ -24,10 +26,13 @@ import { ReviewChangesDialog } from "../knowledge/ReviewChangesDialog";
 import { TodoList } from "../knowledge/TodoList";
 import { VersionsButton, VersionsDialog } from "../knowledge/VersionsDialog";
 
-// The Learner's Knowledge page (P04.8/9): draft banner, to-check items,
-// the editable entries list, review changes, versions and publish.
+// The Learner's Knowledge page (P04.8/9, P07.4 on real data): draft
+// banner, to-check items, the editable entries list, review changes,
+// versions and publish. The list fetches the whole version once and
+// filters on the screen; review, versions and publish are mock-only
+// until P09.9, so their buttons show the API's error on real data.
 export function KnowledgePage() {
-  const [kind, setKind] = useState<KnowledgeKind | "all">("all");
+  const [group, setGroup] = useState<KnowledgeGroup>("all");
   const [query, setQuery] = useState("");
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
@@ -36,6 +41,7 @@ export function KnowledgePage() {
   const [wrongError, setWrongError] = useState<string | null>(null);
   const [versionsOpen, setVersionsOpen] = useState(false);
   const [reviewId, setReviewId] = useState<number | null>(null);
+  const [reviewError, setReviewError] = useState<string | null>(null);
   const [publishNumber, setPublishNumber] = useState<number | null>(null);
 
   const edit = useEditEntry();
@@ -44,9 +50,10 @@ export function KnowledgePage() {
   const publish = usePublishVersion();
   const versions = useVersions();
 
-  const list = useKnowledge({ kind, q: query, version: "draft" });
+  const list = useKnowledge({ version: "draft" });
   const detail = useKnowledgeEntry(selectedKey, "draft");
-  const entries = list.data?.entries ?? [];
+  const allEntries = list.data?.entries ?? [];
+  const entries = filterEntries(allEntries, group, query);
 
   // Select the first entry once the draft list loads.
   useEffect(() => {
@@ -59,13 +66,18 @@ export function KnowledgePage() {
     setEditError(null);
   }
 
-  const draft = (versions.data?.versions ?? []).find((version) => version.status === "draft");
   const liveNumber = (versions.data?.versions ?? []).find(
     (version) => version.status === "published",
   )?.number;
-  const reviewVersion = (versions.data?.versions ?? []).find(
-    (version) => version.id === reviewId,
-  );
+  // Review reads the version from the list (which exists on real data too);
+  // the changes themselves are mock-only until P09.9, so the dialog shows
+  // the API's error there.
+  const listVersion = list.data?.version ?? null;
+  const reviewVersion =
+    (versions.data?.versions ?? []).find((version) => version.id === reviewId) ??
+    (listVersion !== null && listVersion.id === reviewId
+      ? { id: listVersion.id, number: listVersion.number, status: listVersion.status }
+      : undefined);
   const changes = useVersionChanges(reviewId);
 
   function saveEdit(patch: { title: string; meaning: string }): void {
@@ -76,7 +88,10 @@ export function KnowledgePage() {
       {
         onSuccess: () => {
           setEditing(false);
-          toast(`Saved in draft version ${draft?.number ?? "…"}.`);
+          const saved = list.data?.version;
+          toast(
+            saved?.status === "draft" ? `Saved in draft version ${saved.number}.` : "Saved.",
+          );
         },
         onError: (error) => setEditError(error.message),
       },
@@ -117,20 +132,30 @@ export function KnowledgePage() {
     });
   }
 
-  const counts = Object.fromEntries(
-    entries.reduce((acc, entry) => acc.set(entry.kind, (acc.get(entry.kind) ?? 0) + 1), new Map<string, number>()),
-  );
+  function openReview(): void {
+    if (listVersion === null) return;
+    setReviewId(listVersion.id);
+    setReviewError(null);
+  }
 
   return (
     <Page>
       <PageHeader
         title="Knowledge"
         lead="Check and fix what Charie learned. Changes go into a draft version, and Charie keeps using the live version until you publish."
-        actions={<VersionsButton onOpen={() => setVersionsOpen(true)} />}
+        actions={
+          !versions.isError && (
+            <VersionsButton onOpen={() => setVersionsOpen(true)} />
+          )
+        }
       />
       <DraftBanner
-        onReview={() => draft && setReviewId(draft.id)}
-        onPublish={() => draft && setPublishNumber(draft.number)}
+        version={list.data?.version ?? null}
+        liveNumber={liveNumber ?? null}
+        onReview={openReview}
+        onPublish={() => {
+          if (list.data?.version?.status === "draft") setPublishNumber(list.data.version.number);
+        }}
       />
       <TodoList />
       {list.isError ? (
@@ -144,12 +169,13 @@ export function KnowledgePage() {
         <div className="grid items-start gap-4 min-[1100px]:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
           <KnowledgeList
             entries={entries}
-            counts={{ ...counts, all: entries.length }}
-            kind={kind}
+            counts={groupCounts(list.data?.counts ?? {})}
+            needsReview={list.data?.needs_review ?? 0}
+            group={group}
             query={query}
             selectedKey={selectedKey}
             editable
-            onKindChange={setKind}
+            onGroupChange={setGroup}
             onQueryChange={setQuery}
             onSelect={select}
           />
@@ -171,12 +197,9 @@ export function KnowledgePage() {
             )}
             {detail.data && (
               <EntryDetail
-                entry={detail.data}
-                version={
-                  list.data?.version == null
-                    ? null
-                    : { number: list.data.version, status: list.data.status ?? "published" }
-                }
+                entry={detail.data.entry}
+                version={detail.data.version}
+                history={detail.data.history}
                 editable
                 editing={editing}
                 savingEdit={edit.isPending}
@@ -204,7 +227,7 @@ export function KnowledgePage() {
       )}
       {wrongOpen && detail.data && (
         <MarkWrongDialog
-          entryName={detail.data.name}
+          entryName={detail.data.entry.title}
           saving={markWrong.isPending}
           serverError={wrongError}
           onSave={(note) => void sendWrong(note)}
@@ -223,6 +246,7 @@ export function KnowledgePage() {
             if (found) {
               setVersionsOpen(false);
               setReviewId(found.id);
+              setReviewError(null);
             }
           }}
         />
@@ -233,7 +257,11 @@ export function KnowledgePage() {
           changes={changes.data?.changes ?? []}
           isDraft={reviewVersion.status === "draft"}
           publishing={publish.isPending}
-          onClose={() => setReviewId(null)}
+          loadError={changes.isError || reviewError !== null}
+          onClose={() => {
+            setReviewId(null);
+            setReviewError(null);
+          }}
           onPublish={() => setPublishNumber(reviewVersion.number)}
         />
       )}

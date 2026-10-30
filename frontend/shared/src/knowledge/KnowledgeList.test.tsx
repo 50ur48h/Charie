@@ -1,63 +1,85 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, test, vi } from "vitest";
+import { filterEntries, groupCounts } from "./groups";
 import { KnowledgeList } from "./KnowledgeList";
 import { listMockKnowledge } from "../mocks/sampleKnowledge";
+import type { KnowledgeGroup } from "./groups";
 
 afterEach(cleanup);
 
-function renderList(selectedKey: string | null = null) {
+const FULL_COUNTS = {
+  metric: 4,
+  default: 3,
+  table: 1,
+  column: 1,
+  rule: 2,
+  code: 1,
+  event: 1,
+  data_problem: 1,
+};
+
+function renderList(group: KnowledgeGroup = "all", selectedKey: string | null = null) {
   const onSelect = vi.fn();
+  const onGroupChange = vi.fn();
   render(
     <KnowledgeList
-      entries={listMockKnowledge({})}
-      counts={{ all: 14, number: 4 }}
-      kind="all"
+      entries={filterEntries(listMockKnowledge({}), group, "")}
+      counts={groupCounts(FULL_COUNTS)}
+      needsReview={4}
+      group={group}
       query=""
       selectedKey={selectedKey}
-      onKindChange={vi.fn()}
+      onGroupChange={onGroupChange}
       onQueryChange={vi.fn()}
       onSelect={onSelect}
     />,
   );
-  return onSelect;
+  return { onSelect, onGroupChange };
 }
 
 describe("KnowledgeList", () => {
-  test("search_and_kind: filters combine", async () => {
+  test("groups kinds into the 7 buttons", async () => {
     const user = userEvent.setup();
-    const onKindChange = vi.fn();
+    const { onGroupChange } = renderList();
+    for (const label of [
+      "Business numbers",
+      "Words & meanings",
+      "Tables & columns",
+      "Rules",
+      "Codes",
+      "Events",
+      "Data problems",
+    ]) {
+      expect(screen.getByRole("button", { name: new RegExp(label) })).not.toBeNull();
+    }
+    expect(screen.getByRole("button", { name: /Business numbers 4/ })).not.toBeNull();
+    await user.click(screen.getByRole("button", { name: /Words & meanings/ }));
+    expect(onGroupChange).toHaveBeenCalledWith("words");
+    // Parent filters the entries; the list shows the filtered rows.
+    cleanup();
+    renderList("words");
+    expect(screen.queryByRole("option", { name: /^Net sales/ })).toBeNull();
+    expect(screen.getByRole("option", { name: /^"Lunch"/ })).not.toBeNull();
+  });
+
+  test("search filters the shown entries", async () => {
+    const user = userEvent.setup();
     const onQueryChange = vi.fn();
-    const { rerender } = render(
+    render(
       <KnowledgeList
         entries={listMockKnowledge({})}
-        counts={{ all: 14 }}
-        kind="all"
+        counts={groupCounts(FULL_COUNTS)}
+        needsReview={4}
+        group="all"
         query=""
         selectedKey={null}
-        onKindChange={onKindChange}
+        onGroupChange={vi.fn()}
         onQueryChange={onQueryChange}
         onSelect={vi.fn()}
       />,
     );
     expect(screen.getByRole("option", { name: /^Net sales / })).not.toBeNull();
-    await user.click(screen.getByRole("button", { name: /Business numbers/ }));
-    expect(onKindChange).toHaveBeenCalledWith("number");
-    // Parent filters the entries; the list shows the filtered rows.
-    rerender(
-      <KnowledgeList
-        entries={listMockKnowledge({ kind: "number" })}
-        counts={{ all: 14 }}
-        kind="table"
-        query=""
-        selectedKey={null}
-        onKindChange={onKindChange}
-        onQueryChange={onQueryChange}
-        onSelect={vi.fn()}
-      />,
-    );
-    expect(screen.queryByRole("option", { name: /"Lunch"/ })).toBeNull();
-    expect(screen.getByRole("option", { name: /Food cost %/ })).not.toBeNull();
     await user.type(screen.getByLabelText("Search everything Charie has learned"), "lunch");
     expect(onQueryChange).toHaveBeenCalled();
   });
@@ -66,11 +88,12 @@ describe("KnowledgeList", () => {
     render(
       <KnowledgeList
         entries={[]}
-        counts={{ all: 0 }}
-        kind="word"
+        counts={groupCounts({})}
+        needsReview={0}
+        group="words"
         query="zzz-no-such-thing"
         selectedKey={null}
-        onKindChange={vi.fn()}
+        onGroupChange={vi.fn()}
         onQueryChange={vi.fn()}
         onSelect={vi.fn()}
       />,
@@ -81,42 +104,47 @@ describe("KnowledgeList", () => {
 
   test("selection by stable key", async () => {
     const user = userEvent.setup();
-    const onSelect = renderList();
+    const { onSelect } = renderList();
     await user.click(screen.getByRole("option", { name: /Average order/ }));
     expect(onSelect).toHaveBeenCalledWith("metric.avg_order");
   });
 
-  test("editable: Needs review shows 4", async () => {
+  test("editable: Needs review shows guessed and conflicting only", async () => {
     const user = userEvent.setup();
     render(
       <KnowledgeList
         entries={listMockKnowledge({})}
-        counts={{ all: 14 }}
-        kind="all"
+        counts={groupCounts(FULL_COUNTS)}
+        needsReview={4}
+        group="all"
         query=""
         selectedKey={null}
         editable
-        onKindChange={vi.fn()}
+        onGroupChange={vi.fn()}
         onQueryChange={vi.fn()}
         onSelect={vi.fn()}
       />,
     );
     expect(screen.queryByRole("button", { name: /Needs review/ })).not.toBeNull();
     await user.click(screen.getByRole("button", { name: /Needs review 4/ }));
-    expect(screen.getAllByRole("option")).toHaveLength(4);
+    const shown = screen.getAllByRole("option");
+    expect(shown).toHaveLength(4);
+    expect(screen.getByRole("option", { name: /Labor cost %/ })).not.toBeNull();
+    expect(screen.queryByRole("option", { name: /^Net sales/ })).toBeNull();
   });
 
   test("editable: an empty Needs review explains itself", async () => {
     const user = userEvent.setup();
     render(
       <KnowledgeList
-        entries={listMockKnowledge({ kind: "table" })}
-        counts={{ all: 2 }}
-        kind="table"
+        entries={filterEntries(listMockKnowledge({}), "tables", "")}
+        counts={groupCounts(FULL_COUNTS)}
+        needsReview={4}
+        group="tables"
         query=""
         selectedKey={null}
         editable
-        onKindChange={vi.fn()}
+        onGroupChange={vi.fn()}
         onQueryChange={vi.fn()}
         onSelect={vi.fn()}
       />,
@@ -127,18 +155,7 @@ describe("KnowledgeList", () => {
   });
 
   test("read_only: no review tabs without editable", () => {
-    render(
-      <KnowledgeList
-        entries={listMockKnowledge({})}
-        counts={{ all: 14 }}
-        kind="all"
-        query=""
-        selectedKey={null}
-        onKindChange={vi.fn()}
-        onQueryChange={vi.fn()}
-        onSelect={vi.fn()}
-      />,
-    );
+    renderList();
     expect(screen.queryByRole("button", { name: /Needs review/ })).toBeNull();
   });
 });

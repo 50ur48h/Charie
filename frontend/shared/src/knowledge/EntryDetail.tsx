@@ -1,16 +1,36 @@
 import { Check, FileText, SquarePen } from "lucide-react";
 import { Button } from "../components/Button";
 import { Card } from "../components/Card";
-import { ConfidencePill, kindLabel } from "./KnowledgeList";
-import type { KnowledgeEntry } from "./types";
+import { detailLines } from "./detailLines";
+import { entryGroupLabel } from "./groups";
+import { ConfidencePill } from "./KnowledgeList";
+import type { KnowledgeEntry, KnowledgeHistoryItem, KnowledgeSource } from "./types";
 import { EntryEditForm } from "./EntryEditForm";
 
-// One entry's evidence: meanings, how it is worked out, recipe tests,
-// sources with quotes and history. Read-only shows "Suggest a change";
-// the learner editor adds Edit, Mark as wrong and Approve (P04.8).
+const SOURCE_LABEL: Record<string, string> = {
+  structure: "Read from the database structure",
+  profile: "Measured from the data",
+  query: "Tested with a query",
+  owner_notes: "From your notes",
+  owner_edit: "Edited by you",
+  owner_approval: "Approved by you",
+  ai_explanation: "Explained by Charie from the data and your notes",
+};
+
+function sourceLabel(source: KnowledgeSource): string {
+  if (source.type !== undefined && SOURCE_LABEL[source.type] !== undefined) {
+    return SOURCE_LABEL[source.type];
+  }
+  return source.text ?? source.doc ?? source.type ?? "A source";
+}
+
+// One entry's evidence: details, meanings, how it is worked out, recipe
+// tests, sources with quotes, and history. Read-only shows "Suggest a
+// change"; the learner editor adds Edit, Mark as wrong and Approve (P04.8).
 export function EntryDetail({
   entry,
   version,
+  history,
   editable = false,
   editing = false,
   savingEdit = false,
@@ -25,6 +45,7 @@ export function EntryDetail({
 }: {
   entry: KnowledgeEntry;
   version: { number: number; status: string } | number | null;
+  history: KnowledgeHistoryItem[];
   editable?: boolean;
   editing?: boolean;
   savingEdit?: boolean;
@@ -37,13 +58,14 @@ export function EntryDetail({
   onApprove?: () => void;
   onWrong?: () => void;
 }) {
-  const confirmed = entry.confidence === "owner";
+  const confirmed = entry.confidence === "confirmed";
+  const details = detailLines(entry.kind, entry.details);
   return (
-    <Card padded aria-label={entry.name}>
+    <Card padded aria-label={entry.title}>
       <div className="flex flex-wrap items-center gap-2">
         <ConfidencePill confidence={entry.confidence} />
         <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-transparent px-2.5 text-[12.5px] font-medium text-text-2">
-          {kindLabel(entry.kind)}
+          {entryGroupLabel(entry.kind)}
         </span>
         {version !== null && (
           <span className="ml-auto text-[12.5px] text-muted">{versionLabel(version)}</span>
@@ -51,8 +73,8 @@ export function EntryDetail({
       </div>
       {editing && editable ? (
         <EntryEditForm
-          title={entry.name}
-          meaning={entry.meaning ?? entry.short}
+          title={entry.title}
+          meaning={entry.meaning}
           saving={savingEdit}
           serverError={editError}
           onSave={(patch) => onSaveEdit?.(patch)}
@@ -60,9 +82,21 @@ export function EntryDetail({
         />
       ) : (
         <>
-          <h2 className="mt-2.5 font-serif text-[22px] font-semibold leading-[1.3]">{entry.name}</h2>
-          <p className="mt-1.5 text-[14.5px]">{entry.meaning ?? entry.short}</p>
+          <h2 className="mt-2.5 font-serif text-[22px] font-semibold leading-[1.3]">{entry.title}</h2>
+          <p className="mt-1.5 text-[14.5px]">{entry.meaning}</p>
         </>
+      )}
+      {details.length > 0 && (
+        <div className="mt-4">
+          <div className="text-[12.5px] font-semibold uppercase tracking-wide text-muted">
+            Details
+          </div>
+          <ul className="mt-1.5 grid gap-1 text-[14px]">
+            {details.map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
+        </div>
       )}
       {entry.how && entry.how.length > 0 && (
         <div className="mt-4">
@@ -107,18 +141,28 @@ export function EntryDetail({
             Where it came from
           </div>
           <ul className="mt-1.5 grid gap-2">
-            {entry.sources.map((source) => (
+            {entry.sources.map((source, index) => (
               <li
-                key={source.doc}
+                key={`${sourceLabel(source)}-${index}`}
                 className="flex gap-2.5 rounded-[12px] bg-surface-2 p-[10px_12px]"
               >
                 <FileText aria-hidden="true" className="mt-0.5 flex-none text-muted [--icon:16px]" />
                 <div>
-                  <div className="text-[13.5px] font-medium">{source.doc}</div>
+                  <div className="text-[13.5px] font-medium">{sourceLabel(source)}</div>
                   {source.quote && (
                     <blockquote className="mt-0.5 border-l-2 border-border pl-2 text-[13.5px] text-text-2">
                       “{source.quote}”
                     </blockquote>
+                  )}
+                  {source.sql && (
+                    <details className="mt-1">
+                      <summary className="cursor-pointer text-[13px] font-medium text-accent-ink">
+                        Show the query
+                      </summary>
+                      <pre className="mt-1 overflow-x-auto rounded-[8px] bg-code-bg p-2 font-mono text-[12px] text-code-ink">
+                        {source.sql}
+                      </pre>
+                    </details>
                   )}
                 </div>
               </li>
@@ -126,20 +170,24 @@ export function EntryDetail({
           </ul>
         </div>
       )}
-      {entry.history && entry.history.length > 0 && (
+      {history.length > 0 && (
         <div className="mt-4">
           <div className="text-[12.5px] font-semibold uppercase tracking-wide text-muted">
             History
           </div>
           <ul className="mt-1.5 grid gap-1 text-[13.5px] text-text-2">
-            {entry.history.map((item) => (
-              <li key={item}>{item}</li>
+            {history.map((item, index) => (
+              <li key={`${item.version}-${item.change}-${index}`}>
+                Version {item.version} · {item.reason === "" ? item.change : item.reason}
+              </li>
             ))}
           </ul>
         </div>
       )}
       <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-border pt-3.5">
-        <span className="text-[12.5px] text-muted">Used in {entry.used} answers</span>
+        {entry.used !== undefined && (
+          <span className="text-[12.5px] text-muted">Used in {entry.used} answers</span>
+        )}
         {editable ? (
           <span className="ml-auto inline-flex flex-wrap gap-2">
             <Button variant="outline" size="sm" onClick={() => onStartEdit?.()}>

@@ -272,16 +272,24 @@ describe("mock handlers", () => {
     await signIn();
     const all = await (await fetch(`${APP}/api/knowledge`)).json();
     expect(all.entries.length).toBeGreaterThan(10);
-    expect(all).toMatchObject({ version: 14, status: "published" });
-    const words = await (await fetch(`${APP}/api/knowledge?kind=word`)).json();
+    expect(all.version).toMatchObject({ number: 14, status: "published" });
+    expect(all.counts).toMatchObject({ metric: 4, default: 3 });
+    expect(all.needs_review).toBe(4);
+    const words = await (await fetch(`${APP}/api/knowledge?kind=default`)).json();
     expect(words.entries.length).toBeGreaterThan(0);
-    expect(words.entries.every((e: { kind: string }) => e.kind === "word")).toBe(true);
+    expect(words.entries.every((e: { kind: string }) => e.kind === "default")).toBe(true);
     const found = await (await fetch(`${APP}/api/knowledge?q=lunch`)).json();
     expect(found.entries.map((e: { key: string }) => e.key)).toContain("default.lunch");
     const stable = await (await fetch(`${APP}/api/knowledge/metric.net_sales`)).json();
-    expect(stable).toMatchObject({ key: "metric.net_sales", name: "Net sales" });
+    expect(stable.entry).toMatchObject({ key: "metric.net_sales", title: "Net sales" });
+    expect(stable.version).toMatchObject({ number: 14, status: "published" });
+    expect(Array.isArray(stable.history)).toBe(true);
     const missing = await fetch(`${APP}/api/knowledge/nope`);
     expect(missing.status).toBe(404);
+    await expect(missing.json()).resolves.toMatchObject({
+      error: "not_found",
+      message: "There's no knowledge entry called nope.",
+    });
     const suggested = await post("/api/knowledge/metric.net_sales/suggest", { text: "  Try this  " });
     expect(suggested.status).toBe(200);
     expect(mockSuggestions()).toHaveLength(1);

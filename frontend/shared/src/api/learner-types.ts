@@ -172,7 +172,12 @@ export interface LearnerTodo {
   id: number;
   kind: "correction" | "unknown_word" | "new_metric" | "meaning_change";
   text: string;
-  details: { chat_title: string | null; words: string | null };
+  details: {
+    chat_title: string | null;
+    words: string | null;
+    key?: string | null;
+    version?: number | null;
+  };
   status: "open" | "done" | "dismissed";
   result: string | null;
   created_at: string;

@@ -408,7 +408,7 @@ export function SettingsPage() {
                   <IconBox icon={Layers} />
                   <div className="min-w-0">
                     <div className="text-[14px] font-semibold">
-                      Knowledge version {knowledge.data?.version ?? "–"}
+                      Knowledge version {knowledge.data?.version?.number ?? "–"}
                     </div>
                     <div className="text-[12.5px] text-muted">
                       {knowledge.data ? `${knowledge.data.entries.length} entries` : "Loading knowledge…"}

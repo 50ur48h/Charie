@@ -16,8 +16,6 @@ export function useLearnerBadges() {
   const knowledge = useKnowledge({ version: "draft" });
   const newDocuments = countNewDocuments(documents.data?.documents ?? []);
   const learningNow = learning.data?.runs?.[0]?.status === "running";
-  const needsReview = (knowledge.data?.entries ?? []).filter(
-    (entry) => entry.confidence === "guess" || entry.confidence === "conflict",
-  ).length;
+  const needsReview = knowledge.data?.needs_review ?? 0;
   return { newDocuments, learningNow, needsReview };
 }

@@ -310,9 +310,9 @@ describe("learner knowledge mocks", () => {
     expect(versions.versions[0].summary.note).toBe("Your changes");
     const draft = (await (
       await fetch(`${APP}/api/knowledge/metric.net_sales?version=draft`)
-    ).json()) as { meaning: string; confidence: string };
-    expect(draft.meaning).toBe("Sales without delivery fees.");
-    expect(draft.confidence).toBe("owner");
+    ).json()) as { entry: { meaning: string; confidence: string } };
+    expect(draft.entry.meaning).toBe("Sales without delivery fees.");
+    expect(draft.entry.confidence).toBe("confirmed");
     const changes = (await (await fetch(`${APP}/api/versions/1/changes`)).json()) as {
       changes: { key: string; change: string; reason: string }[];
     };
@@ -368,8 +368,8 @@ describe("learner knowledge mocks", () => {
     // The entry and the draft are untouched: still 6 changes on draft 15.
     const entry = (await (
       await fetch(`${APP}/api/knowledge/metric.net_sales?version=draft`)
-    ).json()) as { confidence: string };
-    expect(entry.confidence).toBe("owner");
+    ).json()) as { entry: { confidence: string } };
+    expect(entry.entry.confidence).toBe("confirmed");
     const changes = (await (await fetch(`${APP}/api/versions/15/changes`)).json()) as {
       changes: unknown[];
     };
@@ -428,9 +428,9 @@ describe("learner knowledge mocks", () => {
     // The draft list is gone; the published one has draft 15's entries.
     const list = (await (await fetch(`${APP}/api/knowledge`)).json()) as {
       entries: { key: string }[];
-      version: number;
+      version: { number: number };
     };
-    expect(list.version).toBe(15);
+    expect(list.version.number).toBe(15);
     expect(list.entries.some((entry) => entry.key === "rule.refunds_out_of_sales")).toBe(true);
   });
 });

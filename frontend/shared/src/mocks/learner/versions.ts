@@ -97,20 +97,20 @@ export function applyOwnerFix(
   const working = store.draftEntries ?? [];
   const entry = working.find((e) => e.key === key);
   if (!entry) return undefined;
-  if (patch.title !== undefined) entry.name = patch.title;
+  if (patch.title !== undefined) entry.title = patch.title;
   if (patch.meaning !== undefined) entry.meaning = patch.meaning;
-  entry.confidence = "owner";
+  entry.confidence = "confirmed";
   const changes = store.changesByVersion[draft.number] ?? [];
   const open = changes.find((change) => change.key === key);
   const base = publishedBase().find((e) => e.key === key) ?? null;
   if (open) {
     open.after = { ...entry };
-    open.title = entry.name;
+    open.title = entry.title;
     open.reason = reason;
   } else {
     changes.push({
       key,
-      title: entry.name,
+      title: entry.title,
       change: base === null ? "added" : "changed",
       before: base === null ? null : { ...base },
       after: { ...entry },
@@ -129,18 +129,18 @@ export function applyApprove(key: string): KnowledgeEntry | undefined {
   const store = learner();
   const entry = (store.draftEntries ?? []).find((e) => e.key === key);
   if (!entry) return undefined;
-  entry.confidence = "owner";
+  entry.confidence = "confirmed";
   const changes = store.changesByVersion[draft.number] ?? [];
   const open = changes.find((change) => change.key === key);
   const base = publishedBase().find((e) => e.key === key) ?? null;
   if (open) {
     open.after = { ...entry };
-    open.title = entry.name;
+    open.title = entry.title;
     open.reason = OWNER_APPROVE;
   } else {
     changes.push({
       key,
-      title: entry.name,
+      title: entry.title,
       change: base === null ? "added" : "changed",
       before: base === null ? null : { ...base },
       after: { ...entry },

@@ -61,6 +61,8 @@ export * from "./questions/QuestionEvidence";
 export * from "./questions/QuestionOptions";
 export * from "./api/knowledge";
 export * from "./knowledge/types";
+export * from "./knowledge/groups";
+export * from "./knowledge/detailLines";
 export * from "./knowledge/KnowledgeList";
 export * from "./knowledge/EntryDetail";
 export * from "./knowledge/EntryEditForm";

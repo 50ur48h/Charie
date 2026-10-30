@@ -14,55 +14,55 @@ import {
 import { Card } from "../components/Card";
 import { Input } from "../components/Input";
 import { Pill } from "../components/Pill";
-import type { KnowledgeEntry, KnowledgeKind } from "./types";
+import { KIND_GROUPS, entryGroupLabel, type KnowledgeGroup } from "./groups";
+import type { KnowledgeConfidence, KnowledgeEntry, KnowledgeKind } from "./types";
 
-export const KNOWLEDGE_KINDS: { key: KnowledgeKind | "all"; label: string; icon: LucideIcon }[] = [
-  { key: "all", label: "All", icon: Layers },
-  { key: "number", label: "Business numbers", icon: Sigma },
-  { key: "word", label: "Words & meanings", icon: MessageSquare },
-  { key: "table", label: "Tables & columns", icon: Database },
-  { key: "rule", label: "Rules", icon: ShieldCheck },
-  { key: "code", label: "Codes", icon: Hash },
-  { key: "event", label: "Events", icon: Calendar },
-  { key: "problem", label: "Data problems", icon: CircleAlert },
-];
-
-export function kindLabel(kind: KnowledgeKind): string {
-  return KNOWLEDGE_KINDS.find((k) => k.key === kind)?.label ?? kind;
-}
+const GROUP_ICONS: Record<Exclude<KnowledgeGroup, "all">, LucideIcon> = {
+  numbers: Sigma,
+  words: MessageSquare,
+  tables: Database,
+  rules: ShieldCheck,
+  codes: Hash,
+  events: Calendar,
+  problems: CircleAlert,
+};
 
 export function kindIcon(kind: KnowledgeKind): LucideIcon {
-  return KNOWLEDGE_KINDS.find((k) => k.key === kind)?.icon ?? Layers;
+  const group = KIND_GROUPS.find((entry) => entry.kinds.includes(kind))?.key;
+  return (group !== undefined ? GROUP_ICONS[group] : Layers) ?? Layers;
 }
 
-// The knowledge browser list: search, kind filters and entry rows.
+// The knowledge browser list: search, group filters and entry rows.
 // Selection is by stable key; the parent loads detail for the chosen key.
 // The learner's editable list adds "All" / "Needs review" tabs under the
-// search (guessed entries and disagreements first).
+// search (guessed entries and disagreements first). Counts and the review
+// count cover the whole version; `entries` are already filtered on screen.
 export function KnowledgeList({
   entries,
   counts,
-  kind,
+  needsReview,
+  group,
   query,
   selectedKey,
   editable = false,
-  onKindChange,
+  onGroupChange,
   onQueryChange,
   onSelect,
 }: {
   entries: KnowledgeEntry[];
-  counts: Record<string, number>;
-  kind: KnowledgeKind | "all";
+  counts: Record<KnowledgeGroup, number>;
+  needsReview: number;
+  group: KnowledgeGroup;
   query: string;
   selectedKey: string | null;
   editable?: boolean;
-  onKindChange: (kind: KnowledgeKind | "all") => void;
+  onGroupChange: (group: KnowledgeGroup) => void;
   onQueryChange: (query: string) => void;
   onSelect: (key: string) => void;
 }) {
   const [reviewOnly, setReviewOnly] = useState(false);
   const reviewEntries = entries.filter(
-    (entry) => entry.confidence === "guess" || entry.confidence === "conflict",
+    (entry) => entry.confidence === "guessed" || entry.confidence === "conflicting",
   );
   const shown = reviewOnly ? reviewEntries : entries;
   return (
@@ -101,31 +101,28 @@ export function KnowledgeList({
             }
           >
             Needs review
-            <span className={reviewOnly ? undefined : "text-muted"}>{reviewEntries.length}</span>
+            <span className={reviewOnly ? undefined : "text-muted"}>{needsReview}</span>
           </button>
         </div>
       )}
       <div className="mb-3 flex flex-wrap gap-1.5" role="group" aria-label="Kinds">
-        {KNOWLEDGE_KINDS.map(({ key, label, icon: Icon }) => {
-          const active = kind === key;
-          return (
-            <button
-              key={key}
-              type="button"
-              onClick={() => onKindChange(key)}
-              aria-pressed={active}
-              className={
-                active
-                  ? "inline-flex items-center gap-1.5 rounded-full bg-accent px-3 py-1.5 text-[13px] font-semibold text-white [--icon:15px]"
-                  : "inline-flex items-center gap-1.5 rounded-full border border-border bg-surface px-3 py-1.5 text-[13px] font-medium text-text-2 [--icon:15px]"
-              }
-            >
-              <Icon aria-hidden="true" />
-              {label}
-              <span className={active ? undefined : "text-muted"}>{counts[key] ?? 0}</span>
-            </button>
-          );
-        })}
+        <GroupButton
+          active={group === "all"}
+          label="All"
+          icon={Layers}
+          count={counts.all}
+          onClick={() => onGroupChange("all")}
+        />
+        {KIND_GROUPS.map(({ key, label }) => (
+          <GroupButton
+            key={key}
+            active={group === key}
+            label={label}
+            icon={GROUP_ICONS[key]}
+            count={counts[key]}
+            onClick={() => onGroupChange(key)}
+          />
+        ))}
       </div>
       {shown.length === 0 ? (
         <Card padded>
@@ -155,8 +152,10 @@ export function KnowledgeList({
                   <Icon aria-hidden="true" />
                 </span>
                 <span className="min-w-0">
-                  <span className="block truncate text-[14px] font-medium">{entry.name}</span>
-                  <span className="block truncate text-[12.5px] text-muted">{entry.short}</span>
+                  <span className="block truncate text-[14px] font-medium">{entry.title}</span>
+                  <span className="block truncate text-[12.5px] text-muted">
+                    {group === "all" ? `${entryGroupLabel(entry.kind)} · ${entry.meaning}` : entry.meaning}
+                  </span>
                 </span>
               </button>
             );
@@ -167,18 +166,49 @@ export function KnowledgeList({
   );
 }
 
+function GroupButton({
+  active,
+  label,
+  icon: Icon,
+  count,
+  onClick,
+}: {
+  active: boolean;
+  label: string;
+  icon: LucideIcon;
+  count: number;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={
+        active
+          ? "inline-flex items-center gap-1.5 rounded-full bg-accent px-3 py-1.5 text-[13px] font-semibold text-white [--icon:15px]"
+          : "inline-flex items-center gap-1.5 rounded-full border border-border bg-surface px-3 py-1.5 text-[13px] font-medium text-text-2 [--icon:15px]"
+      }
+    >
+      <Icon aria-hidden="true" />
+      {label}
+      <span className={active ? undefined : "text-muted"}>{count}</span>
+    </button>
+  );
+}
+
 // Confidence labels explain what the badge means without implying certainty.
-export function ConfidencePill({ confidence }: { confidence: KnowledgeEntry["confidence"] }) {
+export function ConfidencePill({ confidence }: { confidence: KnowledgeConfidence }) {
   switch (confidence) {
-    case "owner":
+    case "confirmed":
       return <Pill tone="good">Confirmed by you</Pill>;
-    case "data":
+    case "checked":
       return <Pill tone="accent">Checked against data</Pill>;
-    case "doc":
+    case "from_document":
       return <Pill>From a document</Pill>;
-    case "guess":
+    case "guessed":
       return <Pill tone="warn">Guessed, needs checking</Pill>;
-    case "conflict":
+    case "conflicting":
       return <Pill tone="bad">Documents disagree</Pill>;
   }
 }

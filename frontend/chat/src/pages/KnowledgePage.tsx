@@ -8,16 +8,18 @@ import {
   Page,
   PageHeader,
   SuggestChangeDialog,
+  filterEntries,
+  groupCounts,
   toast,
   useKnowledge,
   useSuggestChange,
   useKnowledgeEntry,
-  type KnowledgeKind,
+  type KnowledgeGroup,
 } from "@charie/shared";
 
 
 export function KnowledgePage() {
-  const [kind, setKind] = useState<KnowledgeKind | "all">("all");
+  const [group, setGroup] = useState<KnowledgeGroup>("all");
   const [query, setQuery] = useState("");
   const [params] = useSearchParams();
   // Deep links (?entry=key) open one entry; unknown keys show the absent state.
@@ -28,14 +30,9 @@ export function KnowledgePage() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const suggest = useSuggestChange();
 
-  const list = useKnowledge({ kind, q: query });
+  const list = useKnowledge();
   const detail = useKnowledgeEntry(selectedKey);
-  const counts = Object.fromEntries(
-    (list.data?.entries ?? []).reduce(
-      (acc, entry) => acc.set(entry.kind, (acc.get(entry.kind) ?? 0) + 1),
-      new Map<string, number>(),
-    ),
-  );
+  const entries = filterEntries(list.data?.entries ?? [], group, query);
 
   function sendSuggestion(text: string): void {
     if (selectedKey === null) return;
@@ -60,7 +57,7 @@ export function KnowledgePage() {
         actions={
           list.data && (
             <span className="inline-flex items-center gap-1.5 rounded-full bg-accent-soft px-2.5 py-1 text-[12.5px] font-medium text-accent-ink">
-              Version {list.data.version ?? "–"}
+              Version {list.data.version?.number ?? "–"}
             </span>
           )
         }
@@ -75,12 +72,13 @@ export function KnowledgePage() {
       ) : (
         <div className="grid gap-4 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
           <KnowledgeList
-            entries={list.data?.entries ?? []}
-            counts={{ ...counts, all: list.data?.entries.length ?? 0 }}
-            kind={kind}
+            entries={entries}
+            counts={groupCounts(list.data?.counts ?? {})}
+            needsReview={list.data?.needs_review ?? 0}
+            group={group}
             query={query}
             selectedKey={selectedKey}
-            onKindChange={setKind}
+            onGroupChange={setGroup}
             onQueryChange={setQuery}
             onSelect={setSelectedKey}
           />
@@ -102,8 +100,9 @@ export function KnowledgePage() {
             )}
             {detail.data && (
               <EntryDetail
-                entry={detail.data}
-                version={list.data?.version ?? null}
+                entry={detail.data.entry}
+                version={detail.data.version}
+                history={detail.data.history}
                 onSuggest={() => {
                   setSaveError(null);
                   setSuggesting(true);
@@ -115,7 +114,7 @@ export function KnowledgePage() {
       )}
       {suggesting && detail.data && (
         <SuggestChangeDialog
-          entryName={detail.data.name}
+          entryName={detail.data.entry.title}
           saving={suggest.isPending}
           serverError={saveError}
           onSave={(text) => void sendSuggestion(text)}
