@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 
+from charie.shared.ai.client import AiClient, get_ai
 from tests.questions.answers import TestAnswer, fake_answer
 from tests.questions.charie_answer import NotReadyError, charie_answer
 from tests.questions.format import Question, QuestionFileError, load_questions
@@ -60,6 +61,7 @@ def run_questions(
     started_at: datetime,
     total_seconds: float,
     private: bool,
+    client: AiClient | None = None,
 ) -> RunReport:
     """Ask, judge and score every question; the caller prints and saves."""
     rows: list[ScoredQuestion] = []
@@ -70,14 +72,22 @@ def run_questions(
             raise
         except Exception as err:  # noqa: BLE001 - any answer failure is an error row
             test_answer = _error_answer(f"The answer failed: {err}")
-        if test_answer.status == "error":
-            verdict = None
-        else:
+        verdict = None
+        judge_cost = Decimal("0")
+        needs_judge = (
+            test_answer.status != "error"
+            and not question.expect.should_ask
+            and not test_answer.asked_choice
+        )
+        if needs_judge:
+            before = client.month_spent(datetime.now(UTC)) if client is not None else Decimal("0")
             try:
                 verdict = judge(question, test_answer)
             except Exception as err:  # noqa: BLE001 - any judge failure is an error row
                 test_answer = _error_answer(f"The judge failed: {err}")
-                verdict = None
+            finally:
+                if client is not None:
+                    judge_cost = client.month_spent(datetime.now(UTC)) - before
         result = score_question(question, test_answer, verdict)
         rows.append(
             ScoredQuestion(
@@ -94,7 +104,7 @@ def run_questions(
                 wrong_claims=result.wrong_claims,
                 chat_url=result.chat_url,
                 seconds=test_answer.seconds,
-                cost_usd=result.cost_usd,
+                cost_usd=result.cost_usd + judge_cost,
                 override_points=result.override_points,
                 override_reason=result.override_reason,
             )
@@ -200,18 +210,25 @@ def main(argv: list[str] | None = None) -> int:
             os.environ["AI_REPLAY_DIR"] = "docs/hidden-tests/replays"
         mode = "fresh"
         answer_fn = charie_answer
-        judge_fn: JudgeFunction = judge_answer
+        client: AiClient | None = get_ai()
     elif args.dry_run:
         mode = "dry-run"
         answer_fn = lambda question, private: fake_answer(question, {})  # noqa: E731
-        judge_fn = _dry_judge
+        client = None
     else:
         os.environ["AI_REPLAY"] = "replay"
         if args.set == "hidden":
             os.environ["AI_REPLAY_DIR"] = "docs/hidden-tests/replays"
         mode = "replay"
         answer_fn = charie_answer
-        judge_fn = judge_answer
+        client = get_ai()
+
+    def _run_judge(question: Question, test_answer: TestAnswer) -> JudgeVerdict:
+        if client is None:
+            return _dry_judge(question, test_answer)
+        return judge_answer(question, test_answer, client)
+
+    judge_fn: JudgeFunction = _run_judge
 
     private = args.set == "hidden"
     started_at = datetime.now(UTC)
@@ -228,6 +245,7 @@ def main(argv: list[str] | None = None) -> int:
             started_at=started_at,
             total_seconds=0.0,
             private=private,
+            client=client,
         )
     except NotReadyError as err:
         print(err)

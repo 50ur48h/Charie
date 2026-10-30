@@ -49,6 +49,113 @@ def _mini():
     return questions, answer, judge
 
 
+def _ask_question() -> Question:
+    return Question.model_validate(
+        {
+            "id": "vague-902",
+            "kind": "vague",
+            "smoke": False,
+            "chat": [],
+            "question": "Which are our best restaurants?",
+            "expect": {"should_ask": True},
+            "checked_by": "Muse Code, 2026-10-30",
+            "why_fair": "Too vague to name restaurants.",
+        }
+    )
+
+
+def _boom_judge(question: Question, test_answer: TestAnswer) -> JudgeVerdict:
+    raise AssertionError("the judge must not run for a clarification")
+
+
+class _ChargingClient:
+    """A client whose logged spend steps once, so the judge delta is fixed."""
+
+    def __init__(self, before: Decimal, after: Decimal) -> None:
+        self._values = iter([before, after])
+
+    def month_spent(self, now: datetime) -> Decimal:
+        _ = now
+        return next(self._values)
+
+
+def test_should_ask_skips_judge() -> None:
+    answer = TestAnswer(text="Which kind of best?", numbers=[], asked_choice=True)
+    report = run_questions(
+        [_ask_question()],
+        set_name="public",
+        mode="dry-run",
+        kind=None,
+        some=False,
+        answer=lambda question, private: answer,
+        judge=_boom_judge,
+        started_at=MINI_START,
+        total_seconds=0.0,
+        private=False,
+        client=None,
+    )
+    assert [(row.points, row.outcome) for row in report.results] == [(Decimal(1), "correct")]
+
+
+def test_asked_without_need_skips_judge() -> None:
+    question = load_questions(FIXTURES / "mini.yaml", "public")[0]
+    answer = TestAnswer(text="Which month?", numbers=[], asked_choice=True)
+    report = run_questions(
+        [question],
+        set_name="public",
+        mode="dry-run",
+        kind=None,
+        some=False,
+        answer=lambda asked, private: answer,
+        judge=_boom_judge,
+        started_at=MINI_START,
+        total_seconds=0.0,
+        private=False,
+        client=None,
+    )
+    assert [(row.points, row.outcome) for row in report.results] == [(Decimal(0), "partly")]
+
+
+def test_judge_cost_added_to_row() -> None:
+    question = load_questions(FIXTURES / "mini.yaml", "public")[0]
+    report = run_questions(
+        [question],
+        set_name="public",
+        mode="fresh",
+        kind=None,
+        some=False,
+        answer=lambda asked, private: fake_answer(asked, {}),
+        judge=lambda asked, given: fake_verdict(),
+        started_at=MINI_START,
+        total_seconds=0.0,
+        private=False,
+        client=_ChargingClient(Decimal("1.00"), Decimal("1.50")),
+    )
+    assert [(row.points, row.cost_usd) for row in report.results] == [(Decimal(1), Decimal("0.50"))]
+
+
+def test_judge_cost_kept_when_judge_fails() -> None:
+    question = load_questions(FIXTURES / "mini.yaml", "public")[0]
+
+    def _fail_judge(asked: Question, given: TestAnswer) -> JudgeVerdict:
+        raise RuntimeError("judge is down")
+
+    report = run_questions(
+        [question],
+        set_name="public",
+        mode="fresh",
+        kind=None,
+        some=False,
+        answer=lambda asked, private: fake_answer(asked, {}),
+        judge=_fail_judge,
+        started_at=MINI_START,
+        total_seconds=0.0,
+        private=False,
+        client=_ChargingClient(Decimal("2.00"), Decimal("2.25")),
+    )
+    assert [(row.outcome, row.cost_usd) for row in report.results] == [("error", Decimal("0.25"))]
+
+
 def test_fake_answer_copies_the_key() -> None:
     question = load_questions(FIXTURES / "mini.yaml", "public")[0]
     answer = fake_answer(question, {})
