@@ -53,21 +53,16 @@ function RunPill({ run }: { run: LearningRun }) {
 function RunLine({ run, started, cost }: { run: LearningRun; started: string; cost: string }) {
   if (run.status === "running") {
     const minutes = run.minutes_left;
+    // Unknown remaining time stays honest: never synthesize an estimate.
     const left =
-      minutes === null ? null : minutes >= 90 ? (
+      minutes === null ? <>Working on it</> : minutes >= 90 ? (
         <>about {Math.max(1, Math.round(minutes / 60))} hours left</>
       ) : (
         <>about {minutes} minutes left</>
       );
     return (
       <>
-        Started {started}
-        {left !== null && (
-          <>
-            {" "}· {left}
-          </>
-        )}{" "}
-        · {cost} so far
+        Started {started} {" "}· {left} {" "}· {cost} so far
       </>
     );
   }

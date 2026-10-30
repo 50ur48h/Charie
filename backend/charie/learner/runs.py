@@ -13,7 +13,13 @@ from charie.shared.ai.errors import SpendingPaused
 from charie.shared.ai.spending import month_spent, spending_state
 from charie.shared.connectors.postgres import PostgresConnector
 from charie.shared.db import session_scope
-from charie.shared.jobs.queue import add_job, finish_job, pause_jobs, resume_jobs
+from charie.shared.jobs.queue import (
+    add_job,
+    finish_job,
+    pause_jobs,
+    requeue_failed_jobs,
+    resume_jobs,
+)
 from charie.shared.jobs.registry import JobInfo, job_handler
 from charie.shared.knowledge.versions import get_or_create_draft
 from charie.shared.settings import get_setting
@@ -241,15 +247,32 @@ def _spending_ok(session: Session) -> bool:
 
 
 def resume_run(session: Session, run_id: int) -> bool:
-    """Resume a paused run; spending-paused runs need budget room first."""
+    """Resume a paused run, or retry a failed one from where it stopped.
+
+    Spending-paused runs and failed retries need budget room first; a
+    failed retry requeues only failed jobs with fresh attempts, so done
+    work is never repeated. Queued (unrun) jobs simply wait again.
+    """
     run = session.get(LearningRun, run_id, with_for_update=True)
-    if run is None or run.status != "paused":
+    if run is None or run.status not in ("paused", "failed"):
         return False
-    if run.paused_by == "spending" and not _spending_ok(session):
+    was_failed = run.status == "failed"
+    if not _spending_ok(session):
         return False
     run.status = "running"
     run.paused_by = None
-    resume_jobs(session, run_id)
+    run.finished_at = None
+    if was_failed:
+        requeue_failed_jobs(session, run_id)
+        add_event(
+            session,
+            run.id,
+            "info",
+            "Trying again from where it stopped. Finished work is kept.",
+            step=run.step,
+        )
+    else:
+        resume_jobs(session, run_id)
     advance_run(session, run_id)
     return True
 

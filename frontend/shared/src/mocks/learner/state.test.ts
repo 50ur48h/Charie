@@ -28,6 +28,15 @@ describe("learner mock store", () => {
     expect(learner().documents).toHaveLength(14);
   });
 
+  test("?mock=failed stops the newest run with the clocks off", () => {
+    expect(initLearnerWorld("?mock=failed")).toBe("still");
+    const [newest] = [...learner().runs].sort(
+      (a, b) => Date.parse(b.started_at) - Date.parse(a.started_at),
+    );
+    expect(newest).toMatchObject({ kind: "refresh", status: "failed" });
+    expect(newest?.finished_at).not.toBeNull();
+  });
+
   test("no mock value leaves the store alone", () => {
     resetLearnerMock("new");
     expect(initLearnerWorld("")).toBeNull();

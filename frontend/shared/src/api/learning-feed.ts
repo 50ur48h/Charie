@@ -118,10 +118,15 @@ export function useLearningFeed(runId: number | null, active: boolean): Learning
     async function follow(): Promise<void> {
       while (!stopped && !doneRef.current) {
         try {
-          const response = await fetchStream("/api/learning/stream", {
-            lastEventId,
-            signal: controller.signal,
-          });
+          // run_id plus Last-Event-ID: the server replays this run only,
+          // so a new run never mixes its lines into the old feed.
+          const response = await fetchStream(
+            `/api/learning/stream?run_id=${runId}`,
+            {
+              lastEventId,
+              signal: controller.signal,
+            },
+          );
           await readStreamEvents(
             response,
             (event) => {
@@ -133,6 +138,9 @@ export function useLearningFeed(runId: number | null, active: boolean): Learning
             controller.signal,
           );
           if (stopped || doneRef.current) break;
+          // The connection ended mid-run: refetch the snapshot so the
+          // page shows missed progress, then reconnect where we left off.
+          await client.invalidateQueries({ queryKey: ["learner-learning"] });
           attempts += 1;
           if (attempts > MAX_STREAM_RETRIES) break;
           await sleep(backoffDelayMs(attempts - 1), controller.signal);

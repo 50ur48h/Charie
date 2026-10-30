@@ -12,6 +12,7 @@ function run(overrides: Partial<LearningRun>): LearningRun {
     id: 1,
     kind: "nightly",
     status: "done",
+    paused_by: null,
     reason: null,
     step: 12,
     percent: 100,

@@ -39,6 +39,7 @@ function run(status: LearningRun["status"]): LearningRun {
     id: 1,
     kind: "refresh",
     status,
+    paused_by: null,
     reason: "3 new documents",
     step: 8,
     percent: 62,

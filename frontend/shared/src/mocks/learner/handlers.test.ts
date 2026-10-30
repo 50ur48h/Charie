@@ -1,7 +1,7 @@
 import { setupServer } from "msw/node";
 import { afterEach, beforeAll, describe, expect, test } from "vitest";
 import { handlers } from "../handlers";
-import { resetLearnerMock } from "./state";
+import { learner, resetLearnerMock } from "./state";
 
 const APP = "https://charie.invalid";
 
@@ -250,6 +250,19 @@ describe("learner setup mocks", () => {
     expect(again.status).toBe(409);
     const resumed = await fetch(`${APP}/api/learning/resume`, { method: "POST" });
     expect(resumed.status).toBe(200);
+    const runs = (await (await fetch(`${APP}/api/learning`)).json()) as {
+      runs: { status: string }[];
+    };
+    expect(runs.runs[0].status).toBe("running");
+  });
+
+  test("resume retries a stopped run", async () => {
+    await signIn();
+    const live = learner().runs.find((run) => run.status === "running");
+    expect(live).toBeDefined();
+    live!.status = "failed";
+    const retried = await fetch(`${APP}/api/learning/resume`, { method: "POST" });
+    expect(retried.status).toBe(200);
     const runs = (await (await fetch(`${APP}/api/learning`)).json()) as {
       runs: { status: string }[];
     };

@@ -1,5 +1,9 @@
-import { describe, expect, test } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, test } from "vitest";
+import { cleanup, render, screen } from "@testing-library/react";
+
+afterEach(() => {
+  cleanup();
+});
 import { MemoryRouter } from "react-router";
 import type { LearningRun } from "@charie/shared";
 import { RunHeader } from "./RunHeader";
@@ -9,6 +13,7 @@ function run(overrides: Partial<LearningRun>): LearningRun {
     id: 4,
     kind: "refresh",
     status: "running",
+    paused_by: null,
     reason: "3 new documents",
     step: 8,
     percent: 62,
@@ -43,6 +48,14 @@ describe("RunHeader", () => {
     expect(
       screen.getByText("Step 8 of 12: building and testing business numbers"),
     ).toBeTruthy();
+  });
+
+  test("unknown_eta", () => {
+    renderHeader(run({ minutes_left: null }));
+    expect(screen.getByText(/Working on it/)).toBeTruthy();
+    expect(screen.getByText(/\$3\.80 so far/)).toBeTruthy();
+    expect(screen.queryByText(/minutes left/)).toBeNull();
+    expect(screen.queryByText(/hours left/)).toBeNull();
   });
 
   test("done shows the finished summary", () => {

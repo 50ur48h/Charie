@@ -150,9 +150,14 @@ def post_pause(session: Session = Depends(get_session)) -> dict:
 
 @learning_router.post("/api/learning/resume", response_model=ResumeOut)
 def post_resume(session: Session = Depends(get_session)) -> dict:
-    run = session.scalar(select(LearningRun).where(LearningRun.status == "paused").limit(1))
+    run = session.scalar(
+        select(LearningRun)
+        .where(LearningRun.status.in_(("paused", "failed")))
+        .order_by(LearningRun.id.desc())
+        .limit(1)
+    )
     if run is None:
-        raise ApiError(404, "nothing_to_resume", "No paused learning run to resume.")
+        raise ApiError(404, "nothing_to_resume", "No paused or stopped learning run to resume.")
     if not runs.resume_run(session, run.id):
         raise ApiError(
             409,
