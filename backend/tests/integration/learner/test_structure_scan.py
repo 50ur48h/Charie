@@ -242,6 +242,14 @@ def test_forbidden_table_is_listed_with_a_line(step_ctx, db_session) -> None:
         "info",
         "Your notes say never to use shop.coupons. I'll list it, but I won't study it.",
     ) in said
+    # Issue 5: the first scan never queries a forbidden table's data.
+    purposes = [
+        row.purpose
+        for row in db_session.scalars(
+            select(QueryRun).where(QueryRun.learning_run_id == ctx.run_id)
+        )
+    ]
+    assert not any("shop.coupons" in purpose for purpose in purposes)
 
 
 def test_finish_counts_the_scan(step_ctx, db_session) -> None:
@@ -286,3 +294,60 @@ def test_slow_table_uses_sample_and_null_rows(step_ctx, db_session, monkeypatch)
         "Count the rows of shop.stores",
         "Measure the dates of shop.orders",
     }
+
+
+def test_rescan_removes_dropped_column_and_stale_range(step_ctx, db_session, shop_db) -> None:
+    """Issue 3: a dropped column loses its entry even though its table stays,
+    and a date column that is dropped takes its data_range with it."""
+    ctx, _ = step_ctx
+    _run(ctx)
+    column_key = "column.shop.orders.coupon_code"
+    range_key = "data_range.shop.orders"
+    assert store.get_entry(db_session, ctx.version_id, column_key) is not None
+    assert store.get_entry(db_session, ctx.version_id, range_key) is not None
+    with shop_db["owner"].begin() as conn:
+        # The saved-query view reads orders.created_at, so drop it first.
+        conn.execute(text("DROP VIEW shop.daily_sales"))
+        conn.execute(text("ALTER TABLE shop.orders DROP COLUMN created_at"))
+        conn.execute(text("ALTER TABLE shop.orders DROP COLUMN coupon_code"))
+    _run(ctx)
+    assert store.get_entry(db_session, ctx.version_id, column_key) is None
+    assert store.get_entry(db_session, ctx.version_id, range_key) is None
+    # Sibling columns and the table itself survive the second scan.
+    assert store.get_entry(db_session, ctx.version_id, "column.shop.orders.total") is not None
+    assert store.get_entry(db_session, ctx.version_id, "table.shop.orders") is not None
+    removed = {
+        row.key
+        for row in db_session.scalars(
+            select(KbChange).where(
+                KbChange.version_id == ctx.version_id, KbChange.change == "removed"
+            )
+        )
+    }
+    assert {column_key, range_key} <= removed
+
+
+def test_keys_survive_dropped_leading_column(step_ctx, db_session, shop_db) -> None:
+    """Issue 4: key numbers resolve to names in the catalog query, so
+    dropping a column in front of a key cannot shift the mapping."""
+    ctx, _ = step_ctx
+    with shop_db["owner"].begin() as conn:
+        conn.execute(
+            text(
+                "CREATE TABLE shop.renum (note text, id integer PRIMARY KEY,"
+                " store_id integer REFERENCES shop.stores (id));"
+                " GRANT SELECT ON shop.renum TO charie_shop_test"
+            )
+        )
+    _run(ctx)
+    with shop_db["owner"].begin() as conn:
+        conn.execute(text("ALTER TABLE shop.renum DROP COLUMN note"))
+    _run(ctx)
+    entry = store.get_entry(db_session, ctx.version_id, "table.shop.renum")
+    assert entry is not None
+    assert entry.details["primary_key"] == ["id"]
+    assert entry.details["foreign_keys"] == [
+        {"columns": ["store_id"], "ref_table": "shop.stores", "ref_columns": ["id"]}
+    ]
+    key_column = store.get_entry(db_session, ctx.version_id, "column.shop.renum.id")
+    assert key_column is not None and key_column.details["is_primary_key"] is True

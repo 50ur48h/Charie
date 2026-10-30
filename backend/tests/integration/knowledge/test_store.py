@@ -178,7 +178,18 @@ def test_edit_mark_wrong_and_approve(db) -> None:
         assert entry.confidence == "guessed"
         assert store.approve_entry(session, version_id, "style.figures") is True
         assert store.get_entry(session, version_id, "style.figures").confidence == "confirmed"
-        assert len(_changes(session, version_id)) == 1
+        rows = _changes(session, version_id)
+        assert [(row.change, row.reason) for row in rows] == [
+            ("added", "Reading the notes."),
+            ("changed", "Edited by you"),
+            ("changed", "Marked as wrong by you"),
+            ("changed", "Approved by you"),
+        ]
+        edited = rows[1]
+        assert edited.before["title"] == "Figures style"
+        assert edited.after["title"] == "Profit figures"
+        assert edited.before["confidence"] == "guessed"
+        assert edited.after["confidence"] == "confirmed"
 
 
 def test_list_filters_by_kind_and_words(db) -> None:

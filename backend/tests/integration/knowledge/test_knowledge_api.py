@@ -1,9 +1,11 @@
 """`GET /api/knowledge` in both apps, Learner PATCH/approve/wrong (P07.4)."""
 
 import pytest
+from sqlalchemy import select
 
 from charie.shared.db import session_scope
 from charie.shared.knowledge import store, versions
+from charie.shared.tables.knowledge import KbChange
 from tests.conftest import log_in
 
 TABLE_DETAILS = {"schema": "public", "name": "orders"}
@@ -168,7 +170,22 @@ def test_patch_records_a_change(learner_client, published) -> None:
         )
     draft_body = learner_client.get("/api/knowledge", params={"version": "draft"}).json()
     assert draft_body["version"]["status"] == "draft"
-    assert draft_body["version"]["changes"] == 0  # Owner edits leave no change rows.
+    assert draft_body["version"]["changes"] == 1
+    detail = learner_client.get(
+        "/api/knowledge/table.public.orders", params={"version": "draft"}
+    ).json()
+    edits = [row for row in detail["history"] if row["change"] == "changed"]
+    assert len(edits) == 1
+    assert edits[0]["reason"] == "Edited by you"
+    with session_scope() as session:
+        draft = versions.get_draft(session)
+        assert draft is not None
+        rows = session.scalars(
+            select(KbChange).where(KbChange.version_id == draft.id, KbChange.change == "changed")
+        ).all()
+        assert len(rows) == 1
+        assert rows[0].before["meaning"] != "Orders, fixed by you."
+        assert rows[0].after["meaning"] == "Orders, fixed by you."
 
 
 def test_patch_validation(learner_client, published) -> None:

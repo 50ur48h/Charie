@@ -69,9 +69,14 @@ def _rule_entries(session, version_id: int) -> list:
     return list_entries(session, version_id, kinds=["rule"])
 
 
-def forbidden_tables(session, version_id: int) -> set[str]:
-    """Tables a `never_use_table` rule forbids (P07.6 lists them anyway)."""
-    known = _known_tables(session, version_id)
+def forbidden_tables(session, version_id: int, known: list[str] | None = None) -> set[str]:
+    """Tables a `never_use_table` rule forbids (P07.6 lists them anyway).
+
+    Matches rules against the scanned `table` entries, or against the
+    given `known` names when the entries are not written yet.
+    """
+    if known is None:
+        known = _known_tables(session, version_id)
     forbidden: set[str] = set()
     for entry in _rule_entries(session, version_id):
         details = entry.details if isinstance(entry.details, dict) else {}

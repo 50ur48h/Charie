@@ -216,39 +216,58 @@ def edit_entry(
 ) -> bool:
     """Your edit to a draft entry: it becomes `confirmed` with your source.
 
-    `mark_wrong` instead marks it `guessed`. Owner edits never write
-    `kb_changes`: the draft itself is the change under review.
+    `mark_wrong` instead marks it `guessed`. Every effective edit writes
+    one `changed` row with the before and after entry, so review and
+    history account for owner corrections. A no-op (nothing actually
+    changes) writes nothing and returns False.
     """
     _draft(session, version_id)
     entry = get_entry(session, version_id, key)
     if entry is None:
         return False
     if mark_wrong:
-        entry.confidence = "guessed"
-        _add_source(entry, {"type": "owner_edit", "text": "Marked as wrong by you"})
+        new_title, new_meaning, new_confidence = entry.title, entry.meaning, "guessed"
+        new_source: dict[str, Any] = {"type": "owner_edit", "text": "Marked as wrong by you"}
+        reason = "Marked as wrong by you"
     else:
-        if title is not None:
-            entry.title = title
-        if meaning is not None:
-            entry.meaning = meaning
-        entry.confidence = "confirmed"
-        _add_source(entry, {"type": "owner_edit", "text": "Edited by you"})
+        new_title = title if title is not None else entry.title
+        new_meaning = meaning if meaning is not None else entry.meaning
+        new_confidence = "confirmed"
+        new_source = {"type": "owner_edit", "text": "Edited by you"}
+        reason = "Edited by you"
+    checked_source = Source.model_validate(new_source).model_dump()
+    if (
+        entry.title == new_title
+        and entry.meaning == new_meaning
+        and entry.confidence == new_confidence
+        and checked_source in entry.sources
+    ):
+        return False
+    before = entry_to_dict(entry)
+    entry.title, entry.meaning, entry.confidence = new_title, new_meaning, new_confidence
+    _add_source(entry, new_source)
     entry.updated_at = datetime.now(UTC)
     session.flush()
+    _write_change(session, version_id, key, "changed", before, entry_to_dict(entry), reason)
     return True
 
 
 def approve_entry(session: Session, version_id: int, key: str) -> bool:
     """Your approval: the entry becomes `confirmed` with your source.
 
-    Approving a `confirmed` entry changes nothing.
+    The approval writes one `changed` row with before and after.
+    Approving a `confirmed` entry changes nothing and returns False.
     """
     _draft(session, version_id)
     entry = get_entry(session, version_id, key)
     if entry is None or entry.confidence == "confirmed":
         return False
+    before = entry_to_dict(entry)
     entry.confidence = "confirmed"
     _add_source(entry, {"type": "owner_approval", "text": "Approved by you"})
     entry.updated_at = datetime.now(UTC)
     session.flush()
+    _write_change(
+        session, version_id, key, "changed", before, entry_to_dict(entry), "Approved by you"
+    )
     return True

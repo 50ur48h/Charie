@@ -28,3 +28,17 @@ def test_find_numbers_reads_tokens_in_order() -> None:
         "2025",
         "400",
     ]
+
+
+def test_substring_number_is_new() -> None:
+    assert find_new_numbers(["Revenue increased 10%."], "Revenue increased 110%.") == ["10%"]
+    assert find_new_numbers(["110%"], "Revenue increased 110%.") == []
+
+
+def test_signs_units_and_formats_compare_whole() -> None:
+    assert find_new_numbers(["-5 degrees"], "minus 5 degrees") == ["-5"]
+    assert find_new_numbers(["+5"], "+5 total") == []
+    assert find_new_numbers(["The fee is $5."], "the $5 fee") == []
+    assert find_new_numbers(["The fee is 5."], "the $5 fee") == ["5"]
+    assert find_new_numbers(["1,000.50 total"], "total 1,000.50") == []
+    assert find_new_numbers(["28-31%"], "from 28% to 31%") == ["28-31%"]

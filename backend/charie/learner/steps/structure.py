@@ -15,6 +15,7 @@ from charie.shared.connectors.base import ConnectorError
 from charie.shared.knowledge import store
 from charie.shared.knowledge.catalog import forbidden_tables
 from charie.shared.knowledge.keys import column_key, data_range_key, table_key
+from charie.shared.safety.catalog import normalize_table
 from charie.shared.settings import get_setting
 from charie.shared.tables.chat import QueryRun
 
@@ -174,8 +175,15 @@ def _objects(ctx: StepContext) -> list[_Table]:
         ctx,
         "Read the primary, unique and foreign keys",
         "SELECT n.nspname AS schema, c.relname AS table, con.contype AS kind,"
-        " con.conkey AS columns, fn.nspname AS ref_schema,"
-        " fc.relname AS ref_table, con.confkey AS ref_columns"
+        " (SELECT array_agg(a.attname ORDER BY o.n)"
+        "  FROM unnest(con.conkey) WITH ORDINALITY AS o(attnum, n)"
+        "  LEFT JOIN pg_attribute a ON a.attrelid = con.conrelid"
+        "   AND a.attnum = o.attnum AND NOT a.attisdropped) AS columns,"
+        " fn.nspname AS ref_schema, fc.relname AS ref_table,"
+        " (SELECT array_agg(ra.attname ORDER BY o.n)"
+        "  FROM unnest(con.confkey) WITH ORDINALITY AS o(attnum, n)"
+        "  LEFT JOIN pg_attribute ra ON ra.attrelid = con.confrelid"
+        "   AND ra.attnum = o.attnum AND NOT ra.attisdropped) AS ref_columns"
         " FROM pg_constraint con"
         " JOIN pg_class c ON c.oid = con.conrelid"
         " JOIN pg_namespace n ON n.oid = c.relnamespace"
@@ -188,45 +196,33 @@ def _objects(ctx: StepContext) -> list[_Table]:
         table = by_table.get((row[0], row[1]))
         if table is None:
             continue
-        names = [column.name for column in table.columns]
+        local = list(row[3] or [])
+        if any(name is None for name in local):
+            continue
         if row[2] == "p":
-            table.primary_key = [
-                names[number - 1] for number in (row[3] or []) if 0 < number <= len(names)
-            ]
+            table.primary_key = local
             for column in table.columns:
                 if column.name in table.primary_key:
                     column.is_primary_key = True
         elif row[2] == "u":
-            unique = [names[number - 1] for number in (row[3] or []) if 0 < number <= len(names)]
-            if len(unique) == 1:
+            if len(local) == 1:
                 for column in table.columns:
-                    if column.name == unique[0]:
+                    if column.name == local[0]:
                         column.is_unique = True
         else:
-            from_names = [
-                names[number - 1] for number in (row[3] or []) if 0 < number <= len(names)
-            ]
+            ref = list(row[6] or [])
+            if not local or not ref or not row[4] or not row[5]:
+                continue
+            if any(name is None for name in ref):
+                continue
             table.foreign_keys.append(
                 {
-                    "columns": from_names,
+                    "columns": local,
                     "ref_table": f"{row[4]}.{row[5]}",
-                    "ref_numbers": list(row[6] or []),
-                    "ref_columns": [],
+                    "ref_columns": ref,
                 }
             )
-    return [_resolve_ref_columns(table, by_table) for table in tables]
-
-
-def _resolve_ref_columns(table: _Table, by_table: dict[tuple[str, str], _Table]) -> _Table:
-    """Foreign-key attnums become names, using the other table's columns."""
-    for key in table.foreign_keys:
-        schema, _, name = key["ref_table"].partition(".")
-        other = by_table.get((schema, name))
-        names = [column.name for column in other.columns] if other is not None else []
-        key["ref_columns"] = [
-            names[number - 1] for number in key.pop("ref_numbers") if 0 < number <= len(names)
-        ]
-    return table
+    return tables
 
 
 def _display(schema: str, name: str, taken: set[str]) -> str:
@@ -439,9 +435,19 @@ def run_job(info, ctx: StepContext) -> None:
         for name in {table.name for table in tables}
         if sum(1 for table in tables if table.name == name) > 1
     }
+    # Forbidden tables are listed from the catalog only: no counting,
+    # no dates, no samples. Resolve them before touching any table data.
+    forbidden = forbidden_tables(
+        ctx.session,
+        ctx.version_id,
+        known=[normalize_table(f"{table.schema}.{table.name}") for table in tables],
+    )
     rows: dict[tuple[str, str], int | None] = {}
     for table in tables:
-        rows[(table.schema, table.name)] = _row_count(ctx, table)
+        if f"{table.schema}.{table.name}" in forbidden:
+            rows[(table.schema, table.name)] = None
+        else:
+            rows[(table.schema, table.name)] = _row_count(ctx, table)
         _write_table(ctx, table, dupes, rows[(table.schema, table.name)])
     views = sum(1 for table in tables if table.is_view)
     found_tables = len(tables) - views
@@ -452,7 +458,6 @@ def run_job(info, ctx: StepContext) -> None:
         f" and {_plural(views, 'view', 'views')},"
         f" with {_plural(column_count, 'column', 'columns')}.",
     )
-    forbidden = forbidden_tables(ctx.session, ctx.version_id)
     for full in sorted(forbidden):
         ctx.say(
             "info",
@@ -507,20 +512,40 @@ def run_job(info, ctx: StepContext) -> None:
 
 
 def _remove_gone(ctx: StepContext, tables: list[_Table]) -> None:
-    """Drop `table`, `column` and `data_range` entries for vanished objects."""
-    kept = {(table.schema, table.name) for table in tables}
+    """Drop entries for vanished objects, by exact key set.
+
+    Tables own their entries: a dropped column loses its `column` entry
+    even though its table is still scanned, and a `data_range` goes when
+    its table is gone or its date column disappeared or stopped being a
+    date. Anything still scanned is left alone, transient or not.
+    """
+    kept_tables = {(table.schema, table.name) for table in tables}
+    kept_columns = {
+        (column.schema, column.table, column.name) for table in tables for column in table.columns
+    }
+    dated_columns = {
+        (table.schema, table.name): {
+            column.name for column in table.columns if column.data_type in _DATE_TYPES
+        }
+        for table in tables
+    }
     for entry in store.list_entries(ctx.session, ctx.version_id):
         if entry.kind not in ("table", "column", "data_range"):
             continue
         details = entry.details if isinstance(entry.details, dict) else {}
         if entry.kind == "table":
-            full = (details.get("schema") or "", details.get("name") or "")
+            gone = (details.get("schema") or "", details.get("name") or "") not in kept_tables
         elif entry.kind == "column":
-            full = (details.get("schema") or "", details.get("table") or "")
+            gone = (
+                details.get("schema") or "",
+                details.get("table") or "",
+                details.get("name") or "",
+            ) not in kept_columns
         else:
             schema, _, name = (details.get("table") or "").partition(".")
-            full = (schema, name)
-        if full not in kept:
+            dated = dated_columns.get((schema, name), set())
+            gone = (schema, name) not in kept_tables or details.get("date_column") not in dated
+        if gone:
             store.remove_entry(ctx.session, ctx.version_id, entry.key, REASON_GONE)
 
 
