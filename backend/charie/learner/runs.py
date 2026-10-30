@@ -142,6 +142,7 @@ def _queue_step(session: Session, run: LearningRun, step: Step) -> None:
     entry["jobs"] = ids
     if not ids:
         entry["note"] = step.empty_note
+        ctx.say("info", step.empty_note)
     flag_modified(run, "progress")
     total = len(run.progress["order"])
     position = run.progress["order"].index(step.name) + 1
