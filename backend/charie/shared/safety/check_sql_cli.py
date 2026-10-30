@@ -13,10 +13,29 @@ MODE_NO_KNOWLEDGE = (
     "Mode: no knowledge yet. Every table in the database is allowed; "
     "there are no owner rules or table links to check yet."
 )
-MODE_KNOWLEDGE_UNREADABLE = (
-    "Mode: no knowledge yet. Knowledge exists, but this checker can't read "
-    "it yet, so every table is allowed and no owner rules or links are checked."
-)
+
+
+def load_knowledge(db_url: str):
+    """Our draft knowledge, else the published version; the mode line says which."""
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+
+    from charie.shared.knowledge import versions
+    from charie.shared.knowledge.catalog import build_catalog
+
+    engine = create_engine(db_url)
+    try:
+        with Session(engine) as session:
+            version = versions.get_draft(session) or versions.get_published(session)
+            if version is None:
+                return None, MODE_NO_KNOWLEDGE
+            catalog = build_catalog(session, version.id)
+            return catalog, (
+                f"Mode: knowledge version {version.number} ({version.status}): "
+                f"{len(catalog.tables)} tables, {len(catalog.links)} links."
+            )
+    finally:
+        engine.dispose()
 
 
 def load_catalog(path: str) -> Catalog:
@@ -33,18 +52,25 @@ def has_knowledge(connector) -> bool:
     return len(result.rows) > 0
 
 
-def catalog_for_mode(table_names: list[str], extra: Catalog | None = None) -> Catalog:
-    """Every listed table allowed; anything from `--catalog-file` on top."""
+def catalog_for_mode(table_names: list[str], extras: list | None = None) -> Catalog:
+    """Every listed table allowed; knowledge and `--catalog-file` rules on top."""
     tables = list(dict.fromkeys(table_names))
-    if extra is None:
-        return Catalog(tables=tables)
-    merged = list(dict.fromkeys([*tables, *extra.tables]))
+    forbidden: list = []
+    required: list = []
+    links: list = []
+    average: list = []
+    for extra in extras or []:
+        tables = list(dict.fromkeys([*tables, *extra.tables]))
+        forbidden.extend(extra.forbidden_tables)
+        required.extend(extra.required_filters)
+        links.extend(extra.links)
+        average.extend(extra.average_columns)
     return Catalog(
-        tables=merged,
-        forbidden_tables=list(extra.forbidden_tables),
-        required_filters=list(extra.required_filters),
-        links=list(extra.links),
-        average_columns=list(extra.average_columns),
+        tables=tables,
+        forbidden_tables=forbidden,
+        required_filters=required,
+        links=links,
+        average_columns=average,
     )
 
 
@@ -76,13 +102,15 @@ def run(argv: list[str] | None = None, *, ours=None, practice=None) -> int:
         from charie.shared.safety.list_tables import list_tables
 
         if has_knowledge(ours):
-            print(MODE_KNOWLEDGE_UNREADABLE)
+            knowledge, mode = load_knowledge(require_env("DATABASE_URL"))
         else:
-            print(MODE_NO_KNOWLEDGE)
-        extra = load_catalog(args.catalog_file) if args.catalog_file else None
-        if extra is not None:
+            knowledge, mode = None, MODE_NO_KNOWLEDGE
+        print(mode)
+        extras = [knowledge] if knowledge is not None else []
+        if args.catalog_file:
+            extras.append(load_catalog(args.catalog_file))
             print(f"Extra rules from {args.catalog_file}.")
-        catalog = catalog_for_mode(list_tables(practice), extra)
+        catalog = catalog_for_mode(list_tables(practice), extras)
         report = check_sql(sql, catalog, explain=practice.explain)
         if not report.ok:
             print("Blocked:")
