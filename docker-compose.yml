@@ -16,5 +16,66 @@ services:
       timeout: 3s
       retries: 10
 
+  # Both apps through Docker: docker compose --profile apps up --build
+  # Chat on http://localhost:8080, learner on http://localhost:8081.
+  # Secrets come from the project .env (never committed); DATABASE_URL
+  # always points at the compose db, never at the owner's working database.
+  chat:
+    build:
+      context: .
+      dockerfile: docker/chat.Dockerfile
+    image: charie-chat:local
+    profiles: ["apps"]
+    ports:
+      - "8080:8000"
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://charie:charie@db:5432/charie
+      APP_ENV: local
+      AI_REPLAY: "off"
+      CHARIE_CHAT_URL: http://localhost:8080
+      CHARIE_LEARNER_URL: http://localhost:8081
+    depends_on:
+      db:
+        condition: service_healthy
+      learner:
+        condition: service_started
+  learner:
+    build:
+      context: .
+      dockerfile: docker/learner.Dockerfile
+    image: charie-learner:local
+    profiles: ["apps"]
+    ports:
+      - "8081:8000"
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://charie:charie@db:5432/charie
+      APP_ENV: local
+      AI_REPLAY: "off"
+      CHARIE_CHAT_URL: http://localhost:8080
+      CHARIE_LEARNER_URL: http://localhost:8081
+    depends_on:
+      db:
+        condition: service_healthy
+  # The background learning job (same image; --watch only in Compose):
+  # docker compose --profile apps run --rm learner-job
+  learner-job:
+    image: charie-learner:local
+    profiles: ["apps"]
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://charie:charie@db:5432/charie
+      APP_ENV: local
+      AI_REPLAY: "off"
+      CHARIE_CHAT_URL: http://localhost:8080
+      CHARIE_LEARNER_URL: http://localhost:8081
+    command: ["python", "-m", "charie.learner.job", "--watch"]
+    depends_on:
+      db:
+        condition: service_healthy
+      learner:
+        condition: service_started
+
 volumes:
   charie-db-data:
