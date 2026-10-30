@@ -1,31 +1,15 @@
-"""List a database's tables as `schema.table`, one per line."""
-
-import argparse
-import sys
+"""List a database's tables and views as `schema.table`, one per line."""
 
 
 def list_tables(connector) -> list[str]:
-    """Every `schema.table` in the database, once each."""
+    """Every `schema.table` in the database, once each.
+
+    Base tables and views outside `pg_catalog` and `information_schema`.
+    """
     result = connector.run_query(
-        "SELECT schemaname, tablename FROM pg_tables "
-        "WHERE schemaname NOT IN ('pg_catalog', 'information_schema') "
+        "SELECT table_schema, table_name FROM information_schema.tables "
+        "WHERE table_schema NOT IN ('pg_catalog', 'information_schema') "
+        "AND table_type IN ('BASE TABLE', 'VIEW') "
         "ORDER BY 1, 2"
     )
     return [f"{row[0]}.{row[1]}" for row in result.rows]
-
-
-def main(argv: list[str] | None = None) -> int:
-    """Usage: list_tables --database URL."""
-    parser = argparse.ArgumentParser(description="List a database's tables.")
-    parser.add_argument("--database", required=True, help="Customer database URL.")
-    args = parser.parse_args(argv)
-
-    from charie.shared.connectors.postgres import PostgresConnector
-
-    for name in list_tables(PostgresConnector.from_url(args.database)):
-        print(name)
-    return 0
-
-
-if __name__ == "__main__":
-    sys.exit(main())

@@ -1,96 +1,112 @@
-"""One-shot safety check from the shell (and the pattern the data tool uses)."""
+"""Check one query from the shell, on the practice database only (P05.13).
+
+Run as `uv run python -m charie.shared.safety.check_sql_cli "<SQL>"`.
+"""
 
 import argparse
-import json
 import sys
 
 from charie.shared.safety.catalog import Catalog
-from charie.shared.safety.sql_check import HEAVY_QUERY, CheckReport, check_sql, explain_plan
+from charie.shared.safety.sql_check import check_sql
+
+MODE_NO_KNOWLEDGE = (
+    "Mode: no knowledge yet. Every table in the database is allowed; "
+    "there are no owner rules or table links to check yet."
+)
+MODE_KNOWLEDGE_UNREADABLE = (
+    "Mode: no knowledge yet. Knowledge exists, but this checker can't read "
+    "it yet, so every table is allowed and no owner rules or links are checked."
+)
 
 
 def load_catalog(path: str) -> Catalog:
-    """Read the guarded tables from a JSON file."""
+    """Read extra rules (forbidden tables, filters, links) from a JSON file."""
+    import json
+
     with open(path, encoding="utf-8") as handle:
         return Catalog.model_validate(json.load(handle))
 
 
-def run_check(
-    sql: str, catalog: Catalog, connector=None, explain: bool = False, max_rows: int = 50_000
-) -> CheckReport:
-    """Check one query; with a connector, also ask the database's own plan."""
-    report = check_sql(sql, catalog, max_rows=max_rows)
-    if report.ok and explain and connector is not None:
-        warning = explain_plan(report.sql, catalog, connector, max_rows=max_rows)
-        if warning is not None:
-            report.reasons.append(warning)
-            report.rules.append(HEAVY_QUERY)
-    return report
+def has_knowledge(connector) -> bool:
+    """Our database holds a knowledge version (`kb_versions` has rows)."""
+    result = connector.run_query("SELECT 1 FROM kb_versions LIMIT 1")
+    return len(result.rows) > 0
 
 
-def print_report(report: CheckReport, estimate: str | None = None) -> None:
-    """The verdict in plain words: what passed, what failed, what would run."""
-    if report.ok:
-        print("Allowed")
-    else:
-        print("Blocked:")
-        for reason in report.reasons:
-            print(f"- {reason}")
-    print("The query that would run:")
-    print(report.sql)
-    if estimate is not None:
-        print(f"Database row estimate: {estimate}")
+def catalog_for_mode(table_names: list[str], extra: Catalog | None = None) -> Catalog:
+    """Every listed table allowed; anything from `--catalog-file` on top."""
+    tables = list(dict.fromkeys(table_names))
+    if extra is None:
+        return Catalog(tables=tables)
+    merged = list(dict.fromkeys([*tables, *extra.tables]))
+    return Catalog(
+        tables=merged,
+        forbidden_tables=list(extra.forbidden_tables),
+        required_filters=list(extra.required_filters),
+        links=list(extra.links),
+        average_columns=list(extra.average_columns),
+    )
+
+
+def run(argv: list[str] | None = None, *, ours=None, practice=None) -> int:
+    """Check the query and explain the verdict; 0 allowed, 1 blocked, 2 error."""
+    from charie.shared.config import require_env
+    from charie.shared.connectors.postgres import PostgresConnector
+
+    parser = argparse.ArgumentParser(description="Rule one SQL query before it runs.")
+    parser.add_argument("sql", nargs="?", help="The SQL to check.")
+    parser.add_argument("--file", help="Read the SQL from this file instead.")
+    parser.add_argument("--count", action="store_true", help="Count the rows it returns.")
+    parser.add_argument("--catalog-file", help="Extra rules as a JSON Catalog.")
+    args = parser.parse_args(argv)
+
+    try:
+        if args.file:
+            with open(args.file, encoding="utf-8") as handle:
+                sql = handle.read()
+        elif args.sql:
+            sql = args.sql
+        else:
+            print("Give a query to check, or --file <path>.")
+            return 2
+        if ours is None:
+            ours = PostgresConnector.from_url(require_env("DATABASE_URL"))
+        if practice is None:
+            practice = PostgresConnector.from_url(require_env("PRACTICE_DB_URL"))
+        from charie.shared.safety.list_tables import list_tables
+
+        if has_knowledge(ours):
+            print(MODE_KNOWLEDGE_UNREADABLE)
+        else:
+            print(MODE_NO_KNOWLEDGE)
+        extra = load_catalog(args.catalog_file) if args.catalog_file else None
+        if extra is not None:
+            print(f"Extra rules from {args.catalog_file}.")
+        catalog = catalog_for_mode(list_tables(practice), extra)
+        report = check_sql(sql, catalog, explain=practice.explain)
+        if not report.ok:
+            print("Blocked:")
+            for position, reason in enumerate(report.reasons, start=1):
+                print(f"{position}. {reason}")
+            print("The query that would run:")
+            print(report.sql)
+            return 1
+        print("Allowed.")
+        print("The query that would run:")
+        print(report.sql)
+        if args.count:
+            count_sql = f"SELECT COUNT(*) FROM ({report.sql}) AS q"
+            counted = practice.run_checked(count_sql, catalog)
+            print(f"It returns {counted.rows[0][0]} rows on the practice database.")
+        return 0
+    except Exception as err:  # noqa: BLE001
+        print(f"Error: {err}")
+        return 2
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Usage: check_sql_cli --database URL --catalog FILE --query SQL [--explain]."""
-    parser = argparse.ArgumentParser(description="Rule one SQL query before it runs.")
-    parser.add_argument("--database", required=True, help="Customer database URL.")
-    parser.add_argument("--catalog", required=True, help="Guarded tables JSON file.")
-    parser.add_argument("--query", required=True, help="The SQL to check.")
-    parser.add_argument(
-        "--max-rows",
-        type=int,
-        default=50_000,
-        help="Row cap for the LIMIT rewrite and the plan check.",
-    )
-    parser.add_argument(
-        "--explain",
-        action="store_true",
-        help="Also ask the database's own plan for a row estimate.",
-    )
-    parser.add_argument(
-        "--list-tables",
-        action="store_true",
-        help="Print the database's schema.table names instead of checking.",
-    )
-    args = parser.parse_args(argv)
-
-    from charie.shared.connectors.postgres import PostgresConnector
-
-    connector = PostgresConnector.from_url(args.database)
-    if args.list_tables:
-        from charie.shared.safety.list_tables import list_tables
-
-        for name in sorted(list_tables(connector)):
-            print(name)
-        return 0
-    catalog = load_catalog(args.catalog)
-    estimate = _estimate(connector, args.query, catalog, args.max_rows) if args.explain else None
-    report = run_check(args.query, catalog, connector, explain=args.explain, max_rows=args.max_rows)
-    print_report(report, estimate)
-    return 0
-
-
-def _estimate(connector, sql: str, catalog: Catalog, max_rows: int) -> str | None:
-    """The planner's own row count, or None when the query never runs."""
-    from charie.shared.safety.sql_check import check_sql as check
-    from charie.shared.safety.sql_check import plan_rows
-
-    report = check(sql, catalog, max_rows=max_rows)
-    if not report.ok:
-        return None
-    rows = plan_rows(connector, report.sql)
-    return f"{rows} rows" if rows is not None else "unknown"
+    """Usage: check_sql_cli "<SQL>" [--file PATH] [--count] [--catalog-file PATH]."""
+    return run(argv)
 
 
 if __name__ == "__main__":

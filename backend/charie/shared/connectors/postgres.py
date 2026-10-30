@@ -138,11 +138,28 @@ class PostgresConnector:
             raise _code(err) from err
         return DbSummary(tables=int(tables), rows=int(rows), server_version=str(version))
 
-    def run_checked(self, sql: str, catalog, max_rows: int = 50_000) -> QueryResult:
-        """Check first with the safety checker; a blocked query never runs."""
+    def explain(self, sql: str) -> dict:
+        """Plan one query without running it; the parsed EXPLAIN (FORMAT JSON)."""
+        try:
+            with self._connect() as conn:
+                conn.read_only = True
+                with conn.cursor() as cur:
+                    cur.execute("EXPLAIN (FORMAT JSON) " + sql)
+                    plan = cur.fetchone()[0]
+                conn.rollback()
+        except psycopg.Error as err:
+            raise _code(err) from err
+        return plan
+
+    def run_checked(self, sql: str, catalog, max_rows: int = 50_000, explain=None) -> QueryResult:
+        """Check first with the safety checker; a blocked query never runs.
+
+        The cost check plans through this connector, unless told otherwise.
+        """
         from charie.shared.safety.sql_check import check_sql
 
-        report = check_sql(sql, catalog, max_rows=max_rows)
+        check = self.explain if explain is None else explain
+        report = check_sql(sql, catalog, max_rows=max_rows, explain=check)
         if not report.ok:
             raise QueryBlocked(report.reasons)
         return self.run_query(report.sql, max_rows=max_rows)

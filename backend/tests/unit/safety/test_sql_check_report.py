@@ -1,6 +1,6 @@
 """The report: every failure collected, plain words, normalised names."""
 
-from charie.shared.safety.catalog import Catalog, RequiredFilter
+from charie.shared.safety.catalog import Catalog, Link, RequiredFilter
 from charie.shared.safety.sql_check import check_sql
 
 CATALOG = Catalog(
@@ -53,31 +53,48 @@ def test_unreadable_names_sqlglot_reason() -> None:
     assert report.reasons[0].startswith("Charie couldn't read this query: `")
 
 
-def test_avg_message_names_first_listed_column() -> None:
-    report = check_sql("SELECT AVG(total) FROM restaurants", CATALOG)
-    assert report.rules == ["averaging"]
+def test_double_counting_names_tables() -> None:
+    report = check_sql(
+        "SELECT SUM(o.total) FROM orders o "
+        "JOIN order_items i ON i.order_id = o.id "
+        "WHERE o.status = 'completed'",
+        Catalog(
+            tables=["public.orders", "public.order_items"],
+            required_filters=[
+                RequiredFilter(
+                    table="public.orders",
+                    sql="orders.status = 'completed'",
+                    reason="completed orders only",
+                )
+            ],
+            links=[
+                Link(
+                    one_table="public.orders",
+                    one_column="id",
+                    many_table="public.order_items",
+                    many_column="order_id",
+                )
+            ],
+        ),
+    )
+    assert report.rules == ["double_counting"]
     assert report.reasons == [
-        "`AVG` only makes sense over `avg_revenue`: use one of Charie's "
-        "pre-computed averages instead."
+        "This query adds up `public.orders.total` after joining `public.order_items`, "
+        "which has many rows for each `public.orders` row. Each `public.orders` row "
+        "would be counted once per `public.order_items` row. Add up "
+        "`public.order_items` first in a sub-query, or don't join it."
     ]
 
 
-def test_count_message() -> None:
+def test_count_star_with_join_is_allowed() -> None:
     report = check_sql(
         "SELECT COUNT(*) FROM restaurants r JOIN orders o ON o.id = r.id "
         "WHERE o.status = 'completed'",
         CATALOG,
     )
-    assert report.rules == ["counting"]
-    assert report.reasons == [
-        "`COUNT` counts rows; counts over one table at once only make sense in a learning run."
-    ]
+    assert report.ok is True
 
 
-def test_star_message() -> None:
-    report = check_sql("SELECT * FROM restaurants", CATALOG)
-    assert report.rules == ["explicit-columns"]
-    assert report.reasons == [
-        "This query would read a whole `public.restaurants` row: name the "
-        "columns it needs. (Rule: explicit-columns)"
-    ]
+def test_avg_plain_column_is_allowed() -> None:
+    report = check_sql("SELECT AVG(total) FROM restaurants", CATALOG)
+    assert report.ok is True

@@ -1,0 +1,20 @@
+{
+  "tables": ["public.orders", "public.order_items", "public.restaurants"],
+  "forbidden_tables": ["public.orders_old"],
+  "required_filters": [
+    {
+      "table": "public.orders",
+      "sql": "orders.status = 'completed'",
+      "reason": "completed orders only"
+    }
+  ],
+  "links": [
+    {
+      "one_table": "public.orders",
+      "one_column": "id",
+      "many_table": "public.order_items",
+      "many_column": "order_id"
+    }
+  ],
+  "average_columns": ["avg_order_value"]
+}

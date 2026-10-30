@@ -15,10 +15,9 @@ ONE_SELECT = "one_select"
 ALLOWED_TABLES = "allowed_tables"
 FUNCTIONS = "functions"
 REQUIRED_FILTERS = "required_filters"
-COUNTING = "counting"
-AVERAGING = "averaging"
-EXPLICIT_COLUMNS = "explicit-columns"
-HEAVY_QUERY = "heavy_query"
+DOUBLE_COUNTING = "double_counting"
+AVERAGE_OF_AVERAGES = "average_of_averages"
+TOO_HEAVY = "too_heavy"
 
 _SYSTEM_SCHEMAS = ("pg_catalog", "information_schema")
 
@@ -152,8 +151,21 @@ class CheckReport(BaseModel):
     tables: list[str]
 
 
-def check_sql(sql: str, catalog: Catalog, *, max_rows: int = 50_000) -> CheckReport:
-    """Check one query against the catalog; collect every failure."""
+def check_sql(
+    sql: str,
+    catalog: Catalog,
+    *,
+    max_rows: int = 50_000,
+    explain=None,
+    max_plan_cost: int = 5_000_000,
+) -> CheckReport:
+    """Check one query against the catalog; collect every failure.
+
+    `explain`, when given, plans the query as written last, only when rules
+    1-6 passed (before the row cap is added, which would make any plan look
+    cheap). It takes that SQL and returns the parsed `EXPLAIN (FORMAT JSON)`
+    result.
+    """
     reasons: list[str] = []
     rules: list[str] = []
     tables: list[str] = []
@@ -194,15 +206,19 @@ def check_sql(sql: str, catalog: Catalog, *, max_rows: int = 50_000) -> CheckRep
                 seen_tables.append(name)
         _rule_functions(tree, fail)
         _rule_required_filters(tree, catalog, fail)
-        _rule_counting(tree, fail)
-        _rule_averaging(tree, catalog, fail)
-        _rule_explicit_columns(tree, fail)
+        _rule_double_counting(tree, catalog, fail)
+        _rule_average_of_averages(tree, catalog, fail)
 
     if len(trees) == 1 and isinstance(trees[0], exp.Select):
+        # Rule 7 judges the query as written: the row cap below would make any
+        # plan look cheap, so the cost check plans the query before the cap.
+        uncut = trees[0].sql(dialect="postgres")
         _apply_limit(trees[0], max_rows)
         rendered = trees[0].sql(dialect="postgres")
     else:
-        rendered = sql
+        uncut = rendered = sql
+    if not reasons and explain is not None:
+        _rule_too_heavy(uncut, explain, max_plan_cost, fail)
     tables = sorted(seen_tables)
     return CheckReport(ok=not reasons, sql=rendered, reasons=reasons, rules=rules, tables=tables)
 
@@ -232,6 +248,12 @@ def _rule_one_select(tree: exp.Expression, fail) -> None:
     for cls, name in _WRITE_NAMES:
         if tree.find(cls) is not None and name not in whats:
             whats.append(name)
+    # sqlglot reads CALL, DO and LOCK as plain commands: read the first word.
+    for command in tree.find_all(exp.Command):
+        words = command.sql(dialect="postgres").strip().split()
+        word = words[0].upper().rstrip(";") if words else ""
+        if word in ("CALL", "DO", "LOCK") and word not in whats:
+            whats.append(word)
     if tree.find(exp.Into) is not None and "SELECT … INTO" not in whats:
         whats.append("SELECT … INTO")
     for select in tree.find_all(exp.Select):
@@ -416,8 +438,8 @@ def _rule_required_filters(tree: exp.Expression, catalog: Catalog, fail) -> None
                     )
 
 
-def _own_nodes(scope, kind) -> list:
-    """Nodes of one kind in this scope's own SELECT list and HAVING."""
+def _own_nodes(scope, kinds) -> list:
+    """Nodes of these kinds in this scope's own SELECT list and HAVING."""
     expression = scope.expression
     if not isinstance(expression, exp.Select):
         return []
@@ -430,7 +452,7 @@ def _own_nodes(scope, kind) -> list:
     def visit(node: exp.Expression) -> None:
         if isinstance(node, exp.Select) and node is not expression:
             return
-        if isinstance(node, kind):
+        if isinstance(node, kinds):
             found.append(node)
         for child in node.iter_expressions():
             visit(child)
@@ -440,121 +462,191 @@ def _own_nodes(scope, kind) -> list:
     return found
 
 
-def _rule_counting(tree: exp.Expression, fail) -> None:
-    """Rule 5: COUNT over more than one table belongs in a learning run."""
+def _reachable_many(start: str, catalog: Catalog) -> set[str]:
+    """Tables reached from `start` by following one-to-many links (1+ steps)."""
+    seen: set[str] = set()
+    frontier = [start]
+    while frontier:
+        current = frontier.pop()
+        for link in catalog.links:
+            if link.one_table == current and link.many_table not in seen:
+                seen.add(link.many_table)
+                frontier.append(link.many_table)
+    return seen
+
+
+def _agg_column_table(agg: exp.Expression, tables: list[tuple[str, str]]) -> tuple | None:
+    """`(table, column)` the aggregate reads, or None when it stays unclear."""
+    arg = agg.this
+    if isinstance(agg, exp.Count) and (arg is None or isinstance(arg, (exp.Star, exp.Distinct))):
+        return None
+    columns = list(arg.find_all(exp.Column)) if arg is not None else []
+    if not columns:
+        return None
+    by_alias = {alias: full for full, alias in tables}
+    by_name = {full.split(".", 1)[1]: full for full, _ in tables}
+    found: set[str] = set()
+    for column in columns:
+        qualifier = (column.table or "").lower()
+        if qualifier:
+            table = by_alias.get(qualifier, by_name.get(qualifier))
+            if table is None:
+                return None
+            found.add(table)
+        elif len({full for full, _ in tables}) == 1:
+            found.add(tables[0][0])
+        else:
+            return None
+    if len(found) != 1:
+        return None
+    return (next(iter(found)), columns[0].name.lower())
+
+
+def _rule_double_counting(tree: exp.Expression, catalog: Catalog, fail) -> None:
+    """Rule 5: no adding up A after joining a table A fans out to."""
+    if not catalog.links:
+        return
     for scope in traverse_scope(tree):
-        counts = _own_nodes(scope, exp.Count)
-        if not counts:
+        if not isinstance(scope.expression, exp.Select):
             continue
-        if len(_direct_real_tables(scope)) > 1:
-            fail(
-                COUNTING,
-                "`COUNT` counts rows; counts over one table at once only make sense "
-                "in a learning run.",
-            )
-            return
+        tables = _scope_real_tables(scope)
+        if len({full for full, _ in tables}) < 2:
+            continue
+        for agg in _own_nodes(scope, (exp.Sum, exp.Avg, exp.Count)):
+            found = _agg_column_table(agg, tables)
+            if found is None:
+                continue
+            table, column = found
+            for full in sorted(_reachable_many(table, catalog)):
+                if any(full == other for other, _ in tables):
+                    fail(
+                        DOUBLE_COUNTING,
+                        f"This query adds up `{table}.{column}` after joining `{full}`, "
+                        f"which has many rows for each `{table}` row. Each `{table}` row "
+                        f"would be counted once per `{full}` row. Add up `{full}` first "
+                        "in a sub-query, or don't join it.",
+                    )
+                    break
 
 
-def _direct_real_tables(scope) -> list:
-    """Normalized names of the real tables one SELECT reads itself."""
+def _scope_real_tables(scope) -> list[tuple[str, str]]:
+    """`(table, alias)` pairs one SELECT reads itself (no CTEs, no functions)."""
     if not isinstance(scope.expression, exp.Select):
         return []
     ctes = set()
     for source in scope.cte_sources:
         ctes.add(str(source).lower() if not isinstance(source, str) else source.lower())
-    names = []
+    pairs: list[tuple[str, str]] = []
     for table in _direct_tables(scope):
         if isinstance(table.this, exp.Func):
             continue
         if table.name.lower() in ctes:
             continue
         full = normalize_table(f"{table.db}.{table.name}" if table.db else table.name)
-        if full not in names:
-            names.append(full)
+        alias = (table.alias or table.name).lower()
+        if (full, alias) not in pairs:
+            pairs.append((full, alias))
+    return pairs
+
+
+def _avg_made_outputs(tree: exp.Expression) -> dict[str, set[str]]:
+    """Source name to the output columns a sub-query or WITH part made by AVG."""
+    made: dict[str, set[str]] = {}
+
+    def record(query: exp.Expression, name: str) -> None:
+        if not name or not isinstance(query, exp.Select):
+            return
+        for item in query.args.get("expressions", []):
+            inner = item
+            out = None
+            if isinstance(item, exp.Alias):
+                out = item.alias.lower()
+                inner = item.this
+            elif isinstance(item, exp.Column):
+                out = item.name.lower()
+            if out and inner.find(exp.Avg) is not None:
+                made.setdefault(name, set()).add(out)
+
+    for cte in tree.find_all(exp.CTE):
+        record(cte.this, str(cte.alias or "").lower())
+    for sub in tree.find_all(exp.Subquery):
+        alias = sub.args.get("alias")
+        raw = alias.sql(dialect="postgres") if alias is not None else ""
+        record(sub.this, raw.split("(")[0].strip().strip('"').lower())
+    return made
+
+
+def _enclosing_sources(node: exp.Expression, tree: exp.Expression) -> set[str]:
+    """Source names the AVG's own SELECT reads, plus every WITH name in scope."""
+    select = node
+    while select is not None and not isinstance(select, exp.Select):
+        select = select.parent
+    names: set[str] = set()
+    if isinstance(select, exp.Select):
+        from_ = select.args.get("from_")
+        items = []
+        if from_ is not None:
+            items.append(from_.this)
+            items.extend(from_.args.get("expressions", []))
+        for join in select.args.get("joins", []):
+            items.append(join.this)
+        for item in items:
+            if isinstance(item, exp.Table) and not isinstance(item.this, exp.Func):
+                names.add((item.alias or item.name).lower())
+            elif isinstance(item, exp.Subquery):
+                alias = item.args.get("alias")
+                if alias is not None:
+                    names.add(alias.sql(dialect="postgres").split("(")[0].strip().lower())
+    for cte in tree.find_all(exp.CTE):
+        names.add(str(cte.alias or "").lower())
     return names
 
 
-def _rule_averaging(tree: exp.Expression, catalog: Catalog, fail) -> None:
-    """Rule 6: AVG only over a listed pre-computed average column."""
+def _rule_average_of_averages(tree: exp.Expression, catalog: Catalog, fail) -> None:
+    """Rule 6: no AVG over numbers that are already averages."""
+    made = _avg_made_outputs(tree)
     wanted = {name.lower() for name in catalog.average_columns}
-    first = catalog.average_columns[0] if catalog.average_columns else None
     for node in tree.find_all(exp.Avg):
         arg = node.this
-        names = set()
-        if arg is not None:
-            names.add(arg.sql(dialect="postgres").lower())
-            for column in arg.find_all(exp.Column):
-                names.add(column.name.lower())
-        if not names.intersection(wanted):
-            if first is None:
-                reason = (
-                    "`AVG` only makes sense over a listed average column: use one of "
-                    "Charie's pre-computed averages instead."
-                )
-            else:
-                reason = (
-                    f"`AVG` only makes sense over `{first}`: use one of Charie's "
-                    "pre-computed averages instead."
-                )
-            fail(AVERAGING, reason)
-
-
-def _rule_explicit_columns(tree: exp.Expression, fail) -> None:
-    """Rule: name the columns; bare `*` fails, `t.*` needs one table."""
-    for scope in traverse_scope(tree):
-        if not isinstance(scope.expression, exp.Select):
+        if arg is None:
             continue
-        real = _direct_real_tables(scope)
-        for item in scope.expression.args.get("expressions", []):
-            if isinstance(item, exp.Star):
-                if real:
-                    fail(
-                        EXPLICIT_COLUMNS,
-                        f"This query would read a whole `{real[0]}` row: name the "
-                        "columns it needs. (Rule: explicit-columns)",
-                    )
-                continue
-            if isinstance(item, exp.Column) and isinstance(item.this, exp.Star):
-                if len(real) == 1:
-                    continue
-                full = None
-                qualifier = (item.table or "").lower()
-                for name in real:
-                    if name.split(".", 1)[1] == qualifier:
-                        full = name
-                        break
+        for column in arg.find_all(exp.Column):
+            name = column.name.lower()
+            shown = column.sql(dialect="postgres")
+            if name in wanted:
+                blocked = True
+            else:
+                qualifier = (column.table or "").lower()
+                sources = {qualifier} if qualifier else _enclosing_sources(node, tree)
+                blocked = any(name in made.get(source, set()) for source in sources if source)
+            if blocked:
                 fail(
-                    EXPLICIT_COLUMNS,
-                    f"This query would read a whole `{full or real[0] if real else '?'}` row: "
-                    "name the columns it needs. (Rule: explicit-columns)",
+                    AVERAGE_OF_AVERAGES,
+                    f"This query averages numbers that are already averages (`{shown}`). "
+                    "Work out the average as total ÷ count instead.",
                 )
 
 
-def plan_rows(connector, sql: str) -> int | None:
-    """The planner's own row estimate for one query, or None when unclear."""
-    import re
-
-    result = connector.run_query("EXPLAIN " + sql)
-    text = "\n".join(str(cell) for row in result.rows for cell in row)
-    match = re.search(r"rows=(\d+)", text)
-    return int(match.group(1)) if match else None
-
-
-def explain_plan(sql: str, catalog: Catalog, connector, max_rows: int = 50_000) -> str | None:
-    """The database's own row estimate, or None when it agrees the plan is cheap.
-
-    Never runs a blocked query: the checker goes first.
-    """
-    report = check_sql(sql, catalog, max_rows=max_rows)
-    if not report.ok:
-        return None
-    rows = plan_rows(connector, report.sql)
-    if rows is None or rows < max_rows:
-        return None
-    return (
-        f"Postgres thinks this query reads about {rows} rows, over the {max_rows} row "
-        "limit. Narrow it down: add a filter, a GROUP BY, or a smaller LIMIT."
-    )
+def _rule_too_heavy(sql: str, explain, max_plan_cost: int, fail) -> None:
+    """Rule 7: the plan's Total Cost stays under the limit (EXPLAIN never runs)."""
+    try:
+        result = explain(sql)
+    except Exception as err:  # noqa: BLE001
+        message = str(err).split("\n")[0].strip()
+        fail(TOO_HEAVY, f"Charie couldn't estimate this query: `{message}`.")
+        return
+    try:
+        cost = result[0]["Plan"]["Total Cost"]
+    except (KeyError, IndexError, TypeError):
+        fail(TOO_HEAVY, "Charie couldn't estimate this query: `the plan can't be read`.")
+        return
+    if cost > max_plan_cost:
+        fail(
+            TOO_HEAVY,
+            "This query looks too heavy to run safely (Postgres estimates a cost "
+            f"of `{cost}`; the limit is `{max_plan_cost}`). Try a shorter period "
+            "or fewer details.",
+        )
 
 
 def _apply_limit(top: exp.Select, max_rows: int) -> None:
