@@ -7,7 +7,7 @@ import { LEARNER, SAMPLE_PASSWORD } from "../apps";
 export async function openLearner(
   page: Page,
   path = "/sources",
-  world: "new" | "still" = "still",
+  world: "new" | "still" | "failed" = "still",
 ): Promise<void> {
   await page.goto(`${LEARNER}/login?mock=${world}`);
   await expect(page.getByRole("heading", { name: "Welcome back" })).toBeVisible();

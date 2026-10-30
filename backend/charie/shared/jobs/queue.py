@@ -107,6 +107,22 @@ def resume_jobs(session: Session, run_id: int) -> int:
     return _move_jobs(session, run_id, ("paused",), "queued")
 
 
+def requeue_failed_jobs(session: Session, run_id: int) -> int:
+    """A human retry: failed jobs wait again with fresh attempts; done ones stay."""
+    jobs = session.scalars(select(Job).where(Job.run_id == run_id, Job.status == "failed")).all()
+    for job in jobs:
+        job.status = "queued"
+        job.attempts = 0
+        job.locked_at = None
+        job.heartbeat_at = None
+        job.worker = None
+        job.run_after = datetime.datetime.now(datetime.UTC)
+        job.error = None
+        job.finished_at = None
+    session.flush()
+    return len(jobs)
+
+
 def cancel_jobs(session: Session, run_id: int) -> int:
     """Cancel a run's waiting and paused jobs; running ones finish first."""
     return _move_jobs(session, run_id, ("queued", "paused"), "cancelled")

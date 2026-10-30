@@ -45,6 +45,34 @@ test("new lines appear live", async ({ page }) => {
   });
 });
 
+test("pause_reload_resume", async ({ page }) => {
+  await openLearner(page, "/learning", "still");
+  await page.getByRole("button", { name: "Pause" }).click();
+  await expect(page.getByRole("button", { name: "Resume" })).toBeVisible();
+  // A reload without the mock flag keeps the saved world: still paused,
+  // with the saved step counts on screen.
+  await page.goto(`${LEARNER}/learning`);
+  await expect(page.getByRole("button", { name: "Resume" })).toBeVisible();
+  await expect(
+    page.getByText("Learning is paused. Nothing learned so far is lost."),
+  ).toBeVisible();
+  await expect(page.getByText("62%")).toBeVisible();
+  await page.getByRole("button", { name: "Resume" }).click();
+  await expect(page.getByText("Learning again.")).toBeVisible();
+});
+
+test("failed_run_retry", async ({ page }) => {
+  await openLearner(page, "/learning", "failed");
+  await expect(
+    page.getByText("The last learning run stopped. Nothing learned so far is lost."),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Try again" }).click();
+  await expect(
+    page.getByText("Trying again from where it stopped."),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Pause" })).toBeVisible();
+});
+
 test("pause, then resume", async ({ page }) => {
   await openLearner(page, "/learning", "still");
   await expect(page.getByText("Learning now")).toBeVisible();

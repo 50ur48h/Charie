@@ -101,6 +101,19 @@ export function LearningPage() {
               <Play aria-hidden="true" className="[--icon:16px]" />
               Resume
             </Button>
+          ) : live.status === "failed" ? (
+            <Button
+              disabled={resume.isPending}
+              onClick={() =>
+                resume.mutate(undefined, {
+                  onSuccess: () => toast("Trying again from where it stopped."),
+                  onError: (error) => toast(error.message),
+                })
+              }
+            >
+              <Play aria-hidden="true" className="[--icon:16px]" />
+              Try again
+            </Button>
           ) : undefined
         }
       />

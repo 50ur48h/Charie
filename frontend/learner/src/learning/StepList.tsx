@@ -3,21 +3,22 @@ import { cn } from "@charie/shared";
 import type { LearningRun, StepProgress } from "@charie/shared";
 import { LEARNING_STEPS } from "./steps";
 
-// The 12 learning steps (P04.7): done steps get the accent circle and check,
-// the current one the pulsing ring (still when the user prefers no motion),
-// later ones stay muted.
+// The run's actual steps (P07.2 renders these from the saved progress):
+// done steps get the accent circle and check, the current one the pulsing
+// ring (still when the user prefers no motion), later ones stay muted.
+// Steps with no implementation yet never appear as learned.
 export function StepList({ run }: { run: LearningRun }) {
   const finished = run.status === "done";
+  const currentIndex = run.progress.findIndex((entry) => entry.step === run.step);
   return (
     <ol className="m-0 list-none p-0">
-      {LEARNING_STEPS.map((step, i) => {
-        const number = i + 1;
-        const progress = run.progress.find((entry) => entry.step === number);
-        const isDone = finished || number < run.step;
-        const isCurrent = !finished && number === run.step;
+      {run.progress.map((progress, i) => {
+        const step = LEARNING_STEPS[progress.step - 1];
+        const isDone = finished || (currentIndex !== -1 && i < currentIndex);
+        const isCurrent = !finished && i === currentIndex;
         return (
-          <li key={number} className={cn("relative flex gap-3 pb-4 last:pb-0")}>
-            {i < LEARNING_STEPS.length - 1 && (
+          <li key={progress.step} className={cn("relative flex gap-3 pb-4 last:pb-0")}>
+            {i < run.progress.length - 1 && (
               <span
                 aria-hidden="true"
                 className={cn(
@@ -48,7 +49,7 @@ export function StepList({ run }: { run: LearningRun }) {
                   !isDone && !isCurrent && "font-medium text-muted",
                 )}
               >
-                {step.label}
+                {step?.label ?? `Step ${progress.step}`}
               </p>
               <StepNote progress={progress} current={isCurrent} />
             </div>

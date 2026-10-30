@@ -2,6 +2,7 @@
 
 from fastapi import FastAPI
 
+from charie.learner.api.learning import learning_router
 from charie.learner.api.setup import setup_router
 from charie.learner.api.sources import sources_router
 from charie.shared.auth import auth_router, login_router
@@ -19,6 +20,7 @@ def build_app() -> FastAPI:
             settings_router,
             sources_router,
             setup_router,
+            learning_router,
             status_router,
         ),
         public_routers=(login_router,),

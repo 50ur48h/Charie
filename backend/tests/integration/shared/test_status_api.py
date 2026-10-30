@@ -37,7 +37,7 @@ def test_empty_database_status(chat_client) -> None:
             "published_at": None,
         },
         "data": None,
-        "learning": None,
+        "learning": {"runs_today": 0, "questions_waiting": 0},
         "spending": {
             "limit_usd": 150.0,
             "spent_usd": 0.0,

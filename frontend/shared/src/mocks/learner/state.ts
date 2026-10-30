@@ -71,6 +71,22 @@ export function initLearnerWorld(search = ""): "new" | "still" | null {
     resetLearnerMock(mock === "new" ? "new" : "design");
     return mock;
   }
+  // failed: the design world with the newest run stopped, timers off, so the
+  // Learning page shows the retry path for a failed run.
+  if (mock === "failed") {
+    resetLearnerMock("design");
+    const store = learner();
+    const newest = [...store.runs].sort(
+      (a, b) => Date.parse(b.started_at) - Date.parse(a.started_at),
+    )[0];
+    if (newest !== undefined && newest.status === "running") {
+      newest.status = "failed";
+      newest.finished_at = new Date().toISOString();
+      newest.summary = "The database check stopped the run.";
+      saveLearner();
+    }
+    return "still";
+  }
   return null;
 }
 

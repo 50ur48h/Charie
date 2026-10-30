@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from charie.shared.ai.spending import month_spent, spending_state
 from charie.shared.db import get_session
 from charie.shared.settings import get_setting
+from charie.shared.tables.learning import LearningRun
 from charie.shared.tables.questions import OwnerQuestion
 from charie.shared.tables.sources import DataSource
 
@@ -39,10 +40,15 @@ class SpendingStatus(BaseModel):
     state: str
 
 
+class LearningStatus(BaseModel):
+    runs_today: int = 0
+    questions_waiting: int = 0
+
+
 class StatusOut(BaseModel):
     knowledge: KnowledgeStatus
     data: DataStatus | None = None
-    learning: None = None
+    learning: LearningStatus | None = None
     spending: SpendingStatus | None = None
     questions_waiting: int = 0
 
@@ -68,8 +74,15 @@ def build_status(session: Session, now: datetime | None = None) -> dict[str, obj
         if source is not None
         else None
     )
-    # Learning: P07.2 fills runs_today, P09.6 fills questions_waiting.
-    learning = None
+    # Runs started since midnight UTC; P09.6 fills questions_waiting.
+    day_start = at.replace(hour=0, minute=0, second=0, microsecond=0)
+    runs_today = (
+        session.scalar(
+            select(func.count()).select_from(LearningRun).where(LearningRun.started_at >= day_start)
+        )
+        or 0
+    )
+    learning: dict[str, object] = {"runs_today": runs_today, "questions_waiting": 0}
     limit = get_setting(session, "spend_limit_usd")
     spending = None
     if limit is not None:

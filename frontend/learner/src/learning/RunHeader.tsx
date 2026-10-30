@@ -53,21 +53,16 @@ function RunPill({ run }: { run: LearningRun }) {
 function RunLine({ run, started, cost }: { run: LearningRun; started: string; cost: string }) {
   if (run.status === "running") {
     const minutes = run.minutes_left;
+    // Unknown remaining time stays honest: never synthesize an estimate.
     const left =
-      minutes === null ? null : minutes >= 90 ? (
+      minutes === null ? <>Working on it</> : minutes >= 90 ? (
         <>about {Math.max(1, Math.round(minutes / 60))} hours left</>
       ) : (
         <>about {minutes} minutes left</>
       );
     return (
       <>
-        Started {started}
-        {left !== null && (
-          <>
-            {" "}· {left}
-          </>
-        )}{" "}
-        · {cost} so far
+        Started {started} {" "}· {left} {" "}· {cost} so far
       </>
     );
   }
@@ -89,27 +84,32 @@ function RunLine({ run, started, cost }: { run: LearningRun; started: string; co
 }
 
 function RunStepLine({ run }: { run: LearningRun }) {
+  // Position among the run's actual steps, not the canonical twelve.
+  const total = run.progress.length;
+  const position = run.progress.findIndex((entry) => entry.step === run.step);
+  const shown = position === -1 ? run.step : position + 1;
+  const phrase = LEARNING_STEPS[run.step - 1]?.phrase ?? "";
   if (run.status === "done") {
     return (
       <p className="text-[13px] text-muted">
-        All 12 steps done · {run.summary}{" "}
+        {total === 0 ? run.summary : <>All {total} steps done · {run.summary}</>}{" "}
         <Button asChild variant="outline" size="sm" className="ml-2">
           <Link to="/knowledge">Review in Knowledge</Link>
         </Button>
       </p>
     );
   }
-  const phrase = LEARNING_STEPS[run.step - 1]?.phrase ?? "";
+  if (total === 0) return null;
   if (run.status === "failed") {
     return (
       <p className="text-[13px] text-muted">
-        Stopped at step {run.step} of 12: {phrase}
+        Stopped at step {shown} of {total}: {phrase}
       </p>
     );
   }
   return (
     <p className="text-[13px] text-muted">
-      Step {run.step} of 12: {phrase}
+      Step {shown} of {total}: {phrase}
     </p>
   );
 }

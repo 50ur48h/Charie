@@ -73,7 +73,7 @@ test("a refused file shows the message", async ({ page }) => {
 // P04.6 editing notes shows the changed line and the banner.
 test("editing notes shows the changed line and the banner", async ({ page }) => {
   await openLearner(page, "/sources", "still");
-  await expect(page.getByText("Owner notes.md")).toBeVisible();
+  await expect(page.getByText("Owner notes.md", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Edit notes" }).click();
   const dialog = page.getByRole("dialog", { name: "Your notes" });
   await dialog.getByRole("textbox").fill("Never convert currencies.\nAsk me if anything is unclear.");

@@ -32,12 +32,14 @@ export interface IncomingMessage {
   id: string | null;
 }
 
-/** A message that means the run finished: a done line or a done status. */
+/** A message that means the run finished: a done line, or a done or
+ * failed status. A failed run is finished too: nothing more will arrive. */
 export function isTerminalMessage(message: IncomingMessage): boolean {
   if (message.event === "done") return true;
   if (message.event !== "status") return false;
   try {
-    return (JSON.parse(message.data) as { status?: unknown }).status === "done";
+    const status = (JSON.parse(message.data) as { status?: unknown }).status;
+    return status === "done" || status === "failed";
   } catch {
     return false;
   }
@@ -64,7 +66,9 @@ export function applyLearningEvent(
     return percent === null && step === null ? state : { ...state, percent, step };
   }
   if (message.event === "status") {
-    return data.status === "done" ? { ...state, done: true } : state;
+    return data.status === "done" || data.status === "failed"
+      ? { ...state, done: true }
+      : state;
   }
   const seq = typeof data.seq === "number" ? data.seq : null;
   const kind = data.kind;
@@ -118,21 +122,35 @@ export function useLearningFeed(runId: number | null, active: boolean): Learning
     async function follow(): Promise<void> {
       while (!stopped && !doneRef.current) {
         try {
-          const response = await fetchStream("/api/learning/stream", {
-            lastEventId,
-            signal: controller.signal,
-          });
+          // run_id plus Last-Event-ID: the server replays this run only,
+          // so a new run never mixes its lines into the old feed.
+          const response = await fetchStream(
+            `/api/learning/stream?run_id=${runId}`,
+            {
+              lastEventId,
+              signal: controller.signal,
+            },
+          );
           await readStreamEvents(
             response,
             (event) => {
               if (stopped) return;
               if (event.id !== null) lastEventId = event.id;
               if (isTerminalMessage(event)) doneRef.current = true;
+              // A pause, resume or failure changes what the header and the
+              // poller need: refetch the snapshot right away so a tab that
+              // sat on an old state sees the new one.
+              if (event.event === "status") {
+                void client.invalidateQueries({ queryKey: ["learner-learning"] });
+              }
               setFeed((prev) => applyLearningEvent(prev, event));
             },
             controller.signal,
           );
           if (stopped || doneRef.current) break;
+          // The connection ended mid-run: refetch the snapshot so the
+          // page shows missed progress, then reconnect where we left off.
+          await client.invalidateQueries({ queryKey: ["learner-learning"] });
           attempts += 1;
           if (attempts > MAX_STREAM_RETRIES) break;
           await sleep(backoffDelayMs(attempts - 1), controller.signal);

@@ -128,6 +128,7 @@ EXPECTED_TABLES = {
         "kind",
         "reason",
         "status",
+        "paused_by",
         "step",
         "progress",
         "version_id",

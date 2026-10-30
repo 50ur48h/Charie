@@ -170,6 +170,7 @@ export const learnerHandlers = [
       id: store.runs.reduce((max, run) => Math.max(max, run.id), 0) + 1,
       kind: "first",
       status: "running",
+      paused_by: null,
       reason: null,
       step: 1,
       percent: 0,
@@ -217,6 +218,7 @@ export const learnerHandlers = [
       id: store.runs.reduce((max, run) => Math.max(max, run.id), 0) + 1,
       kind: "refresh",
       status: "running",
+      paused_by: null,
       reason: draftNote === null ? reason : `${reason} · ${draftNote}`,
       step: 1,
       percent: 0,
@@ -293,9 +295,9 @@ export const learnerHandlers = [
     const blocked = needSession();
     if (blocked) return blocked;
     const run = newestRun();
-    if (!run || run.status !== "paused") {
+    if (!run || (run.status !== "paused" && run.status !== "failed")) {
       return HttpResponse.json(
-        { error: "not_paused", message: "Learning isn't paused." },
+        { error: "not_paused", message: "There is no paused or stopped run to retry." },
         { status: 409 },
       );
     }
@@ -307,7 +309,11 @@ export const learnerHandlers = [
   http.get(LEARNER_STREAM_URL, ({ request }) => {
     const blocked = needSession();
     if (blocked) return blocked;
-    const run = newestRun();
+    const wanted = Number(new URL(request.url).searchParams.get("run_id"));
+    const run =
+      Number.isInteger(wanted) && wanted > 0
+        ? learner().runs.find((entry) => entry.id === wanted)
+        : newestRun();
     if (!run) {
       return HttpResponse.json(
         { error: "no_run", message: "Charie hasn't started learning yet." },
