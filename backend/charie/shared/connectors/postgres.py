@@ -5,7 +5,12 @@ from urllib.parse import urlparse
 
 import psycopg
 
-from charie.shared.connectors.base import ConnectorError, DbSummary, QueryResult
+from charie.shared.connectors.base import (
+    ConnectorError,
+    DbSummary,
+    QueryBlocked,
+    QueryResult,
+)
 
 _USER_TABLES = "c.relkind IN ('r', 'v', 'm')"
 _SYSTEM_SCHEMAS = "n.nspname NOT IN ('pg_catalog', 'information_schema', 'pg_toast')"
@@ -132,6 +137,32 @@ class PostgresConnector:
         except psycopg.Error as err:
             raise _code(err) from err
         return DbSummary(tables=int(tables), rows=int(rows), server_version=str(version))
+
+    def explain(self, sql: str) -> dict:
+        """Plan one query without running it; the parsed EXPLAIN (FORMAT JSON)."""
+        try:
+            with self._connect() as conn:
+                conn.read_only = True
+                with conn.cursor() as cur:
+                    cur.execute("EXPLAIN (FORMAT JSON) " + sql)
+                    plan = cur.fetchone()[0]
+                conn.rollback()
+        except psycopg.Error as err:
+            raise _code(err) from err
+        return plan
+
+    def run_checked(self, sql: str, catalog, max_rows: int = 50_000, explain=None) -> QueryResult:
+        """Check first with the safety checker; a blocked query never runs.
+
+        The cost check plans through this connector, unless told otherwise.
+        """
+        from charie.shared.safety.sql_check import check_sql
+
+        check = self.explain if explain is None else explain
+        report = check_sql(sql, catalog, max_rows=max_rows, explain=check)
+        if not report.ok:
+            raise QueryBlocked(report.reasons)
+        return self.run_query(report.sql, max_rows=max_rows)
 
     def run_query(self, query: str, timeout_s: int = 60, max_rows: int = 50_000) -> QueryResult:
         """Run one SELECT read-only, timed and capped; then roll back."""

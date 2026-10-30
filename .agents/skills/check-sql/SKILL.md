@@ -1,12 +1,18 @@
 ---
 name: check-sql
-description: Run a query through Charie's SQL safety checker and explain the result in plain English. Placeholder until the checker exists.
+description: Run a query through Charie's SQL safety checker and explain the result in plain English.
 ---
 
 # Check SQL
 
-Not ready yet: finished in P05.13, after the SQL checker is built in P05.12.
+Take one SQL query and check it on the practice database only, through the CLI from `backend/`:
 
-When it is ready, it will take one SQL query, run it through `charie.shared.safety.sql_check`, and explain: allowed or blocked, and why, in plain English. If the query is allowed, it can also count its rows on the practice database (read-only).
+- `uv run python -m charie.shared.safety.check_sql_cli "<SQL>"`
+- Add `--count` only when row counts matter; add `--catalog-file <path>` only
+  for trying extra rules (see `tests/data/catalog-traps.json`).
+- Never run a query any other way, and never on anything but the practice database.
 
-For now, say this and stop: "Not ready yet: /check-sql is finished in P05.13."
+Repeat the first line (the mode line) back, then the verdict: "Allowed." or
+"Blocked:" with each numbered reason. Explain each reason in one or two plain
+sentences, and suggest a fixed query when a reason says how (name the columns,
+add the required filter, sum first in a sub-query, drop the function).
