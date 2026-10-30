@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from charie.shared.ai.spending import month_spent, spending_state
+from charie.shared.ai.spending import as_utc, month_spent, month_window, spending_state
 from charie.shared.db import get_session
 from charie.shared.errors import ApiError
 from charie.shared.settings import get_setting
@@ -106,8 +106,8 @@ def build_usage(
     """Everything on the Usage page, worked out from `ai_calls`."""
     year, number = int(month[:4]), int(month[5:7])
     days = calendar.monthrange(year, number)[1]
-    start = datetime(year, number, 1, tzinfo=UTC)
-    end = datetime(year + (number == 12), number % 12 + 1, 1, tzinfo=UTC)
+    zone = ZoneInfo(time_zone) if time_zone else UTC
+    start, end = month_window(year, number, time_zone)
     rows = (session.scalars(select(AiCall).where(AiCall.at >= start, AiCall.at < end))).all()
 
     spent = sum((row.cost_usd for row in rows), Decimal(0))
@@ -115,7 +115,6 @@ def build_usage(
     warn = get_setting(session, "spend_warn_percent")
     state = spending_state(month_spent(session, now), limit, warn)
 
-    zone = ZoneInfo(time_zone) if time_zone else UTC
     today = now.astimezone(zone)
     if (year, number) < (today.year, today.month):
         expected: Decimal = spent
@@ -140,33 +139,24 @@ def build_usage(
         "cost_usd": money(app_sums("learner")),
     }
 
+    def day_sums(app: str, day: int) -> Decimal:
+        total = Decimal(0)
+        for row in rows:
+            if row.app != app:
+                continue
+            local = as_utc(row.at).astimezone(zone)
+            if (local.year, local.month, local.day) == (year, number, day):
+                total += row.cost_usd
+        return total
+
     per_day = []
     for day in range(1, days + 1):
         per_day.append(
             {
                 "date": f"{month}-{day:02d}",
-                "questions_usd": money(
-                    sum(
-                        (row.cost_usd for row in rows if row.app == "chat" and row.at.day == day),
-                        Decimal(0),
-                    )
-                ),
-                "learning_usd": money(
-                    sum(
-                        (
-                            row.cost_usd
-                            for row in rows
-                            if row.app == "learner" and row.at.day == day
-                        ),
-                        Decimal(0),
-                    )
-                ),
-                "tests_usd": money(
-                    sum(
-                        (row.cost_usd for row in rows if row.app == "tests" and row.at.day == day),
-                        Decimal(0),
-                    )
-                ),
+                "questions_usd": money(day_sums("chat", day)),
+                "learning_usd": money(day_sums("learner", day)),
+                "tests_usd": money(day_sums("tests", day)),
             }
         )
 
@@ -225,7 +215,7 @@ def build_usage(
     return {
         "month": month,
         "days_in_month": days,
-        "resets_on": end.strftime("%Y-%m-%d"),
+        "resets_on": end.astimezone(zone).strftime("%Y-%m-%d"),
         "spent_usd": money(spent),
         "limit_usd": float(limit),
         "warn_percent": float(warn),

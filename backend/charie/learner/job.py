@@ -39,19 +39,24 @@ def _beat(job_id: int, stop: threading.Event) -> None:
             heartbeat(session, job_id)
 
 
+def _park_job(session, job_id: int) -> None:
+    """Put a running job back to waiting; the interrupted try doesn't count."""
+    job = session.get(Job, job_id)
+    if job is not None and job.status == "running":
+        job.status = "queued"
+        job.attempts = max(0, job.attempts - 1)
+        job.locked_at = None
+        job.heartbeat_at = None
+        job.worker = None
+
+
 def _park_current_job() -> None:
-    """Ctrl+C puts the running job back to waiting, without counting a try."""
+    """Ctrl+C between jobs puts the running job back to waiting."""
     global _current_job_id
     if _current_job_id is None:
         return
     with session_scope() as session:
-        job = session.get(Job, _current_job_id)
-        if job is not None and job.status == "running":
-            job.status = "queued"
-            job.attempts = max(0, job.attempts - 1)
-            job.locked_at = None
-            job.heartbeat_at = None
-            job.worker = None
+        _park_job(session, _current_job_id)
     _current_job_id = None
 
 
@@ -99,6 +104,10 @@ def run_due_jobs(worker: str) -> int:
         try:
             beater.start()
             handler(info)
+        except KeyboardInterrupt:
+            with session_scope() as session:
+                _park_job(session, info.id)
+            raise
         except SpendingPaused:
             with session_scope() as session:
                 _unpause_mark(session, info.id)

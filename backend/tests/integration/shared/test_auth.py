@@ -179,10 +179,9 @@ def test_me_shows_setup_done_theme_and_app_addresses(chat_client, monkeypatch):
 
 def test_no_password_set_message(chat_client, monkeypatch):
     auth.limiter.tries.clear()
-    monkeypatch.delenv("CHARIE_PASSWORD", raising=False)
-    from charie.shared.config import get_settings
+    from charie.shared.config import Settings
 
-    get_settings.cache_clear()
+    monkeypatch.setattr("charie.shared.auth.get_settings", lambda: Settings(charie_password=None))
     response = chat_client.post("/api/login", json={"password": "anything"})
     assert response.status_code == 503
     assert response.json()["error"] == "no_password"

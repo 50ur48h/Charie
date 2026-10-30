@@ -178,3 +178,49 @@ def test_other_month(chat_client, db_session) -> None:
 def test_learner_app_has_no_usage_address(learner_client) -> None:
     log_in(learner_client)
     assert learner_client.get("/api/usage").status_code == 404
+
+
+OCTOBER_LAST = datetime(2026, 10, 31, 19, 0, tzinfo=UTC)  # Nov 1, 00:30 in Kolkata.
+IST = "Asia/Kolkata"
+
+
+def test_calls_grouped_by_owner_month(chat_client, db_session) -> None:
+    from charie.shared.settings import set_setting
+
+    log_in(chat_client)
+    set_setting(db_session, "time_zone", IST)
+    _call(db_session, "write_answer", "chat", "0.0042", at=OCTOBER_LAST)
+    _call(db_session, "write_answer", "chat", "0.0010", at=NOV)
+    november = _get(chat_client, "2026-11")
+    assert november["spent_usd"] == 0.0052
+    first = next(day for day in november["per_day"] if day["date"] == "2026-11-01")
+    assert first["questions_usd"] == 0.0042
+    assert _get(chat_client, "2026-10")["spent_usd"] == 0.0
+
+
+def test_top_questions_follow_owner_month(chat_client, db_session) -> None:
+    from charie.shared.settings import set_setting
+
+    log_in(chat_client)
+    set_setting(db_session, "time_zone", IST)
+    db_session.add(Chat(title="Boundary"))
+    db_session.flush()
+    chat_id = db_session.query(Chat).one().id
+    db_session.add(Message(chat_id=chat_id, role="user", text_="Late question?"))
+    db_session.flush()
+    db_session.add(
+        Message(
+            chat_id=chat_id,
+            role="assistant",
+            text_="",
+            started_at=OCTOBER_LAST,
+            cost_usd=0.01,
+            seconds=3,
+            steps=1,
+        )
+    )
+    db_session.commit()
+    november = _get(chat_client, "2026-11")["top_questions"]
+    assert [row["message_id"] for row in november] != []
+    assert november[0]["question"] == "Late question?"
+    assert _get(chat_client, "2026-10")["top_questions"] == []

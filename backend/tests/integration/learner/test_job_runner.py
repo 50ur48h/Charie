@@ -15,7 +15,7 @@ from charie.shared.tables.learning import Job
 @pytest.fixture(autouse=True)
 def _clean_handlers():
     yield
-    for kind in ["test_ok", "test_boom", "test_paused", "test_slow", "test_dup"]:
+    for kind in ["test_ok", "test_boom", "test_paused", "test_slow", "test_dup", "test_interrupt"]:
         HANDLERS.pop(kind, None)
 
 
@@ -105,3 +105,19 @@ def test_same_kind_twice_refused() -> None:
 def test_main_without_jobs_says_so(db, capsys) -> None:
     assert runner.main([]) == 0
     assert capsys.readouterr().out == "No jobs are due.\n"
+
+
+def test_interrupt_requeues_without_using_a_try(db) -> None:
+    @job_handler("test_interrupt")
+    def handle(info) -> None:
+        raise KeyboardInterrupt()
+
+    with session_scope() as session:
+        job_id = add_job(session, "test_interrupt", {})
+    with pytest.raises(KeyboardInterrupt):
+        runner.run_due_jobs("w")
+    row = _get(job_id)
+    assert row.status == "queued"
+    assert row.attempts == 0
+    assert row.worker is None and row.locked_at is None and row.heartbeat_at is None
+    assert runner._current_job_id is None

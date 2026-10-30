@@ -3,7 +3,7 @@
 import pytest
 from cryptography.fernet import Fernet
 
-from charie.shared.config import ConfigError, get_settings
+from charie.shared.config import ConfigError, Settings, get_settings
 from charie.shared.crypto import decrypt_text, encrypt_text
 
 
@@ -33,7 +33,9 @@ def test_wrong_key_message(monkeypatch) -> None:
 
 
 def test_missing_key_message(monkeypatch) -> None:
-    monkeypatch.delenv("CHARIE_ENCRYPTION_KEY", raising=False)
-    get_settings.cache_clear()
+    monkeypatch.setattr(
+        "charie.shared.config.get_settings",
+        lambda: Settings(charie_encryption_key=None),
+    )
     with pytest.raises(ConfigError, match="CHARIE_ENCRYPTION_KEY is missing"):
         encrypt_text("s3cret-password")
