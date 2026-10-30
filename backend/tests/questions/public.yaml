@@ -1,2 +1,254 @@
 # Muse Code's public test questions. Format: docs/architecture/08-testing-plan.md.
-[]
+#
+# Meanings the answer keys use (the owner notes; Phase 9 checks the learner
+# against these, so they never bend to make a key easier):
+# 1. Completed orders: `delivered` is the only order status; there are no
+#    cancelled or failed rows to leave out.
+# 2. Dates come from `public.orders.created_at`, which has no time zone.
+# Dates: as stored
+# 3. Net sales (what "sales" means) = SUM(total_amount - tax_amount - delivery_fee):
+#    food and drink after coupon discounts. Gross sales = SUM(total_amount),
+#    which keeps tax and delivery fees. Orders = count. Average order value =
+#    net sales divided by orders. Items sold = SUM(order_items.quantity).
+# 4. Periods: calendar months and quarters; weeks run Monday to Sunday.
+#    "Today" is Wed 31 Dec 2025 (the last day of data), "this year" is 2025,
+#    and "this week" is 29-31 Dec 2025 (only 3 days).
+# 5. Cuisines come through `public.restaurant_cuisines`; a restaurant with
+#    2 cuisines counts fully under each.
+# 6. Mozzarella use is `charie.order_ingredient_usage` (grams, so kg = sum / 1000),
+#    a recipe-based estimate; waste from `charie.waste_events` is never added.
+# 7. Percentages are percentage points: 6.2 means 6.2%, as in 09's chart values.
+- id: clear-001
+  kind: clear
+  smoke: true
+  chat: []
+  question: How many orders did we have in December 2025, and what were net sales?
+  expect:
+    numbers:
+      - name: orders
+        value: 25064
+        tolerance: 2
+      - name: net sales
+        value: '1354004.6300'
+        tolerance: 1
+    must_say:
+      - Dec 2025
+    must_not_say: []
+    should_ask: false
+  answer_key_sql: SELECT COUNT(*), ROUND(SUM(o.total_amount - o.tax_amount - o.delivery_fee)::numeric, 4) FROM public.orders o WHERE o.created_at >= DATE '2025-12-01' AND o.created_at < DATE '2026-01-01'
+  checked_by: Muse Code, 2026-10-30
+  why_fair: A plain count and sum over a full month.
+- id: clear-002
+  kind: clear
+  smoke: true
+  chat: []
+  question: Net sales by cuisine for Q4 2025
+  expect:
+    numbers:
+      - name: no.1
+        value: '746765.4600'
+        tolerance: 1
+      - name: no.2
+        value: '585203.1800'
+        tolerance: 1
+    must_say:
+      - Indian
+      - Breakfast
+    must_not_say: []
+    should_ask: false
+  answer_key_sql: SELECT ROUND((SELECT SUM(o.total_amount - o.tax_amount - o.delivery_fee) FROM public.orders o JOIN public.restaurants r ON r.id = o.restaurant_id JOIN public.restaurant_cuisines rc ON rc.restaurant_id = r.id JOIN public.cuisine_types t ON t.id = rc.cuisine_type_id WHERE o.created_at >= DATE '2025-10-01' AND o.created_at < DATE '2026-01-01' GROUP BY t.name ORDER BY 1 DESC LIMIT 1)::numeric, 4), ROUND((SELECT SUM(o.total_amount - o.tax_amount - o.delivery_fee) FROM public.orders o JOIN public.restaurants r ON r.id = o.restaurant_id JOIN public.restaurant_cuisines rc ON rc.restaurant_id = r.id JOIN public.cuisine_types t ON t.id = rc.cuisine_type_id WHERE o.created_at >= DATE '2025-10-01' AND o.created_at < DATE '2026-01-01' GROUP BY t.name ORDER BY 1 DESC LIMIT 1 OFFSET 1)::numeric, 4)
+  checked_by: Muse Code, 2026-10-30
+  why_fair: Top 2 is a plain ranking; net sales is the house meaning.
+- id: clear-003
+  kind: clear
+  smoke: false
+  chat: []
+  question: Which 5 restaurants had the highest net sales in 2025?
+  expect:
+    numbers:
+      - name: no.1
+        value: '271735.8600'
+        tolerance: 1
+      - name: no.5
+        value: '260261.8800'
+        tolerance: 1
+    must_say:
+      - Grimes Inc
+      - Kovacek-Connelly - Connelly
+    must_not_say: []
+    should_ask: false
+  answer_key_sql: SELECT ROUND((SELECT SUM(o.total_amount - o.tax_amount - o.delivery_fee) FROM public.orders o JOIN public.restaurants r ON r.id = o.restaurant_id WHERE o.created_at >= DATE '2025-01-01' AND o.created_at < DATE '2026-01-01' GROUP BY r.name ORDER BY 1 DESC LIMIT 1)::numeric, 4), ROUND((SELECT SUM(o.total_amount - o.tax_amount - o.delivery_fee) FROM public.orders o JOIN public.restaurants r ON r.id = o.restaurant_id WHERE o.created_at >= DATE '2025-01-01' AND o.created_at < DATE '2026-01-01' GROUP BY r.name ORDER BY 1 DESC LIMIT 1 OFFSET 4)::numeric, 4)
+  checked_by: Muse Code, 2026-10-30
+  why_fair: A plain top-5 ranking; the key stores no. 1 and no. 5.
+- id: clear-004
+  kind: clear
+  smoke: false
+  chat: []
+  question: How many items did we sell in Q3 2025, and in how many orders?
+  expect:
+    numbers:
+      - name: items
+        value: 324091
+        tolerance: 2
+      - name: orders
+        value: 65842
+        tolerance: 2
+    must_say:
+      - Q3 2025 | Sep 2025
+    must_not_say: []
+    should_ask: false
+  answer_key_sql: SELECT ROUND(SUM(i.quantity)::numeric, 4), COUNT(DISTINCT o.id) FROM public.orders o JOIN public.order_items i ON i.order_id = o.id WHERE o.created_at >= DATE '2025-07-01' AND o.created_at < DATE '2025-10-01'
+  checked_by: Muse Code, 2026-10-30
+  why_fair: Plain sums over a full quarter.
+- id: vague-001
+  kind: vague
+  smoke: true
+  chat: []
+  question: How are we doing?
+  expect:
+    numbers:
+      - name: net sales
+        value: '1354004.6300'
+        tolerance: 1
+      - name: orders
+        value: 25064
+        tolerance: 2
+      - name: average order
+        value: '54.0219'
+        tolerance: '0.01'
+    must_say:
+      - I read this as
+      - Dec 2025
+    must_not_say: []
+    should_ask: false
+  answer_key_sql: SELECT ROUND(SUM(o.total_amount - o.tax_amount - o.delivery_fee)::numeric, 4), COUNT(*), ROUND((SUM(o.total_amount - o.tax_amount - o.delivery_fee) / COUNT(*))::numeric, 4) FROM public.orders o WHERE o.created_at >= DATE '2025-12-01' AND o.created_at < DATE '2026-01-01'
+  checked_by: Muse Code, 2026-10-30
+  why_fair: Vague on purpose; the only full recent month is December 2025, and a good answer says so.
+- id: vague-002
+  kind: vague
+  smoke: true
+  chat: []
+  question: Which are our best restaurants?
+  expect:
+    numbers: []
+    must_say: []
+    must_not_say: []
+    should_ask: true
+  answer_key_sql: ''
+  checked_by: Muse Code, 2026-10-30
+  why_fair: Too vague to name restaurants; a good answer asks what "best" means.
+- id: vague-003
+  kind: vague
+  smoke: false
+  chat: []
+  question: What were sales today?
+  expect:
+    numbers:
+      - name: net sales
+        value: '43688.5500'
+        tolerance: 1
+    must_say:
+      - 31 Dec 2025
+    must_not_say: []
+    should_ask: false
+  answer_key_sql: SELECT ROUND(SUM(o.total_amount - o.tax_amount - o.delivery_fee)::numeric, 4) FROM public.orders o WHERE o.created_at >= DATE '2025-12-31' AND o.created_at < DATE '2026-01-01'
+  checked_by: Muse Code, 2026-10-30
+  why_fair: '"Today" is the last day of data, 31 Dec 2025.'
+- id: vague-004
+  kind: vague
+  smoke: false
+  chat: []
+  question: How much have sales grown this year?
+  expect:
+    numbers:
+      - name: 2025 net sales
+        value: '13503213.3600'
+        tolerance: 1
+      - name: 2024 net sales
+        value: '8188255.6600'
+        tolerance: 1
+      - name: change
+        value: '64.9095'
+        tolerance: '0.01'
+    must_say:
+      - I read this as
+      - '2024'
+    must_not_say: []
+    should_ask: false
+  answer_key_sql: SELECT ROUND(SUM(CASE WHEN o.created_at >= DATE '2025-01-01' THEN o.total_amount - o.tax_amount - o.delivery_fee END)::numeric, 4), ROUND(SUM(CASE WHEN o.created_at < DATE '2025-01-01' THEN o.total_amount - o.tax_amount - o.delivery_fee END)::numeric, 4), ROUND(((SUM(CASE WHEN o.created_at >= DATE '2025-01-01' THEN o.total_amount - o.tax_amount - o.delivery_fee END) - SUM(CASE WHEN o.created_at < DATE '2025-01-01' THEN o.total_amount - o.tax_amount - o.delivery_fee END)) / SUM(CASE WHEN o.created_at < DATE '2025-01-01' THEN o.total_amount - o.tax_amount - o.delivery_fee END) * 100)::numeric, 4) FROM public.orders o WHERE o.created_at >= DATE '2024-01-01' AND o.created_at < DATE '2026-01-01'
+  checked_by: Muse Code, 2026-10-30
+  why_fair: Both years are complete; the change is in percentage points.
+# naive answer: 3343167.23 (the join counts orders with 2+ items over $15 twice)
+- id: trap-001
+  kind: trap
+  smoke: true
+  chat: []
+  question: In Q4 2025, how much did customers spend in total on orders that included at least one item priced over $15?
+  expect:
+    numbers:
+      - name: gross sales
+        value: '2321980.9100'
+        tolerance: '0.005'
+      - name: orders
+        value: 27557
+        tolerance: '0.005'
+    must_say: []
+    must_not_say: []
+    should_ask: false
+  answer_key_sql: SELECT ROUND(SUM(o.total_amount)::numeric, 4), COUNT(*) FROM public.orders o WHERE o.created_at >= DATE '2025-10-01' AND o.created_at < DATE '2026-01-01' AND o.id IN (SELECT i.order_id FROM public.order_items i WHERE i.unit_price > 15)
+  checked_by: Muse Code, 2026-10-30
+  why_fair: $15 is the nearest whole $5 to $20 with 20-80% of Q4 2025 orders qualifying (38.1%); the naive join double-counts.
+# naive answer: 54.1956 (the average of restaurant averages lands on the same value)
+- id: trap-002
+  kind: trap
+  smoke: false
+  chat: []
+  question: What was the average order value across our restaurants in 2025?
+  expect:
+    numbers:
+      - name: average order
+        value: '54.1956'
+        tolerance: '0.0001'
+    must_say: []
+    must_not_say: []
+    should_ask: false
+  answer_key_sql: SELECT ROUND((SUM(o.total_amount - o.tax_amount - o.delivery_fee) / COUNT(*))::numeric, 4) FROM public.orders o WHERE o.created_at >= DATE '2025-01-01' AND o.created_at < DATE '2026-01-01'
+  checked_by: Muse Code, 2026-10-30
+  why_fair: The gap is under 0.0002, so the judge catches this trap, not the numbers.
+# naive answer: 315337.89 (a full 7-day week, 25-31 Dec)
+- id: trap-003
+  kind: trap
+  smoke: false
+  chat: []
+  question: How are sales this week compared with last week?
+  expect:
+    numbers:
+      - name: net sales
+        value: '133291.2600'
+        tolerance: '0.005'
+    must_say:
+      - 31 Dec 2025
+      - 3 days | three days | partial
+    must_not_say: []
+    should_ask: false
+  answer_key_sql: SELECT ROUND(SUM(o.total_amount - o.tax_amount - o.delivery_fee)::numeric, 4) FROM public.orders o WHERE o.created_at >= DATE '2025-12-29' AND o.created_at < DATE '2026-01-01'
+  checked_by: Muse Code, 2026-10-30
+  why_fair: This week is 3 days (data ends 31 Dec); a full 7-day week overstates it.
+# naive answer: 1137.0205 (usage plus waste)
+- id: trap-004
+  kind: trap
+  smoke: false
+  chat: []
+  question: How much mozzarella did we use in July 2025?
+  expect:
+    numbers:
+      - name: mozzarella kg
+        value: '1119.6525'
+        tolerance: '0.005'
+    must_say:
+      - estimate
+    must_not_say: []
+    should_ask: false
+  answer_key_sql: SELECT ROUND((SUM(qty_used) / 1000)::numeric, 4) FROM charie.order_ingredient_usage WHERE ingredient_id = 1 AND usage_date >= DATE '2025-07-01' AND usage_date < DATE '2025-08-01'
+  checked_by: Muse Code, 2026-10-30
+  why_fair: Usage is a recipe-based estimate in grams; waste is never added.

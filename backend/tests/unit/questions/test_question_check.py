@@ -64,7 +64,30 @@ def test_template_is_valid(capsys) -> None:
     )
 
 
-def test_empty_public_file_is_valid(capsys) -> None:
-    code = check.run(["--set", "public", "--file", str(QUESTIONS / "public.yaml")])
+def test_list_refuses_hidden(capsys) -> None:
+    code = check.run(["--set", "hidden", "--list", "--file", str(FIXTURES / "good_hidden.yaml")])
+    assert code == 1
+    out = capsys.readouterr().out
+    assert "The hidden set is never listed." in out
+    assert "delivered" not in out
+
+
+def test_run_keys_hidden_prints_only_ids(capsys, monkeypatch) -> None:
+    monkeypatch.setattr(
+        check,
+        "run_answer_key",
+        lambda question: [number.value for number in question.expect.numbers],
+    )
+    code = check.run(
+        ["--set", "hidden", "--file", str(FIXTURES / "good_hidden.yaml"), "--run-keys"]
+    )
     assert code == 0
-    assert "public.yaml is valid: 0 questions (). Smoke: 0." in capsys.readouterr().out
+    lines = capsys.readouterr().out.splitlines()
+    assert lines == ["h01: matches.", "h02: matches."]
+
+
+def test_list_public_table(capsys) -> None:
+    code = check.run(["--set", "public", "--file", str(FIXTURES / "good_public.yaml"), "--list"])
+    assert code == 0
+    out = capsys.readouterr().out
+    assert out.startswith("| id | kind | smoke | chat | question | expected numbers | why_fair |")
