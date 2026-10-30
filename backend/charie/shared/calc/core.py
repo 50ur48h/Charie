@@ -83,7 +83,8 @@ class ResultTable:
                         _to_decimal(value) if self._shapes[position] is not None else value
                     )
                 values.append(converted)
-            self._connection.executemany(f"INSERT INTO rows VALUES ({placeholders})", values)
+            if values:
+                self._connection.executemany(f"INSERT INTO rows VALUES ({placeholders})", values)
         except Exception:
             self._connection.close()
             raise

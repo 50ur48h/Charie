@@ -31,6 +31,13 @@ def test_total_of_nothing_is_none() -> None:
         assert table.total("v") is None
 
 
+def test_empty_result_table() -> None:
+    with ResultTable(["name", "v"], []) as table:
+        assert table.total("v") is None
+        assert table.rows_sorted("v") == []
+        assert table.rank("v") == []
+
+
 def test_difference_negative() -> None:
     assert difference(Decimal("93.80"), Decimal("100.00")) == Decimal("-6.20")
 
