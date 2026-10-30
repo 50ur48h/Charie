@@ -136,6 +136,12 @@ def test_judge_cost_added_to_row() -> None:
 
 def test_judge_cost_kept_when_judge_fails() -> None:
     question = load_questions(FIXTURES / "mini.yaml", "public")[0]
+    answer = TestAnswer(
+        text="orders: 100.",
+        numbers=[ShownNumber(label="orders", value=Decimal("100"))],
+        cost_usd=Decimal("1.25"),
+        earlier_turns_cost_usd=Decimal("0.50"),
+    )
 
     def _fail_judge(asked: Question, given: TestAnswer) -> JudgeVerdict:
         raise RuntimeError("judge is down")
@@ -146,14 +152,14 @@ def test_judge_cost_kept_when_judge_fails() -> None:
         mode="fresh",
         kind=None,
         some=False,
-        answer=lambda asked, private: fake_answer(asked, {}),
+        answer=lambda asked, private: answer,
         judge=_fail_judge,
         started_at=MINI_START,
         total_seconds=0.0,
         private=False,
         client=_ChargingClient(Decimal("2.00"), Decimal("2.25")),
     )
-    assert [(row.outcome, row.cost_usd) for row in report.results] == [("error", Decimal("0.25"))]
+    assert [(row.outcome, row.cost_usd) for row in report.results] == [("error", Decimal("2.00"))]
 
 
 def test_fake_answer_copies_the_key() -> None:

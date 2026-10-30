@@ -5,6 +5,7 @@ import os
 import sys
 import time
 from collections.abc import Callable
+from dataclasses import replace
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -84,7 +85,7 @@ def run_questions(
             try:
                 verdict = judge(question, test_answer)
             except Exception as err:  # noqa: BLE001 - any judge failure is an error row
-                test_answer = _error_answer(f"The judge failed: {err}")
+                test_answer = replace(test_answer, status="error", error=f"The judge failed: {err}")
             finally:
                 if client is not None:
                     judge_cost = client.month_spent(datetime.now(UTC)) - before
