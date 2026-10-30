@@ -15,6 +15,10 @@ ONE_SELECT = "one_select"
 ALLOWED_TABLES = "allowed_tables"
 FUNCTIONS = "functions"
 REQUIRED_FILTERS = "required_filters"
+COUNTING = "counting"
+AVERAGING = "averaging"
+EXPLICIT_COLUMNS = "explicit-columns"
+HEAVY_QUERY = "heavy_query"
 
 _SYSTEM_SCHEMAS = ("pg_catalog", "information_schema")
 
@@ -190,6 +194,9 @@ def check_sql(sql: str, catalog: Catalog, *, max_rows: int = 50_000) -> CheckRep
                 seen_tables.append(name)
         _rule_functions(tree, fail)
         _rule_required_filters(tree, catalog, fail)
+        _rule_counting(tree, fail)
+        _rule_averaging(tree, catalog, fail)
+        _rule_explicit_columns(tree, fail)
 
     if len(trees) == 1 and isinstance(trees[0], exp.Select):
         _apply_limit(trees[0], max_rows)
@@ -249,7 +256,7 @@ def _direct_tables(scope) -> list:
         return []
     nodes = [from_.this]
     nodes.extend(from_.args.get("expressions", []))
-    for join in from_.args.get("joins", []):
+    for join in expression.args.get("joins", []):
         nodes.append(join.this)
     return [node for node in nodes if isinstance(node, exp.Table)]
 
@@ -407,6 +414,147 @@ def _rule_required_filters(tree: exp.Expression, catalog: Catalog, fail) -> None
                         f"This query uses `{full}` but leaves out a required filter: "
                         f"{filt.reason} (`{filt.sql}`).",
                     )
+
+
+def _own_nodes(scope, kind) -> list:
+    """Nodes of one kind in this scope's own SELECT list and HAVING."""
+    expression = scope.expression
+    if not isinstance(expression, exp.Select):
+        return []
+    found: list = []
+    areas = list(expression.args.get("expressions", []))
+    having = expression.args.get("having")
+    if having is not None:
+        areas.append(having)
+
+    def visit(node: exp.Expression) -> None:
+        if isinstance(node, exp.Select) and node is not expression:
+            return
+        if isinstance(node, kind):
+            found.append(node)
+        for child in node.iter_expressions():
+            visit(child)
+
+    for area in areas:
+        visit(area)
+    return found
+
+
+def _rule_counting(tree: exp.Expression, fail) -> None:
+    """Rule 5: COUNT over more than one table belongs in a learning run."""
+    for scope in traverse_scope(tree):
+        counts = _own_nodes(scope, exp.Count)
+        if not counts:
+            continue
+        if len(_direct_real_tables(scope)) > 1:
+            fail(
+                COUNTING,
+                "`COUNT` counts rows; counts over one table at once only make sense "
+                "in a learning run.",
+            )
+            return
+
+
+def _direct_real_tables(scope) -> list:
+    """Normalized names of the real tables one SELECT reads itself."""
+    if not isinstance(scope.expression, exp.Select):
+        return []
+    ctes = set()
+    for source in scope.cte_sources:
+        ctes.add(str(source).lower() if not isinstance(source, str) else source.lower())
+    names = []
+    for table in _direct_tables(scope):
+        if isinstance(table.this, exp.Func):
+            continue
+        if table.name.lower() in ctes:
+            continue
+        full = normalize_table(f"{table.db}.{table.name}" if table.db else table.name)
+        if full not in names:
+            names.append(full)
+    return names
+
+
+def _rule_averaging(tree: exp.Expression, catalog: Catalog, fail) -> None:
+    """Rule 6: AVG only over a listed pre-computed average column."""
+    wanted = {name.lower() for name in catalog.average_columns}
+    first = catalog.average_columns[0] if catalog.average_columns else None
+    for node in tree.find_all(exp.Avg):
+        arg = node.this
+        names = set()
+        if arg is not None:
+            names.add(arg.sql(dialect="postgres").lower())
+            for column in arg.find_all(exp.Column):
+                names.add(column.name.lower())
+        if not names.intersection(wanted):
+            if first is None:
+                reason = (
+                    "`AVG` only makes sense over a listed average column: use one of "
+                    "Charie's pre-computed averages instead."
+                )
+            else:
+                reason = (
+                    f"`AVG` only makes sense over `{first}`: use one of Charie's "
+                    "pre-computed averages instead."
+                )
+            fail(AVERAGING, reason)
+
+
+def _rule_explicit_columns(tree: exp.Expression, fail) -> None:
+    """Rule: name the columns; bare `*` fails, `t.*` needs one table."""
+    for scope in traverse_scope(tree):
+        if not isinstance(scope.expression, exp.Select):
+            continue
+        real = _direct_real_tables(scope)
+        for item in scope.expression.args.get("expressions", []):
+            if isinstance(item, exp.Star):
+                if real:
+                    fail(
+                        EXPLICIT_COLUMNS,
+                        f"This query would read a whole `{real[0]}` row: name the "
+                        "columns it needs. (Rule: explicit-columns)",
+                    )
+                continue
+            if isinstance(item, exp.Column) and isinstance(item.this, exp.Star):
+                if len(real) == 1:
+                    continue
+                full = None
+                qualifier = (item.table or "").lower()
+                for name in real:
+                    if name.split(".", 1)[1] == qualifier:
+                        full = name
+                        break
+                fail(
+                    EXPLICIT_COLUMNS,
+                    f"This query would read a whole `{full or real[0] if real else '?'}` row: "
+                    "name the columns it needs. (Rule: explicit-columns)",
+                )
+
+
+def plan_rows(connector, sql: str) -> int | None:
+    """The planner's own row estimate for one query, or None when unclear."""
+    import re
+
+    result = connector.run_query("EXPLAIN " + sql)
+    text = "\n".join(str(cell) for row in result.rows for cell in row)
+    match = re.search(r"rows=(\d+)", text)
+    return int(match.group(1)) if match else None
+
+
+def explain_plan(sql: str, catalog: Catalog, connector, max_rows: int = 50_000) -> str | None:
+    """The database's own row estimate, or None when it agrees the plan is cheap.
+
+    Never runs a blocked query: the checker goes first.
+    """
+    report = check_sql(sql, catalog, max_rows=max_rows)
+    if not report.ok:
+        return None
+    rows = plan_rows(connector, report.sql)
+    if rows is None or rows < max_rows:
+        return None
+    return (
+        f"Postgres thinks this query reads about {rows} rows, over the {max_rows} row "
+        "limit. Narrow it down: add a filter, a GROUP BY, or a smaller LIMIT."
+    )
 
 
 def _apply_limit(top: exp.Select, max_rows: int) -> None:

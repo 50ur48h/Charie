@@ -15,6 +15,7 @@ CATALOG = Catalog(
             reason="completed orders only",
         )
     ],
+    average_columns=["avg_revenue"],
 )
 
 # (id, sql, ok, rule or None).
@@ -84,7 +85,7 @@ CASES = [
     ),
     (
         "filter_exact",
-        "SELECT * FROM orders WHERE orders.status = 'completed'",
+        "SELECT id FROM orders WHERE orders.status = 'completed'",
         True,
         None,
     ),
@@ -113,7 +114,50 @@ CASES = [
     ),
     ("now_ok", "SELECT now()", True, None),
     ("lock_table", "LOCK TABLE restaurants", False, "one_select"),
-    ("schema_table_ok", "SELECT * FROM public.restaurants", True, None),
+    ("schema_table_ok", "SELECT id FROM public.restaurants", True, None),
+    (
+        "count_two_tables",
+        "SELECT COUNT(*) FROM orders o JOIN order_items i ON i.order_id = o.id "
+        "WHERE o.status = 'completed'",
+        False,
+        "counting",
+    ),
+    (
+        "count_single_table",
+        "SELECT COUNT(*) FROM orders WHERE orders.status = 'completed'",
+        True,
+        None,
+    ),
+    (
+        "avg_unlisted",
+        "SELECT AVG(total) FROM orders WHERE orders.status = 'completed'",
+        False,
+        "averaging",
+    ),
+    (
+        "avg_listed",
+        "SELECT AVG(avg_revenue) FROM orders WHERE orders.status = 'completed'",
+        True,
+        None,
+    ),
+    (
+        "bare_star_many_tables",
+        "SELECT * FROM restaurants, orders WHERE orders.status = 'completed'",
+        False,
+        "explicit-columns",
+    ),
+    (
+        "qualified_star_one_table",
+        "SELECT r.* FROM restaurants r",
+        True,
+        None,
+    ),
+    (
+        "qualified_star_two_tables",
+        "SELECT r.* FROM restaurants r JOIN orders o ON o.id = r.id WHERE o.status = 'completed'",
+        False,
+        "explicit-columns",
+    ),
 ]
 
 
