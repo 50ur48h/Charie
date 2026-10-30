@@ -158,7 +158,15 @@ def post_resume(session: Session = Depends(get_session)) -> dict:
     )
     if run is None:
         raise ApiError(404, "nothing_to_resume", "No paused or stopped learning run to resume.")
-    if not runs.resume_run(session, run.id):
+    try:
+        resumed = runs.resume_run(session, run.id)
+    except runs.RunActiveError as err:
+        raise ApiError(
+            409,
+            "run_active",
+            "Charie is already learning. Try again when this run is done.",
+        ) from err
+    if not resumed:
         raise ApiError(
             409,
             "spending_paused",

@@ -8,6 +8,7 @@ from sqlalchemy.orm.attributes import flag_modified
 
 from charie.learner.api.sources import saved_password, saved_source
 from charie.learner.events import add_event
+from charie.learner.locks import RunActiveError, serialize_learning_runs
 from charie.learner.steps.base import STEP_NUMBERS, STEPS, Step, StepContext
 from charie.shared.ai.errors import SpendingPaused
 from charie.shared.ai.spending import month_spent, spending_state
@@ -31,8 +32,8 @@ TERMINAL_STATUSES = ("done", "failed")
 MADE_BY = {"first": "first_learning", "refresh": "refresh", "nightly": "nightly"}
 
 
-class RunActiveError(Exception):
-    """A learning run is already going; resume or wait for it."""
+# Re-exported so existing imports keep working; locks.py owns it.
+__all__ = ["RunActiveError"]
 
 
 def active_run(session: Session) -> LearningRun | None:
@@ -72,14 +73,12 @@ def start_run(
     for name in ordered:
         if name not in STEPS:
             raise ValueError(f"Step `{name}` has no implementation yet.")
-    locked = session.scalar(
-        select(LearningRun)
-        .where(LearningRun.status.in_(ACTIVE_STATUSES))
-        .with_for_update()
-        .limit(1)
+    serialize_learning_runs(session)
+    active = session.scalar(
+        select(LearningRun).where(LearningRun.status.in_(ACTIVE_STATUSES)).limit(1)
     )
-    if locked is not None:
-        raise RunActiveError(f"A learning run is already {locked.status}.")
+    if active is not None:
+        raise RunActiveError(f"A learning run is already {active.status}.")
     draft = get_or_create_draft(session, _made_by(kind))
     run = LearningRun(
         kind=kind,
@@ -135,10 +134,24 @@ def _queue_step(session: Session, run: LearningRun, step: Step) -> None:
     entry = run.progress["steps"][step.name]
     entry["total"] = len(ids)
     entry["jobs"] = ids
+    if not ids:
+        entry["note"] = step.empty_note
     flag_modified(run, "progress")
     total = len(run.progress["order"])
     position = run.progress["order"].index(step.name) + 1
     ctx.say("info", f"Step {position} of {total}: {step.title}.")
+    if not ids:
+        # Nothing to run: move on now, since no worker ever will.
+        advance_run(session, run.id)
+
+
+def _record_step_progress(session: Session, run: LearningRun, name: str) -> None:
+    """Persist how many of the step's jobs are done (recomputed, so retries stay honest)."""
+    jobs = _step_jobs(session, run, name)
+    entry = run.progress["steps"][name]
+    entry["done"] = sum(1 for job in jobs if job.status == "done")
+    entry["total"] = len(jobs)
+    flag_modified(run, "progress")
 
 
 def _step_jobs(session: Session, run: LearningRun, name: str) -> list[Job]:
@@ -253,9 +266,17 @@ def resume_run(session: Session, run_id: int) -> bool:
     failed retry requeues only failed jobs with fresh attempts, so done
     work is never repeated. Queued (unrun) jobs simply wait again.
     """
+    serialize_learning_runs(session)
     run = session.get(LearningRun, run_id, with_for_update=True)
     if run is None or run.status not in ("paused", "failed"):
         return False
+    other = session.scalar(
+        select(LearningRun.id)
+        .where(LearningRun.status.in_(ACTIVE_STATUSES), LearningRun.id != run_id)
+        .limit(1)
+    )
+    if other is not None:
+        raise RunActiveError("A learning run is already going.")
     was_failed = run.status == "failed"
     if not _spending_ok(session):
         return False
@@ -279,9 +300,17 @@ def resume_run(session: Session, run_id: int) -> bool:
 
 def resume_after_spending_raise(session: Session, run_id: int) -> bool:
     """Resume budget-paused work after the budget check passes; nothing else."""
+    serialize_learning_runs(session)
     run = session.get(LearningRun, run_id, with_for_update=True)
     if run is None or run.status != "paused" or run.paused_by != "spending":
         return False
+    other = session.scalar(
+        select(LearningRun.id)
+        .where(LearningRun.status.in_(ACTIVE_STATUSES), LearningRun.id != run_id)
+        .limit(1)
+    )
+    if other is not None:
+        raise RunActiveError("A learning run is already going.")
     if not _spending_ok(session):
         return False
     run.status = "running"
@@ -292,7 +321,12 @@ def resume_after_spending_raise(session: Session, run_id: int) -> bool:
 
 
 def run_step_job(info: JobInfo) -> None:
-    """The handler for step jobs: do the step's work, then advance the run."""
+    """The handler for step jobs: do the step's work, then advance the run.
+
+    Step work runs inside a savepoint: a failed attempt rolls its partial
+    writes back, while the run and job failure settle durably in the
+    outer transaction — even when the step broke the database.
+    """
     with session_scope() as session:
         run = session.get(LearningRun, info.run_id, with_for_update=True)
         if run is None or run.status in TERMINAL_STATUSES:
@@ -302,18 +336,22 @@ def run_step_job(info: JobInfo) -> None:
         if step is None:
             raise ValueError(f"Step `{name}` is not registered.")
         ctx = _context(session, run)
+        savepoint = session.begin_nested()
         try:
             step.run_job(info, ctx)
         except SpendingPaused:
+            savepoint.rollback()
             pause_run(session, run.id, "spending")
             session.commit()
             raise
         except Exception as err:
+            savepoint.rollback()
             if info.attempts >= 3:
                 fail_run(session, run.id, f"{step.title} failed: {err}.")
                 session.commit()
             raise
         finish_job(session, info.id, "done")
+        _record_step_progress(session, run, name)
         advance_run(session, run.id)
 
 

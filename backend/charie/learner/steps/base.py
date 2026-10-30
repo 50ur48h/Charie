@@ -53,6 +53,7 @@ class Step:
     make_jobs: Callable[[StepContext], list[dict[str, Any]]]
     run_job: Callable[[Any, StepContext], None]
     finish: Callable[[StepContext], None] = lambda ctx: None
+    empty_note: str = "Nothing to do."
 
 
 STEPS: dict[str, Step] = {}

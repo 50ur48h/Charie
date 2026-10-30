@@ -3,6 +3,7 @@
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from charie.learner.locks import serialize_learning_runs
 from charie.shared.tables.knowledge import KbEntry, KbVersion
 
 
@@ -22,6 +23,7 @@ def get_or_create_draft(session: Session, made_by: str) -> KbVersion:
     A new draft copies every entry of the published version (if any),
     keeping keys. Copies write no `kb_changes`.
     """
+    serialize_learning_runs(session)
     draft = get_draft(session)
     if draft is not None:
         return draft
