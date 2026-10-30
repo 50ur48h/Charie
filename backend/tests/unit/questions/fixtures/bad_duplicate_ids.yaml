@@ -1,0 +1,24 @@
+- id: clear-001
+  kind: clear
+  smoke: false
+  chat: []
+  question: First?
+  expect:
+    numbers:
+      - name: orders
+        value: 1
+  answer_key_sql: SELECT 1
+  checked_by: Muse Code, 2026-10-30
+  why_fair: Plain.
+- id: clear-001
+  kind: clear
+  smoke: false
+  chat: []
+  question: Second?
+  expect:
+    numbers:
+      - name: orders
+        value: 2
+  answer_key_sql: SELECT 1
+  checked_by: Muse Code, 2026-10-30
+  why_fair: Plain.

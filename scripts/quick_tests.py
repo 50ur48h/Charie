@@ -32,7 +32,7 @@ def commands_for(path):
     elif p.startswith("backend/tests/questions/"):
         commands.add(BACKEND_TEST + "tests/unit/questions")
     elif p.startswith("backend/charie/shared/"):
-        rest = p[len("backend/charie/shared/"):]
+        rest = p[len("backend/charie/shared/") :]
         if "/" in rest:
             folder = rest.split("/")[0]
             commands.add(BACKEND_TEST + f"tests/unit/{folder}")
@@ -63,14 +63,18 @@ class DiscoveryError(Exception):
 def git_output(args):
     try:
         result = subprocess.run(
-            ["git"] + args, capture_output=True, text=True, timeout=30,
+            ["git"] + args,
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
     except Exception as exc:
         raise DiscoveryError(f"git {' '.join(args)} could not run: {exc}")
     if result.returncode != 0:
         detail = (result.stderr or result.stdout or "").strip().splitlines()
         raise DiscoveryError(
-            f"git {' '.join(args)} failed: {detail[0] if detail else 'unknown error'}")
+            f"git {' '.join(args)} failed: {detail[0] if detail else 'unknown error'}"
+        )
     return result.stdout
 
 
@@ -118,8 +122,10 @@ def stop_reason(hook_payload, status, detail=""):
         return None
     if status == "failed":
         return "The quick tests failed. Fix the tests first, then finish."
-    return (f"The quick tests could not run ({detail}). "
-            "Fix that first, then finish. Unrun tests are not a pass.")
+    return (
+        f"The quick tests could not run ({detail}). "
+        "Fix that first, then finish. Unrun tests are not a pass."
+    )
 
 
 def self_test():
@@ -130,6 +136,7 @@ def self_test():
         ("frontend/shared/src/components/Button.tsx", ["npm", "test"]),
         ("frontend/chat/src/pages/Chat.tsx", ["npm", "e2e:mock"]),
         ("backend/charie/prompts/plan_round.md", ["tests/integration", "plan_round"]),
+        ("backend/tests/questions/format.py", ["tests/unit/questions"]),
         ("docs/STATUS.md", []),
         ("", []),
     ]
@@ -250,8 +257,9 @@ def main():
         return 0
     failed = run_commands(commands)
     if failed:
-        print(f"Quick tests failed ({len(failed)} of {len(commands)} commands). "
-              "Fix the tests first.")
+        print(
+            f"Quick tests failed ({len(failed)} of {len(commands)} commands). Fix the tests first."
+        )
         if is_stop_hook:
             reason = stop_reason(hook_payload, "failed")
             if reason:

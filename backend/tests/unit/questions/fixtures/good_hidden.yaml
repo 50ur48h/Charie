@@ -1,0 +1,27 @@
+- id: h01
+  kind: clear
+  smoke: false
+  chat: []
+  question: How many orders were delivered in December 2025?
+  expect:
+    numbers:
+      - name: orders
+        value: 33805
+        tolerance: 2
+  answer_key_sql: SELECT COUNT(*) FROM public.orders WHERE created_at >= '2025-12-01' AND created_at < '2026-01-01'
+  checked_by: Muse Code, 2026-10-30
+- id: h02
+  kind: follow_up
+  smoke: false
+  chat:
+    - |
+      Q: How many orders were delivered in December 2025?
+      A: 33,805 orders.
+  question: And in November?
+  expect:
+    numbers:
+      - name: orders
+        value: 33144
+        tolerance: 2
+  answer_key_sql: SELECT COUNT(*) FROM public.orders WHERE created_at >= '2025-11-01' AND created_at < '2025-12-01'
+  checked_by: Muse Code, 2026-10-30
