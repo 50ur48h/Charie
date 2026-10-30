@@ -71,6 +71,16 @@ JOB_SETTINGS["sort_owner_notes"] = JobSettings(
 )
 
 
+# P07.9 keeps the same thinking; one table's explanation stays small.
+JOB_SETTINGS["explain_table"] = JobSettings(
+    provider="meta",
+    model="muse-wonder-1.0",
+    reasoning_effort="high",
+    max_output_tokens=16_000,
+    timeout_seconds=300,
+)
+
+
 def get_job_settings(job: str) -> JobSettings:
     """The settings for a job, or an error naming the unknown job."""
     try:
