@@ -61,5 +61,5 @@ Link: fake answer, no link
 
 ## Spot-check
 
-Not checked yet (P06.6).
+No overrides yet.
 

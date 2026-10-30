@@ -13,7 +13,14 @@ from tests.questions.answers import TestAnswer, fake_answer
 from tests.questions.charie_answer import NotReadyError, charie_answer
 from tests.questions.format import Question, QuestionFileError, load_questions
 from tests.questions.judge import JudgeVerdict, fake_verdict, judge_answer
-from tests.questions.report import RunReport, ScoredQuestion, report_markdown, write_report
+from tests.questions.report import (
+    RunReport,
+    ScoredQuestion,
+    effective,
+    points_text,
+    report_markdown,
+    write_report,
+)
 from tests.questions.scoring import score_question
 
 REPO = Path(__file__).resolve().parents[3]
@@ -59,8 +66,8 @@ def run_questions(
     for question in questions:
         try:
             test_answer = answer(question, private)
-        except NotReadyError as err:
-            test_answer = _error_answer(str(err))
+        except NotReadyError:
+            raise
         except Exception as err:  # noqa: BLE001 - any answer failure is an error row
             test_answer = _error_answer(f"The answer failed: {err}")
         if test_answer.status == "error":
@@ -142,7 +149,7 @@ def _print_public(report: RunReport, markdown_path: Path) -> None:
 def _print_hidden(report: RunReport) -> None:
     """The hidden screen: ids and scores only, never any text."""
     for row in report.results:
-        print(f"{row.question_id}  {row.kind}  {row.points}")
+        print(f"{row.question_id}  {row.kind}  {points_text(effective(row))}")
     text = report_markdown(report)
     kinds = text.split("## Score by kind")[1].split("## Every question")[0]
     print("## Score by kind" + kinds)
@@ -163,6 +170,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--yes", action="store_true", help="The owner approved a fresh run.")
     args = parser.parse_args(argv)
 
+    if args.set == "hidden" and not HIDDEN_FILE.exists():
+        print("No hidden file yet. Follow P06.4 to create it.")
+        return 0
     ids = [piece.strip() for piece in args.ids.split(",") if piece.strip()] if args.ids else []
     try:
         questions = _select(args.set, args.kind, ids)
@@ -206,18 +216,22 @@ def main(argv: list[str] | None = None) -> int:
     private = args.set == "hidden"
     started_at = datetime.now(UTC)
     started = time.monotonic()
-    report = run_questions(
-        questions,
-        set_name=args.set,
-        mode=mode,
-        kind=args.kind,
-        some=bool(ids),
-        answer=answer_fn,
-        judge=judge_fn,
-        started_at=started_at,
-        total_seconds=0.0,
-        private=private,
-    )
+    try:
+        report = run_questions(
+            questions,
+            set_name=args.set,
+            mode=mode,
+            kind=args.kind,
+            some=bool(ids),
+            answer=answer_fn,
+            judge=judge_fn,
+            started_at=started_at,
+            total_seconds=0.0,
+            private=private,
+        )
+    except NotReadyError as err:
+        print(err)
+        return 1
     total = time.monotonic() - started
     report = RunReport(
         set_name=report.set_name,

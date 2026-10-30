@@ -47,9 +47,25 @@ def _best(report: RunReport) -> int:
     return len(report.results)
 
 
+def effective(row: ScoredQuestion) -> Decimal:
+    """The override wins when P06.6 sets one."""
+    return row.override_points if row.override_points is not None else row.points
+
+
+def points_text(value: Decimal) -> str:
+    """`+1`, `½`, `0`, `−1`: how scores read on screen."""
+    if value == Decimal(1):
+        return "+1"
+    if value == Decimal("0.5"):
+        return "½"
+    if value == Decimal(-1):
+        return "−1"
+    return str(value)
+
+
 def _points(report: RunReport) -> Decimal:
-    """Total points (P06.6 overrides already applied in the rows)."""
-    return sum((row.points for row in report.results), Decimal(0))
+    """Total points; totals use the override when set."""
+    return sum((effective(row) for row in report.results), Decimal(0))
 
 
 def _by_kind(report: RunReport) -> dict[str, list[ScoredQuestion]]:
@@ -91,7 +107,7 @@ def report_markdown(report: RunReport) -> str:
         "|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for kind, rows in kinds.items():
-        kind_points = sum((row.points for row in rows), Decimal(0))
+        kind_points = sum((effective(row) for row in rows), Decimal(0))
         kind_best = len(rows)
         kind_percent = (kind_points / kind_best * 100) if kind_best else Decimal(0)
         avg_time = sum(row.seconds for row in rows) / len(rows) if rows else 0.0
@@ -113,7 +129,7 @@ def report_markdown(report: RunReport) -> str:
         judge = f"{row.judge_score:.2f}" if row.judge_score is not None else "-"
         lines.append(
             f"| {row.question_id} | {row.kind} | {'yes' if row.smoke else 'no'} | "
-            f"{row.points} | {row.numbers_found} of {row.numbers_total} | "
+            f"{effective(row)} | {row.numbers_found} of {row.numbers_total} | "
             f"{judge} | {row.seconds:.1f}s | {_money(row.cost_usd)} |"
         )
     lines += ["", "## Not fully correct", ""]
@@ -137,7 +153,18 @@ def report_markdown(report: RunReport) -> str:
         lines.append("No errors.")
     for row in errors:
         lines.append(f"- {row.question_id}: {row.reason or '-'}")
-    lines += ["", "## Spot-check", "", "Not checked yet (P06.6).", ""]
+    lines += ["", "## Spot-check", ""]
+    overruled = [row for row in report.results if row.override_points is not None]
+    if not overruled:
+        lines.append("No overrides yet.")
+    for row in overruled:
+        new = row.override_points
+        assert new is not None
+        lines.append(
+            f"{row.question_id}: {points_text(row.points)} → "
+            f"{points_text(new)}. Reason: {row.override_reason or '-'}"
+        )
+    lines.append("")
     return "\n".join(lines)
 
 
@@ -147,6 +174,8 @@ def report_json(report: RunReport) -> str:
         {
             "set": report.set_name,
             "mode": report.mode,
+            "kind": report.kind,
+            "some": report.some,
             "started_at": report.started_at.isoformat(timespec="seconds"),
             "seconds": report.seconds,
             "score": str(_points(report)),

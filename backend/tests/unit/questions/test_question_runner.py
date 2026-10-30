@@ -115,8 +115,8 @@ def test_hidden_output_shows_only_ids_and_scores(capsys) -> None:
     out = capsys.readouterr().out
     assert "delivered" not in out
     assert "And in November?" not in out
-    assert "h01  clear  1" in out
-    assert "h02  follow_up  1" in out
+    assert "h01  clear  +1" in out
+    assert "h02  follow_up  +1" in out
 
 
 def test_estimate_counts_earlier_turns() -> None:
