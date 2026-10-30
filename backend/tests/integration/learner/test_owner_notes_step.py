@@ -1,6 +1,5 @@
 """Step 1 sorts the owner notes with the AI and writes entries (P07.5)."""
 
-
 import pytest
 
 from charie.learner.steps import owner_notes
