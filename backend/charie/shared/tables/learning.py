@@ -34,6 +34,7 @@ class LearningRun(Base):
     kind: Mapped[str] = mapped_column(Text, nullable=False)
     reason: Mapped[str | None] = mapped_column(Text)
     status: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'running'"))
+    paused_by: Mapped[str | None] = mapped_column(Text)
     step: Mapped[str | None] = mapped_column(Text)
     progress: Mapped[dict] = mapped_column(
         JSONB, nullable=False, server_default=text("'{}'::jsonb")

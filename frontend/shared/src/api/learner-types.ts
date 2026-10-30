@@ -39,6 +39,7 @@ export interface LearningRun {
   id: number;
   kind: LearningRunKind;
   status: LearningRunStatus;
+  paused_by: "user" | "spending" | null;
   reason: string | null;
   step: number;
   percent: number;
