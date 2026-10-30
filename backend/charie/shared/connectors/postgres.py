@@ -5,7 +5,12 @@ from urllib.parse import urlparse
 
 import psycopg
 
-from charie.shared.connectors.base import ConnectorError, DbSummary, QueryResult
+from charie.shared.connectors.base import (
+    ConnectorError,
+    DbSummary,
+    QueryBlocked,
+    QueryResult,
+)
 
 _USER_TABLES = "c.relkind IN ('r', 'v', 'm')"
 _SYSTEM_SCHEMAS = "n.nspname NOT IN ('pg_catalog', 'information_schema', 'pg_toast')"
@@ -132,6 +137,15 @@ class PostgresConnector:
         except psycopg.Error as err:
             raise _code(err) from err
         return DbSummary(tables=int(tables), rows=int(rows), server_version=str(version))
+
+    def run_checked(self, sql: str, catalog, max_rows: int = 50_000) -> QueryResult:
+        """Check first with the safety checker; a blocked query never runs."""
+        from charie.shared.safety.sql_check import check_sql
+
+        report = check_sql(sql, catalog, max_rows=max_rows)
+        if not report.ok:
+            raise QueryBlocked(report.reasons)
+        return self.run_query(report.sql, max_rows=max_rows)
 
     def run_query(self, query: str, timeout_s: int = 60, max_rows: int = 50_000) -> QueryResult:
         """Run one SELECT read-only, timed and capped; then roll back."""

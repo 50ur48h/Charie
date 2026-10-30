@@ -31,6 +31,17 @@ class ConnectorError(ApiError):
         super().__init__(400, code, message)
 
 
+class QueryBlocked(ConnectorError):
+    """The safety checker refused a query, with every reason listed."""
+
+    def __init__(self, reasons: list) -> None:
+        super().__init__(
+            "query_blocked",
+            "Charie can't run this query. " + " ".join(str(reason) for reason in reasons),
+        )
+        self.reasons = list(reasons)
+
+
 class PracticeDbBlocked(Exception):
     """A test tried to reach the practice database without the mark."""
 
