@@ -165,8 +165,14 @@ describe("mock handlers", () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({
       questions_waiting: 3,
-      data_through: "2025-10-26",
-      knowledge_version: 14,
+      knowledge: { version: null, entries: 0, documents: 0, published_at: null },
+      data: {
+        name: "Bella Forno database",
+        kind: "postgres",
+        status: "connected",
+        data_through: "2025-10-26",
+      },
+      learning: null,
       spending: {
         state: "ok",
         spent_usd: 41.2,

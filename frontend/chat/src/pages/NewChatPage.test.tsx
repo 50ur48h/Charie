@@ -30,7 +30,24 @@ function stubFetch(mode: "ok" | "send-fails") {
     vi.fn().mockImplementation((url: string, init?: RequestInit) => {
       const method = init?.method ?? "GET";
       if (url.includes("/api/status")) {
-        return Promise.resolve(json({ questions_waiting: 3, data_through: "2025-10-26" }));
+        return Promise.resolve(json({
+            questions_waiting: 3,
+            knowledge: { version: null, entries: 0, documents: 0, published_at: null },
+            data: {
+              name: "Bella Forno database",
+              kind: "postgres",
+              status: "connected",
+              data_through: "2025-10-26",
+            },
+            learning: null,
+            spending: {
+              state: "ok",
+              spent_usd: 1,
+              limit_usd: 150,
+              warn_percent: 80,
+              percent_used: 1,
+            },
+          }));
       }
       if (url.includes("/messages")) {
         posts.push(url);

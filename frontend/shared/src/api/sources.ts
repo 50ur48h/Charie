@@ -28,7 +28,7 @@ export function useDatabaseSource() {
   return useQuery({
     queryKey: ["learner-database"],
     queryFn: ({ signal }) =>
-      apiFetch<{ source: DatabaseSource | null }>("/api/sources/database", { signal }),
+      apiFetch<DatabaseSource | null>("/api/sources/database", { signal }),
   });
 }
 
@@ -46,7 +46,7 @@ export function useSaveDatabase() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: (input: DatabaseInput) =>
-      apiFetch<{ source: DatabaseSource }>("/api/sources/database", { method: "PUT", body: input }),
+      apiFetch<DatabaseSource>("/api/sources/database", { method: "PUT", body: input }),
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: ["learner-database"] });
       void client.invalidateQueries({ queryKey: ["learner-setup"] });

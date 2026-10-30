@@ -99,7 +99,7 @@ export function NewChatPage() {
         onChange={setDraft}
         onSubmit={() => void submit()}
         sending={sending}
-        dataThrough={statusQuery.data?.data_through}
+        dataThrough={statusQuery.data?.data?.data_through ?? null}
         textareaRef={composerRef}
       />
       </div>

@@ -27,7 +27,7 @@ export function EditDatabaseDialog({
           <p className="mt-4 text-[14px] text-muted" role="status">
             Loading the saved connection…
           </p>
-        ) : source.isError || !source.data ? (
+        ) : source.isError ? (
           <p className="mt-4 text-[14px] text-muted" role="alert">
             Couldn&rsquo;t load the saved connection.{" "}
             <button
@@ -41,8 +41,8 @@ export function EditDatabaseDialog({
         ) : (
           <div className="mt-4">
             <DatabaseForm
-              key={source.data.source ? "saved" : "empty"}
-              initial={source.data.source}
+              key={source.data ? "saved" : "empty"}
+              initial={source.data ?? null}
               submitLabel="Save"
               onSubmitted={() => {
                 toast("Connection saved.");

@@ -14,16 +14,22 @@ def as_utc(moment: datetime) -> datetime:
     return moment.astimezone(UTC)
 
 
+def month_window(year: int, month: int, time_zone: str | None) -> tuple[datetime, datetime]:
+    """The owner's calendar month as UTC instants (local midnight to midnight)."""
+    zone = ZoneInfo(time_zone) if time_zone else UTC
+    start = datetime(year, month, 1, tzinfo=zone)
+    if month == 12:
+        end = datetime(year + 1, 1, 1, tzinfo=zone)
+    else:
+        end = datetime(year, month + 1, 1, tzinfo=zone)
+    return start.astimezone(UTC), end.astimezone(UTC)
+
+
 def month_bounds(now: datetime, time_zone: str | None) -> tuple[datetime, datetime]:
     """This month as UTC instants: local midnight on the 1st to next month."""
     zone = ZoneInfo(time_zone) if time_zone else UTC
     local = as_utc(now).astimezone(zone)
-    start = local.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    if start.month == 12:
-        end = start.replace(year=start.year + 1, month=1)
-    else:
-        end = start.replace(month=start.month + 1)
-    return start.astimezone(UTC), end.astimezone(UTC)
+    return month_window(local.year, local.month, time_zone)
 
 
 def _row_month(row_time: datetime, time_zone: str | None) -> tuple[int, int]:

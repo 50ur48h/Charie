@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from charie.shared.config import ConfigError, get_settings, require_env
+from charie.shared.config import ConfigError, Settings, get_settings, require_env
 
 
 @pytest.fixture(autouse=True)
@@ -32,7 +32,7 @@ def test_replay_mode_must_be_known(monkeypatch):
 
 
 def test_require_env_message(monkeypatch):
-    monkeypatch.delenv("CHARIE_PASSWORD", raising=False)
+    monkeypatch.setattr("charie.shared.config.get_settings", lambda: Settings(charie_password=None))
     with pytest.raises(ConfigError) as raised:
         require_env("CHARIE_PASSWORD")
     assert str(raised.value) == (

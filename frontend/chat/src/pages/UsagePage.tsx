@@ -35,6 +35,7 @@ function CostPerDayChart({ usage }: { usage: UsageSummary }) {
             series: [
               { name: "Questions", values: usage.per_day.map((d) => d.questions_usd) },
               { name: "Learning", values: usage.per_day.map((d) => d.learning_usd) },
+              { name: "Tests", values: usage.per_day.map((d) => d.tests_usd) },
             ],
             labelEvery: Math.max(1, Math.floor(usage.per_day.length / 8)),
           },
@@ -136,7 +137,7 @@ export function UsagePage() {
       />
       {failed ? (
         <Card padded role="alert">
-          <p className="text-[14px]">Couldn&apos;t load usage. Use a month like 2025-10.</p>
+          <p className="text-[14px]">Couldn&apos;t load usage. Use a month like 2026-10.</p>
           <Button variant="ghost" className="mt-2" onClick={() => void usage.refetch()}>
             Try again
           </Button>

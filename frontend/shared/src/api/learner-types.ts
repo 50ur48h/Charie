@@ -105,9 +105,10 @@ export interface DatabaseInput {
 }
 
 // POST /api/sources/database/test: the connection check result.
+// data_through is null until P07.6 fills the newest data.
 export interface ConnectionTest {
   read_only_ok: boolean;
-  data_through: string;
+  data_through: string | null;
   details: { tables: number; rows: number };
 }
 

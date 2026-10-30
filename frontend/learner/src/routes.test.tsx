@@ -31,7 +31,7 @@ function renderAt(path: string, setupDone = false) {
         });
       }
       if (url.includes("/api/setup")) return body({ setup_done: setupDone, step: 1, readiness: null });
-      if (url.includes("/api/sources/database")) return body({ source: null });
+      if (url.includes("/api/sources/database")) return body(null);
       if (url.includes("/api/documents")) return body({ documents: [] });
       if (url.includes("/api/learning")) return body({ runs: [] });
       if (url.includes("/api/knowledge")) return body({ entries: [], version: null });

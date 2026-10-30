@@ -115,9 +115,11 @@ def test_replay_needs_no_api_key(tmp_path, monkeypatch) -> None:
     _client(FakeTransport(), prompts, MemoryCostLog(), "record").run(
         "name_chat", {"topic": "hi"}, ChatTitle, app="chat"
     )
-    monkeypatch.delenv("META_API_KEY", raising=False)
-    get_settings.cache_clear()
-    assert get_settings().meta_api_key is None
+
+    def no_provider(name: str):
+        raise AssertionError("replay built a provider")
+
+    monkeypatch.setattr("charie.shared.ai.client.get_provider", no_provider)
     keyless = AiClient(
         provider=None,
         prompts_dir=prompts,

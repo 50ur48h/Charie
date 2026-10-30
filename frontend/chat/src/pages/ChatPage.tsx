@@ -215,7 +215,7 @@ export function ChatPage() {
             onChange={(value) => setDrafts((prev) => ({ ...prev, [chat.id]: value }))}
             onSubmit={() => void submit()}
             sending={busy}
-            dataThrough={statusQuery.data?.data_through}
+            dataThrough={statusQuery.data?.data?.data_through ?? null}
             textareaRef={composerRef}
           />
           <div className="mt-2 text-center text-[12px] text-muted">

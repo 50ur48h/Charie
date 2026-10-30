@@ -75,7 +75,7 @@ describe("learner setup mocks", () => {
     await signIn();
     const response = await putDatabase(GOOD);
     expect(response.status).toBe(200);
-    const { source } = (await response.json()) as { source: Record<string, unknown> };
+    const source = (await response.json()) as Record<string, unknown>;
     expect(source).toMatchObject({
       name: "Bella Forno database",
       host: "db.internal",
@@ -86,10 +86,11 @@ describe("learner setup mocks", () => {
     });
     expect("password" in source).toBe(false);
     expect(typeof source.checked_at).toBe("string");
-    const fetched = (await (await fetch(`${APP}/api/sources/database`)).json()) as {
-      source: Record<string, unknown>;
-    };
-    expect("password" in fetched.source).toBe(false);
+    const fetched = (await (await fetch(`${APP}/api/sources/database`)).json()) as Record<
+      string,
+      unknown
+    >;
+    expect("password" in fetched).toBe(false);
   });
 
   test("an empty password keeps the saved one", async () => {
@@ -97,7 +98,7 @@ describe("learner setup mocks", () => {
     await putDatabase(GOOD);
     const again = await putDatabase({ ...GOOD, host: "db2.internal", password: "" });
     expect(again.status).toBe(200);
-    const { source } = (await again.json()) as { source: { host: string } };
+    const source = (await again.json()) as { host: string };
     expect(source.host).toBe("db2.internal");
   });
 

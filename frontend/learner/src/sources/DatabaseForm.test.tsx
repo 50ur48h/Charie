@@ -107,7 +107,7 @@ describe("DatabaseForm", () => {
 
   test("a saved source with no changes goes straight on", async () => {
     const onSubmitted = vi.fn();
-    const { puts } = stubFetch(() => json({ source: SAVED }));
+    const { puts } = stubFetch(() => json(SAVED));
     renderForm(SAVED, onSubmitted);
     fireEvent.click(await screen.findByRole("button", { name: "Continue" }));
     expect(onSubmitted).toHaveBeenCalled();

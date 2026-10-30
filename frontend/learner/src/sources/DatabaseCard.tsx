@@ -29,7 +29,7 @@ export function DatabaseCard() {
       </Card>
     );
   }
-  if (source.isError || !source.data) {
+  if (source.isError) {
     return (
       <Card padded={false} className="p-[20px_22px]">
         <p className="text-[14px] text-muted" role="alert">
@@ -46,7 +46,7 @@ export function DatabaseCard() {
     );
   }
 
-  const saved = source.data.source;
+  const saved = source.data ?? null;
   if (saved === null) {
     return (
       <Card padded={false} className="flex flex-wrap items-center gap-4 p-[20px_22px]">

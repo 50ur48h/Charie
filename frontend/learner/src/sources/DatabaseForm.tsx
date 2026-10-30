@@ -153,7 +153,7 @@ export function DatabaseForm({
           <p className="flex gap-5 text-[13px]">
             <span><b className="font-serif text-[15px]">{result.test.details.tables}</b> <span className="text-muted">tables</span></span>
             <span><b className="font-serif text-[15px]">{formatShortCount(result.test.details.rows)}</b> <span className="text-muted">rows</span></span>
-            <span><b className="font-serif text-[15px]">{shortDate(result.test.data_through)}</b> <span className="text-muted">newest data</span></span>
+            <span><b className="font-serif text-[15px]">{result.test.data_through === null ? "Not checked yet" : shortDate(result.test.data_through)}</b> <span className="text-muted">newest data</span></span>
           </p>
         </div>
       )}

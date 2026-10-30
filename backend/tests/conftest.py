@@ -17,12 +17,42 @@ from sqlalchemy import create_engine, text
 from charie.shared.ai.errors import AiRealCallBlocked
 from charie.shared.ai.provider import MetaProvider
 from charie.shared.config import get_settings
+from charie.shared.connectors.base import PracticeDbBlocked
+from charie.shared.connectors.postgres import PostgresConnector
 from charie.shared.db import Base, clear_engine_cache, psycopg_url
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 
 # Methods that reach the network, patched in every unmarked test.
 BLOCKED_REAL_CALLS: list = [(MetaProvider, "complete")]
+
+# Hosts that all mean this laptop (plan P05.11).
+LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
+
+
+@pytest.fixture(autouse=True)
+def _block_practice_db(request, monkeypatch):
+    """Unmarked tests can't reach the practice database."""
+    if request.node.get_closest_marker("practice_db") is not None:
+        return
+    original = PostgresConnector._connect
+
+    def guarded(self):
+        # Read at call time: the test sets its fake URL after fixtures run.
+        raw = get_settings().practice_db_url
+        if raw:
+            target = urlparse(raw)
+            target_host = target.hostname or ""
+            target_port = target.port or 5432
+            target_db = target.path.lstrip("/")
+            same_host = self.host == target_host or (
+                self.host in LOCAL_HOSTS and target_host in LOCAL_HOSTS
+            )
+            if same_host and self.port == target_port and self.database == target_db:
+                raise PracticeDbBlocked()
+        return original(self)
+
+    monkeypatch.setattr(PostgresConnector, "_connect", guarded)
 
 
 @pytest.fixture(autouse=True)

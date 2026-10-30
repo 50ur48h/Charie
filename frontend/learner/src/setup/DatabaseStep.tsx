@@ -30,8 +30,8 @@ export function DatabaseStep({ onDone }: { onDone: () => void }) {
           </p>
         ) : (
           <DatabaseForm
-            key={source.data.source ? "saved" : "empty"}
-            initial={source.data.source}
+            key={source.data ? "saved" : "empty"}
+            initial={source.data ?? null}
             submitLabel="Continue"
             onSubmitted={onDone}
           />

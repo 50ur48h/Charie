@@ -59,7 +59,7 @@ export function LearnStep({ onBack, onNext }: { onBack: () => void; onNext: () =
           </p>
         ) : run === undefined ? (
           <ReadyBox
-            tables={database.data?.source?.details.tables}
+            tables={database.data?.details.tables}
             documents={(documents.data?.documents ?? []).length}
             notesSaved={(notes.data?.text ?? "").trim() !== ""}
             starting={start.isPending}
