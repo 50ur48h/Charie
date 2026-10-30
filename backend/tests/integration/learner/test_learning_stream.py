@@ -12,7 +12,11 @@ from charie.shared.tables.learning import LearningEvent, LearningRun
 
 @pytest.fixture
 def one_step():
-    """One canonical fixture step; unregistered after."""
+    """One canonical fixture step; real steps are stowed and restored."""
+    saved_steps = dict(STEPS)
+    saved_handlers = dict(HANDLERS)
+    STEPS.clear()
+    HANDLERS.clear()
     registered: list = []
 
     def make_jobs(ctx) -> list:
@@ -35,6 +39,8 @@ def one_step():
     for item in registered:
         del STEPS[item.name]
         del HANDLERS[item.job_kind]
+    STEPS.update(saved_steps)
+    HANDLERS.update(saved_handlers)
 
 
 def _start() -> int:

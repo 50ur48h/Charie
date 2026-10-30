@@ -12,7 +12,11 @@ from charie.shared.tables.learning import LearningEvent, LearningRun
 
 @pytest.fixture
 def three_steps():
-    """Three canonical fixture steps that record their calls; unregistered after."""
+    """Three canonical fixture steps; real steps are stowed and restored."""
+    saved_steps = dict(STEPS)
+    saved_handlers = dict(HANDLERS)
+    STEPS.clear()
+    HANDLERS.clear()
     log: list = []
     fail: set[str] = set()
     spend: set[str] = set()
@@ -57,6 +61,8 @@ def three_steps():
     for step in registered:
         del STEPS[step.name]
         del HANDLERS[step.job_kind]
+    STEPS.update(saved_steps)
+    HANDLERS.update(saved_handlers)
 
 
 def _run(run_id: int) -> LearningRun:

@@ -32,7 +32,11 @@ PROGRESS_KEYS = {"step", "done", "total", "note"}
 
 @pytest.fixture
 def two_steps():
-    """Two canonical fixture steps; unregistered after the test."""
+    """Two canonical fixture steps; real steps are stowed and restored."""
+    saved_steps = dict(STEPS)
+    saved_handlers = dict(HANDLERS)
+    STEPS.clear()
+    HANDLERS.clear()
     log: list = []
     fail: set[str] = set()
 
@@ -68,6 +72,8 @@ def two_steps():
         for name in ("owner_notes", "structure"):
             step = STEPS.pop(name)
             del HANDLERS[step.job_kind]
+        STEPS.update(saved_steps)
+        HANDLERS.update(saved_handlers)
 
 
 def _start(client) -> dict:

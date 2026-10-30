@@ -24,7 +24,11 @@ from charie.shared.tables.learning import Job, LearningRun
 
 @pytest.fixture
 def step_world():
-    """Three canonical fixture steps; the test drives their behavior."""
+    """Three canonical fixture steps; real steps are stowed and restored."""
+    saved_steps = dict(STEPS)
+    saved_handlers = dict(HANDLERS)
+    STEPS.clear()
+    HANDLERS.clear()
     log: list = []
     behavior: dict = {"empty": set(), "fail": set(), "write_entry": set(), "break_txn": set()}
     registered: list[Step] = []
@@ -87,6 +91,8 @@ def step_world():
     for step in registered:
         del STEPS[step.name]
         del HANDLERS[step.job_kind]
+    STEPS.update(saved_steps)
+    HANDLERS.update(saved_handlers)
 
 
 def _run(run_id: int) -> LearningRun:

@@ -8,8 +8,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from charie.learner.number_check import find_new_numbers
-from charie.learner.runs import register_step_handler
-from charie.learner.steps.base import Step, StepContext, register_step
+from charie.learner.steps.base import Step, StepContext, register_step, register_step_handler
 from charie.shared.ai.client import get_ai
 from charie.shared.knowledge.keys import note_key, rule_key, style_key
 from charie.shared.knowledge.store import list_entries, remove_entry, upsert_entry
