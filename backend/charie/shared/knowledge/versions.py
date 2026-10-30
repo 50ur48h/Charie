@@ -1,9 +1,9 @@
-"""Draft versions: every learning run builds one (P07.1 creates the row only)."""
+"""Draft versions: every learning run builds one (P07.3 copies the published one)."""
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from charie.shared.tables.knowledge import KbVersion
+from charie.shared.tables.knowledge import KbEntry, KbVersion
 
 
 def get_draft(session: Session) -> KbVersion | None:
@@ -17,7 +17,11 @@ def get_published(session: Session) -> KbVersion | None:
 
 
 def get_or_create_draft(session: Session, made_by: str) -> KbVersion:
-    """The open draft, or a new empty one numbered after the last version."""
+    """The open draft, or a new one numbered after the last version.
+
+    A new draft copies every entry of the published version (if any),
+    keeping keys. Copies write no `kb_changes`.
+    """
     draft = get_draft(session)
     if draft is not None:
         return draft
@@ -25,4 +29,21 @@ def get_or_create_draft(session: Session, made_by: str) -> KbVersion:
     draft = KbVersion(number=(last or 0) + 1, status="draft", made_by=made_by)
     session.add(draft)
     session.flush()
+    published = get_published(session)
+    if published is not None:
+        entries = session.scalars(select(KbEntry).where(KbEntry.version_id == published.id)).all()
+        for entry in entries:
+            session.add(
+                KbEntry(
+                    version_id=draft.id,
+                    key=entry.key,
+                    kind=entry.kind,
+                    title=entry.title,
+                    meaning=entry.meaning,
+                    details=dict(entry.details),
+                    confidence=entry.confidence,
+                    sources=list(entry.sources),
+                )
+            )
+        session.flush()
     return draft

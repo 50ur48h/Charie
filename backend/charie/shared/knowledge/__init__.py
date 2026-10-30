@@ -1,1 +1,1 @@
-"""The shared knowledge package: versions, entries, change log (P07.3 fills it)."""
+"""The shared knowledge package: versions, entries, change log (P07.3)."""
