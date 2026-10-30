@@ -8,6 +8,7 @@ import threading
 import time
 from datetime import UTC, datetime
 
+from charie.learner.steps import owner_notes, structure  # noqa: F401 (registers the steps)
 from charie.shared.ai.errors import SpendingPaused
 from charie.shared.db import session_scope
 from charie.shared.jobs.queue import (

@@ -40,10 +40,7 @@ import {
   mockUsage,
 } from "./sampleUsage";
 
-import {
-  KNOWLEDGE_VERSION,
-  suggestMockChange,
-} from "./sampleKnowledge";
+import { suggestMockChange } from "./sampleKnowledge";
 
 import { getMockPassword, setMockPassword } from "./password";
 
@@ -58,7 +55,8 @@ import { needSession, SESSION_KEY } from "./session";
 import { learnerHandlers } from "./learner/handlers";
 
 import { learner, saveLearner, setup } from "./learner/state";
-import type { LearnerTodo } from "../api/learner-types";
+import type { KbVersion, LearnerTodo } from "../api/learner-types";
+import type { KnowledgeEntry } from "../knowledge/types";
 
 export { SESSION_KEY };
 
@@ -158,7 +156,48 @@ async function mockDelay(): Promise<void> {
   }
 }
 
-export const handlers = [
+// The real list envelope (P07.4): the version, slim rows with meanings
+// cut to 200 characters, whole-version counts and the review count.
+function knowledgeListResponse(
+  all: KnowledgeEntry[],
+  version: KbVersion | undefined,
+  status: "draft" | "published",
+  options?: { kind?: string; q?: string },
+) {
+  const counts: Record<string, number> = {};
+  let needs_review = 0;
+  for (const entry of all) {
+    counts[entry.kind] = (counts[entry.kind] ?? 0) + 1;
+    if (entry.confidence === "guessed" || entry.confidence === "conflicting") {
+      needs_review += 1;
+    }
+  }
+  const rows = filterKnowledgeEntries(all, options).map((entry) => ({
+    key: entry.key,
+    kind: entry.kind,
+    title: entry.title,
+    meaning: entry.meaning.slice(0, 200),
+    confidence: entry.confidence,
+    updated_at: entry.updated_at ?? null,
+  }));
+  return HttpResponse.json({
+    version:
+      version === undefined
+        ? null
+        : {
+            id: version.id,
+            number: version.number,
+            status,
+            changes: (learner().changesByVersion[version.number] ?? []).length,
+            summary: version.summary,
+          },
+    entries: rows,
+    counts,
+    needs_review,
+  });
+}
+
+  export const handlers = [
   ...learnerHandlers,
   http.get(HEALTH_URL, () => HttpResponse.json({ ok: true })),
   http.post(LOGIN_URL, async ({ request }) => {
@@ -264,7 +303,7 @@ export const handlers = [
     }
     return HttpResponse.json({ ok: true });
   }),
-  http.get(KNOWLEDGE_URL, ({ request }) => {
+http.get(KNOWLEDGE_URL, ({ request }) => {
     const blocked = needSession();
     if (blocked) return blocked;
     const url = new URL(request.url);
@@ -272,18 +311,9 @@ export const handlers = [
     const q = url.searchParams.get("q") ?? undefined;
     const draft = openDraft();
     if (url.searchParams.get("version") === "draft" && draft) {
-      return HttpResponse.json({
-        entries: filterKnowledgeEntries(draftWorkingCopy() ?? [], { kind, q }),
-        version: draft.number,
-        status: "draft",
-      });
+      return knowledgeListResponse(draftWorkingCopy() ?? [], draft, "draft", { kind, q });
     }
-    const live = liveVersion();
-    return HttpResponse.json({
-      entries: filterKnowledgeEntries(publishedBase(), { kind, q }),
-      version: live?.number ?? KNOWLEDGE_VERSION,
-      status: "published",
-    });
+    return knowledgeListResponse(publishedBase(), liveVersion(), "published", { kind, q });
   }),
   http.get(KNOWLEDGE_ENTRY_URL, ({ params, request }) => {
     const blocked = needSession();
@@ -293,11 +323,38 @@ export const handlers = [
     const entry = (draftEntries ?? publishedBase()).find((item) => item.key === String(params.key));
     if (entry === undefined) {
       return HttpResponse.json(
-        { error: "not_found", message: "No entry has that key." },
+        { error: "not_found", message: `There's no knowledge entry called ${String(params.key)}.` },
         { status: 404 },
       );
     }
-    return HttpResponse.json(entry);
+    const store = learner();
+    const history = Object.entries(store.changesByVersion)
+      .flatMap(([number, changes]) =>
+        changes
+          .filter((change) => change.key === entry.key)
+          .map((change) => ({
+            version: Number(number),
+            change: change.change,
+            reason: change.reason,
+          })),
+      )
+      .sort((a, b) => b.version - a.version)
+      .slice(0, 10);
+    const showing = draftEntries !== undefined ? openDraft() : liveVersion();
+    return HttpResponse.json({
+      entry,
+      version:
+        showing === undefined
+          ? null
+          : {
+              id: showing.id,
+              number: showing.number,
+              status: showing.status,
+              changes: (store.changesByVersion[showing.number] ?? []).length,
+              summary: showing.summary,
+            },
+      history,
+    });
   }),
   http.get(VERSIONS_URL, () => {
     const blocked = needSession();
@@ -359,7 +416,7 @@ export const handlers = [
     const entries = draftWorkingCopy() ?? publishedBase();
     if (!entries.some((entry) => entry.key === key)) {
       return HttpResponse.json(
-        { error: "not_found", message: "No entry has that key." },
+        { error: "not_found", message: `There's no knowledge entry called ${key}.` },
         { status: 404 },
       );
     }
@@ -379,13 +436,28 @@ export const handlers = [
     }
     if (title !== undefined && title === "") {
       return HttpResponse.json(
-        { error: "empty_title", message: "The entry still needs a title." },
+        { error: "empty_title", message: "The title can't be empty." },
+        { status: 400 },
+      );
+    }
+    if (title !== undefined && title.length > 200) {
+      return HttpResponse.json(
+        { error: "title_too_long", message: "The title is too long. Keep it under 200 characters." },
         { status: 400 },
       );
     }
     if (meaning !== undefined && meaning === "") {
       return HttpResponse.json(
         { error: "empty_meaning", message: "The entry still needs a meaning." },
+        { status: 400 },
+      );
+    }
+    if (meaning !== undefined && meaning.length > 2000) {
+      return HttpResponse.json(
+        {
+          error: "meaning_too_long",
+          message: "The meaning is too long. Keep it under 2,000 characters.",
+        },
         { status: 400 },
       );
     }
@@ -400,7 +472,7 @@ export const handlers = [
     const entries = draftWorkingCopy() ?? publishedBase();
     if (!entries.some((entry) => entry.key === key)) {
       return HttpResponse.json(
-        { error: "not_found", message: "No entry has that key." },
+        { error: "not_found", message: `There's no knowledge entry called ${key}.` },
         { status: 404 },
       );
     }
@@ -408,7 +480,7 @@ export const handlers = [
     const current = working.find((item) => item.key === key);
     const draft = openDraft();
     const changes = draft ? learner().changesByVersion[draft.number] ?? [] : [];
-    if (current?.confidence === "owner" && !changes.some((change) => change.key === key)) {
+    if (current?.confidence === "confirmed" && !changes.some((change) => change.key === key)) {
       return HttpResponse.json(
         { error: "nothing_to_approve", message: "This entry is already confirmed." },
         { status: 409 },
@@ -426,7 +498,7 @@ export const handlers = [
     const entry = base.find((item) => item.key === key);
     if (!entry) {
       return HttpResponse.json(
-        { error: "not_found", message: "That entry is gone." },
+        { error: "not_found", message: `There's no knowledge entry called ${key}.` },
         { status: 404 },
       );
     }
@@ -437,12 +509,15 @@ export const handlers = [
       note = null;
     }
     const store = learner();
+    const draft = draftWorkingCopy() ?? [];
+    const inDraft = draft.some((item) => item.key === key);
+    const versionNumber = inDraft ? openDraft()?.number : liveVersion()?.number;
     const clean = typeof note === "string" && note.trim() !== "" ? note.trim() : null;
     const todo: LearnerTodo = {
       id: store.todos.reduce((max, item) => Math.max(max, item.id), 0) + 1,
       kind: "correction",
-      text: clean === null ? `${entry.name}: marked as wrong` : `${entry.name}: ${clean}`,
-      details: { chat_title: null, words: clean },
+      text: clean === null ? `${entry.title}: marked as wrong` : `${entry.title}: ${clean}`,
+      details: { chat_title: null, words: clean, key, version: versionNumber ?? null },
       status: "open",
       result: null,
       created_at: new Date().toISOString(),

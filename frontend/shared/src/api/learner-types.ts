@@ -114,16 +114,23 @@ export interface ConnectionTest {
 }
 
 // GET /api/owner-notes and PUT /api/owner-notes { text }. The server keeps
-// the last sorted columns until learning sorts the new text.
+// the last sorted columns until learning sorts the new text. Rules land
+// in hard rules, styles in style, everything else in hints.
+export interface SortedNoteItem {
+  key: string;
+  title: string;
+}
+
 export interface SortedNotes {
-  hard_rules: string[];
-  style_rules: string[];
-  data_hints: string[];
+  hard_rules: SortedNoteItem[];
+  style: SortedNoteItem[];
+  hints: SortedNoteItem[];
 }
 
 export interface OwnerNotes {
   text: string;
   saved_at: string | null;
+  lines: number;
   sorted: SortedNotes | null;
   sorted_at: string | null;
 }
@@ -172,7 +179,12 @@ export interface LearnerTodo {
   id: number;
   kind: "correction" | "unknown_word" | "new_metric" | "meaning_change";
   text: string;
-  details: { chat_title: string | null; words: string | null };
+  details: {
+    chat_title: string | null;
+    words: string | null;
+    key?: string | null;
+    version?: number | null;
+  };
   status: "open" | "done" | "dismissed";
   result: string | null;
   created_at: string;

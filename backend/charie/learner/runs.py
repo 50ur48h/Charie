@@ -9,7 +9,13 @@ from sqlalchemy.orm.attributes import flag_modified
 from charie.learner.api.sources import saved_password, saved_source
 from charie.learner.events import add_event
 from charie.learner.locks import RunActiveError, serialize_learning_runs
-from charie.learner.steps.base import STEP_NUMBERS, STEPS, Step, StepContext
+from charie.learner.steps.base import (
+    STEP_NUMBERS,
+    STEPS,
+    Step,
+    StepContext,
+    register_step_handler,
+)
 from charie.shared.ai.errors import SpendingPaused
 from charie.shared.ai.spending import month_spent, spending_state
 from charie.shared.connectors.postgres import PostgresConnector
@@ -21,7 +27,7 @@ from charie.shared.jobs.queue import (
     requeue_failed_jobs,
     resume_jobs,
 )
-from charie.shared.jobs.registry import JobInfo, job_handler
+from charie.shared.jobs.registry import JobInfo
 from charie.shared.knowledge.versions import get_or_create_draft
 from charie.shared.settings import get_setting
 from charie.shared.tables.learning import Job, LearningRun
@@ -33,7 +39,7 @@ MADE_BY = {"first": "first_learning", "refresh": "refresh", "nightly": "nightly"
 
 
 # Re-exported so existing imports keep working; locks.py owns it.
-__all__ = ["RunActiveError"]
+__all__ = ["RunActiveError", "register_step_handler"]
 
 
 def active_run(session: Session) -> LearningRun | None:
@@ -136,6 +142,7 @@ def _queue_step(session: Session, run: LearningRun, step: Step) -> None:
     entry["jobs"] = ids
     if not ids:
         entry["note"] = step.empty_note
+        ctx.say("info", step.empty_note)
     flag_modified(run, "progress")
     total = len(run.progress["order"])
     position = run.progress["order"].index(step.name) + 1
@@ -353,12 +360,3 @@ def run_step_job(info: JobInfo) -> None:
         finish_job(session, info.id, "done")
         _record_step_progress(session, run, name)
         advance_run(session, run.id)
-
-
-def register_step_handler(step_name: str) -> None:
-    """Point one step's job kind at the shared step handler (registering twice fails)."""
-
-    def handle(info: JobInfo) -> None:
-        run_step_job(info)
-
-    job_handler(STEPS[step_name].job_kind)(handle)

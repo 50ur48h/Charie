@@ -124,21 +124,25 @@ Sourabh, 3 Oct 2026`;
 
 const DESIGN_SORTED: SortedNotes = {
   hard_rules: [
-    "Money is always in US dollars. Never convert.",
-    "Never use the orders_old table.",
-    "Leave out test restaurants.",
+    { key: "rule.usd_only", title: "Money is always in US dollars. Never convert." },
+    { key: "rule.no_orders_old", title: "Never use the orders_old table." },
+    { key: "rule.test_stores", title: "Leave out test restaurants." },
   ],
-  style_rules: [
-    "Start with the direct answer.",
-    "Use short paragraphs.",
-    'Add "unaudited figures" to profit answers.',
+  style: [
+    { key: "style.direct", title: "Start with the direct answer." },
+    { key: "style.short", title: "Use short paragraphs." },
+    { key: "style.unaudited", title: 'Add "unaudited figures" to profit answers.' },
   ],
-  data_hints: [
-    "Delivery fees are part of the order total.",
-    "Lunch means 11 am to 3 pm.",
-    "Austin restaurants share one delivery partner.",
+  hints: [
+    { key: "default.delivery_fees", title: "Delivery fees are part of the order total." },
+    { key: "default.lunch", title: "Lunch means 11 am to 3 pm." },
+    { key: "default.austin_partner", title: "Austin restaurants share one delivery partner." },
   ],
 };
+
+export function countSetupLines(text: string): number {
+  return text.split(/\n/).filter((line) => line.trim() !== "").length;
+}
 
 function designSetup(): SetupSlice {
   return {
@@ -169,6 +173,7 @@ function designSetup(): SetupSlice {
     notes: {
       text: DESIGN_NOTES_TEXT,
       saved_at: "2026-10-03T10:00:00+05:30",
+      lines: countSetupLines(DESIGN_NOTES_TEXT),
       sorted: DESIGN_SORTED,
       sorted_at: "2026-10-03T10:00:00+05:30",
     },
@@ -181,7 +186,7 @@ function newSetup(): SetupSlice {
     password: null,
     readiness: null,
     setupDone: false,
-    notes: { text: "", saved_at: null, sorted: null, sorted_at: null },
+    notes: { text: "", saved_at: null, lines: 0, sorted: null, sorted_at: null },
   };
 }
 

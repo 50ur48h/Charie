@@ -7,6 +7,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from charie.shared.connectors.postgres import PostgresConnector
+from charie.shared.jobs.registry import JobInfo, job_handler
 from charie.shared.tables.sources import DataSource
 
 # Architecture 02's canonical order. Steps register in this order; the feed
@@ -75,3 +76,17 @@ def register_step(step: Step) -> Step:
 def step_number(name: str) -> int:
     """The 1-12 feed number for a step name."""
     return STEP_NUMBERS[name]
+
+
+def register_step_handler(step_name: str) -> None:
+    """Point one step's job kind at the shared step handler.
+
+    Lives here (not in `runs`) so step modules never import `runs`:
+    the worker body loads `runs` only when a job actually runs.
+    """
+    from charie.learner import runs
+
+    def handle(info: JobInfo) -> None:
+        runs.run_step_job(info)
+
+    job_handler(STEPS[step_name].job_kind)(handle)

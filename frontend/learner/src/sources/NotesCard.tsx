@@ -45,7 +45,6 @@ export function NotesCard() {
   }
 
   const saved = notes.data;
-  const lines = saved.text.split("\n").filter((line) => line.trim() !== "").length;
 
   return (
     <Card padded={false} className="p-[20px_22px]">
@@ -55,7 +54,7 @@ export function NotesCard() {
           <b className="text-[16px]">Owner notes.md</b>
           {saved.text.trim() !== "" && saved.saved_at !== null && (
             <p className="text-[12.5px] text-muted">
-              Updated {shortDate(saved.saved_at)} · {lines === 1 ? "1 line" : `${lines} lines`}
+              Updated {shortDate(saved.saved_at)} · {saved.lines === 1 ? "1 line" : `${saved.lines} lines`}
             </p>
           )}
         </div>
@@ -71,7 +70,7 @@ export function NotesCard() {
       </div>
       {saved.text.trim() === "" ? (
         <p className="mt-3 text-[14px] text-muted">
-          No notes yet. Add the rules Charie must follow, like &ldquo;never convert
+          No notes yet. Add the rules and facts Charie should know, like &ldquo;never convert
           currencies&rdquo;.
         </p>
       ) : saved.sorted === null ? (
@@ -98,13 +97,13 @@ export function NotesCard() {
               icon={MessageSquare}
               heading="Style"
               line="Charie follows these when writing."
-              rules={saved.sorted.style_rules}
+              rules={saved.sorted.style}
             />
             <NoteColumn
               icon={Lightbulb}
               heading="Hints about the data"
               line="Added to Charie's knowledge."
-              rules={saved.sorted.data_hints}
+              rules={saved.sorted.hints}
             />
           </div>
         </>
@@ -134,12 +133,12 @@ function NoteColumn({
       </h4>
       <p className="mb-2.5 text-[12.5px] text-muted">{line}</p>
       {rules.length === 0 ? (
-        <p className="text-[13.5px] text-muted">None yet.</p>
+        <p className="text-[13.5px] text-muted">Charie sorts your notes when it learns.</p>
       ) : (
         <ul className="grid gap-1.5 pl-[18px] text-[13.5px]">
           {rules.map((rule) => (
-            <li key={rule} className="list-disc">
-              {rule}
+            <li key={rule.key} className="list-disc">
+              {rule.title}
             </li>
           ))}
         </ul>

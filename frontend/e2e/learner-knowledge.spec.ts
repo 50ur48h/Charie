@@ -39,7 +39,8 @@ test("editing an entry adds a change to the draft", async ({ page }) => {
   await page.getByRole("button", { name: "Edit", exact: true }).click();
   await page.getByLabel("Meaning").fill("Net sales divided by completed orders. Never an average of averages.");
   await page.getByRole("button", { name: "Save change" }).click();
-  await expect(page.getByText("Net sales divided by completed orders. Never an average of averages.")).toBeVisible();
+  const detail = page.locator('div[aria-label="Average order"]');
+  await expect(detail.getByText("Net sales divided by completed orders. Never an average of averages.")).toBeVisible();
   await expect(page.getByText("Saved in draft version 15.")).toBeVisible();
   await expect(page.getByText("Draft version 15 has 7 changes")).toBeVisible();
 });

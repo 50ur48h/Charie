@@ -18,6 +18,7 @@ export function ReviewChangesDialog({
   changes,
   isDraft,
   publishing = false,
+  loadError = false,
   onClose,
   onPublish,
 }: {
@@ -25,6 +26,7 @@ export function ReviewChangesDialog({
   changes: KbChange[];
   isDraft: boolean;
   publishing?: boolean;
+  loadError?: boolean;
   onClose: () => void;
   onPublish: () => void;
 }) {
@@ -39,7 +41,11 @@ export function ReviewChangesDialog({
       >
         <DialogTitle>Changes in version {versionNumber}</DialogTitle>
         <DialogDescription>Old on the left, new on the right.</DialogDescription>
-        {ordered.length === 0 ? (
+        {loadError ? (
+          <p className="py-4 text-[14px] text-muted" role="alert">
+            Couldn&apos;t load the changes. Try again.
+          </p>
+        ) : ordered.length === 0 ? (
           <p className="py-4 text-[14px] text-muted">No changes to show.</p>
         ) : (
           <ul className="mt-4 grid max-h-[60vh] gap-3 overflow-y-auto pr-1">
@@ -94,8 +100,8 @@ function ChangeSide({
       <div className="text-[12px] font-semibold uppercase tracking-wide text-muted">{label}</div>
       {entry ? (
         <>
-          <div className="mt-1 text-[13.5px] font-medium">{entry.name}</div>
-          <div className="mt-0.5 text-[13px] text-text-2">{entry.meaning ?? entry.short}</div>
+          <div className="mt-1 text-[13.5px] font-medium">{entry.title}</div>
+          <div className="mt-0.5 text-[13px] text-text-2">{entry.meaning}</div>
         </>
       ) : (
         <div className="mt-1 text-[13.5px] text-muted">Not in this version</div>

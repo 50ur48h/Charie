@@ -12,7 +12,11 @@ from charie.shared.tables.learning import LearningEvent, LearningRun
 
 @pytest.fixture
 def three_steps():
-    """Three canonical fixture steps that record their calls; unregistered after."""
+    """Three canonical fixture steps; real steps are stowed and restored."""
+    saved_steps = dict(STEPS)
+    saved_handlers = dict(HANDLERS)
+    STEPS.clear()
+    HANDLERS.clear()
     log: list = []
     fail: set[str] = set()
     spend: set[str] = set()
@@ -57,6 +61,8 @@ def three_steps():
     for step in registered:
         del STEPS[step.name]
         del HANDLERS[step.job_kind]
+    STEPS.update(saved_steps)
+    HANDLERS.update(saved_handlers)
 
 
 def _run(run_id: int) -> LearningRun:
@@ -247,3 +253,36 @@ def test_pause_spending_and_budget_resume(db, three_steps) -> None:
     with session_scope() as session:
         assert runs.resume_after_spending_raise(session, run_id) is True
     assert _run(run_id).status == "running"
+
+
+def test_skipped_step_says_why(db) -> None:
+    """A step with no jobs leaves its reason as a feed line (B008)."""
+    step = Step(
+        name="documents",
+        title="Study the documents",
+        job_kind="test_documents",
+        make_jobs=lambda ctx: [],
+        run_job=lambda info, ctx: None,
+        finish=lambda ctx: None,
+        empty_note="No documents yet, so I skipped this step.",
+    )
+    register_step(step)
+    runs.register_step_handler("documents")
+    try:
+        with session_scope() as session:
+            run = runs.start_run(session, "first", ["documents"])
+            run_id = run.id
+            assert run.progress["steps"]["documents"]["note"] == (
+                "No documents yet, so I skipped this step."
+            )
+        with session_scope() as session:
+            lines = [
+                (row.kind, row.message)
+                for row in session.query(LearningEvent)
+                .filter(LearningEvent.run_id == run_id)
+                .order_by(LearningEvent.id)
+            ]
+        assert ("info", "No documents yet, so I skipped this step.") in lines
+    finally:
+        del STEPS["documents"]
+        del HANDLERS["test_documents"]
