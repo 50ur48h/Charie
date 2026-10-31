@@ -66,7 +66,11 @@ def _made_by(kind: str) -> str:
 
 
 def start_run(
-    session: Session, kind: str, steps: list[str], reason: str | None = None
+    session: Session,
+    kind: str,
+    steps: list[str],
+    reason: str | None = None,
+    extra_progress: dict | None = None,
 ) -> LearningRun:
     """Start one run; a second start while one is active is refused.
 
@@ -97,6 +101,10 @@ def start_run(
     )
     session.add(run)
     session.flush()
+    if extra_progress:
+        run.progress.update(extra_progress)
+        flag_modified(run, "progress")
+        session.flush()
     if ordered:
         _queue_step(session, run, STEPS[ordered[0]])
     else:
@@ -205,6 +213,9 @@ def _finish_run(session: Session, run: LearningRun, summary: str | None) -> None
     if run.status == "done":
         return
     run.status = "done"
+    from charie.learner.steps.refresh import consume as consume_refresh_scope
+
+    consume_refresh_scope(session, run)
     run.finished_at = datetime.now(UTC)
     if summary is not None:
         run.summary = summary

@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from charie.learner import runs
 from charie.learner.events import feed_lines
 from charie.learner.steps.base import STEP_NUMBERS, STEPS
+from charie.learner.steps.refresh import begin as begin_refresh
 from charie.shared.db import get_session, session_scope
 from charie.shared.errors import ApiError
 from charie.shared.tables.knowledge import KbVersion
@@ -135,7 +136,9 @@ def post_start(body: StartRunIn, session: Session = Depends(get_session)) -> dic
 
 @learning_router.post("/api/learning/refresh", response_model=LearningRunOut, status_code=201)
 def post_refresh(body: RefreshRunIn, session: Session = Depends(get_session)) -> dict:
-    return _start(session, "refresh", body.reason)
+    run = begin_refresh(session, kind="refresh", reason=body.reason)
+    session.commit()
+    return run_shape(session, run)
 
 
 @learning_router.post("/api/learning/pause", response_model=PauseOut)

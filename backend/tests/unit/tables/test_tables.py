@@ -124,6 +124,7 @@ EXPECTED_TABLES = {
         "created_at",
         "done_at",
     },
+    "refresh_snapshots": {"id", "snapshot", "run_id", "created_at"},
     "learning_runs": {
         "id",
         "kind",
@@ -240,7 +241,7 @@ EXPECTED_TABLES = {
 }
 
 
-def test_twenty_two_tables_exist():
+def test_twenty_three_tables_exist():
     assert set(Base.metadata.tables) == set(EXPECTED_TABLES)
 
 
