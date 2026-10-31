@@ -10,7 +10,7 @@ never type amounts.
    amounts, and a short plain `explanation`. `proposal` is
    machine-readable: `{"metric": "metric.key"}` to use a tested metric,
    `{"default": "default.word", "value": "..."}` to set a default meaning,
-   or `{"entry": "entry.key"}` to pick a side.
+   or `{"entry": "entry.key"}` to pick a side, or `{"calendar": {"time_zone": "...", "week_start": "...", "fiscal_year_start": 1}}` to set the calendar.
 4. Option labels and explanations never contain amounts; code fills in
    `number` from checked queries. `default_option` is the safest option id.
 5. The reply is the questions form only. A topic with no good options is

@@ -230,7 +230,7 @@ class OptionDraft(BaseModel):
     label: str = Field(description="Plain words, no amounts.")
     explanation: str = Field(default="", description="Why this option fits, in plain words.")
     proposal: dict = Field(
-        default={}, description="Machine-readable: metric, default/value or entry."
+        default={}, description="Machine-readable: metric, default/value, calendar or entry."
     )
 
 
@@ -342,6 +342,8 @@ def _metric_total(session, version_id: int, metric_key: str, run, time_zone: str
 
 def _option_number(session, version_id: int, proposal: dict, run, time_zone: str) -> str:
     """The number one option gives, or the honest fallback."""
+    if "calendar" in proposal:
+        return FAILED_NUMBER_TEXT
     metric_key = proposal.get("metric") or ""
     if not metric_key and proposal.get("default"):
         value = proposal.get("value") or ""
@@ -367,7 +369,7 @@ def _valid_options(draft: QuestionDraft) -> list[OptionDraft] | None:
         if not option.label.strip():
             return None
         proposal = option.proposal if isinstance(option.proposal, dict) else {}
-        keys = set(proposal) & {"metric", "default", "entry"}
+        keys = set(proposal) & {"metric", "default", "calendar", "entry"}
         if not keys:
             return None
         kept.append(option)
