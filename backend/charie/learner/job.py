@@ -9,6 +9,7 @@ import time
 from datetime import UTC, datetime
 
 from charie.learner.steps import (  # noqa: F401 (registers the steps)
+    document_index,
     documents,
     owner_notes,
     structure,

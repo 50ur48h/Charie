@@ -132,6 +132,7 @@ class DocumentSection(Base):
     page_from: Mapped[int | None] = mapped_column(Integer)
     page_to: Mapped[int | None] = mapped_column(Integer)
     note: Mapped[str | None] = mapped_column(Text)
+    content_hash: Mapped[str | None] = mapped_column(Text)
     embedding: Mapped[list[float] | None] = mapped_column(Vector(1536))
     search_text: Mapped[str] = mapped_column(
         TSVECTOR,

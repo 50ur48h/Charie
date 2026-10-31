@@ -79,7 +79,7 @@ def process_document(
     doc.unreadable_pages = unreadable
     doc.progress = 50
     session.flush()
-    queue_index(session, doc.id)
+    queue_index(session, doc.id, learning_run_id)
     say("found", f"Read {doc.file_name}: {len(drafts)} section(s).")
     if unreadable:
         say("warning", f"{unreadable} page(s) couldn't be read.")
@@ -111,7 +111,7 @@ def _plain_error(doc: Document, err: Exception) -> str:
     return READ_FAILED
 
 
-def queue_index(session: Session, document_id: int) -> None:
+def queue_index(session: Session, document_id: int, learning_run_id: int | None = None) -> None:
     """Queue the note-and-embed job unless one is already waiting or running."""
     waiting = session.scalars(
         select(Job).where(
@@ -121,7 +121,10 @@ def queue_index(session: Session, document_id: int) -> None:
     ).all()
     if any((job.payload or {}).get("document_id") == document_id for job in waiting):
         return
-    add_job(session, INDEX_JOB, {"document_id": document_id})
+    payload = {"document_id": document_id}
+    if learning_run_id is not None:
+        payload["learning_run_id"] = learning_run_id
+    add_job(session, INDEX_JOB, payload)
 
 
 def run_job(info: JobInfo, ctx: StepContext) -> None:

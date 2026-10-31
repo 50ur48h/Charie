@@ -66,6 +66,7 @@ def embed_texts(
     deployment: str | None = None,
     api_version: str | None = None,
     app: str = "learner",
+    learning_run_id: int | None = None,
     cost_log: Any = None,
     sleep=time.sleep,
     _embed_batch: Callable[[list[str], int], tuple[list[list[float]], int]] | None = None,
@@ -106,6 +107,7 @@ def embed_texts(
             duration_ms=_elapsed_ms(started),
             error=None,
             status="ok",
+            learning_run_id=learning_run_id,
         )
     )
     return result
