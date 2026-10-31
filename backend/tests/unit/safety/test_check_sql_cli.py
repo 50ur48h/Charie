@@ -4,7 +4,7 @@ import json
 
 from charie.shared.connectors.base import QueryBlocked
 from charie.shared.safety import check_sql_cli
-from charie.shared.safety.check_sql_cli import MODE_KNOWLEDGE_UNREADABLE, MODE_NO_KNOWLEDGE
+from charie.shared.safety.check_sql_cli import MODE_NO_KNOWLEDGE
 from charie.shared.safety.sql_check import check_sql
 
 
@@ -103,16 +103,70 @@ def test_no_knowledge_mode_line_and_catalog(tmp_path, capsys) -> None:
     assert out.splitlines()[0] == MODE_NO_KNOWLEDGE
 
 
-def test_knowledge_exists_line(tmp_path, capsys) -> None:
+def _seed_knowledge(db_session) -> None:
+    from charie.shared.knowledge import store, versions
+
+    version_id = versions.get_or_create_draft(db_session, "first_learning").id
+    for schema, name in (("shop", "orders"), ("shop", "order_lines")):
+        store.upsert_entry(
+            db_session,
+            version_id,
+            f"table.{schema}.{name}",
+            "table",
+            name,
+            f"A table called {name}.",
+            {"schema": schema, "name": name},
+            "guessed",
+            [{"type": "structure", "text": "Read from the database structure"}],
+            "Read from the database structure",
+        )
+    store.upsert_entry(
+        db_session,
+        version_id,
+        "link.shop.order_lines.order_id~shop.orders.id",
+        "link",
+        "order_lines.order_id to orders.id",
+        "Each row of order_lines points to one row of orders.",
+        {
+            "from_table": "shop.order_lines",
+            "to_table": "shop.orders",
+            "from_columns": ["order_id"],
+            "to_columns": ["id"],
+            "found_by": "foreign_key",
+            "cardinality": "many_to_one",
+        },
+        "checked",
+        [{"type": "query", "text": "Tested how many rows match"}],
+        "Tested how many rows match",
+    )
+    db_session.commit()
+
+
+def test_knowledge_exists_line(db, db_session, tmp_path, capsys) -> None:
+    _seed_knowledge(db_session)
     code, out = _run(
-        ["SELECT id FROM orders"],
+        ["SELECT id FROM shop.orders"],
         _FakeOurs(True),
-        _FakePractice(["public.orders"]),
+        _FakePractice(["shop.orders"]),
         tmp_path,
         capsys,
     )
     assert code == 0
-    assert out.splitlines()[0] == MODE_KNOWLEDGE_UNREADABLE
+    assert out.splitlines()[0] == "Mode: knowledge version 1 (draft): 2 tables, 1 links."
+
+
+def test_knowledge_links_block_double_counting(db, db_session, tmp_path, capsys) -> None:
+    _seed_knowledge(db_session)
+    code, out = _run(
+        ["SELECT SUM(o.total) FROM shop.orders o JOIN shop.order_lines l ON l.order_id = o.id"],
+        _FakeOurs(True),
+        _FakePractice(["shop.orders", "shop.order_lines"]),
+        tmp_path,
+        capsys,
+    )
+    assert code == 1
+    assert out.splitlines()[0] == "Mode: knowledge version 1 (draft): 2 tables, 1 links."
+    assert "adds up" in out
 
 
 def test_catalog_file_adds_rules(tmp_path, capsys) -> None:

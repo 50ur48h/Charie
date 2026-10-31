@@ -6,9 +6,16 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from charie.shared.connectors.base import ConnectorError
 from charie.shared.connectors.postgres import PostgresConnector
 from charie.shared.jobs.registry import JobInfo, job_handler
+from charie.shared.tables.chat import QueryRun
 from charie.shared.tables.sources import DataSource
+
+
+class SkipItem(Exception):
+    """One step job bows out: say the message, count the job done."""
+
 
 # Architecture 02's canonical order. Steps register in this order; the feed
 # numbers them 1-12, and totals count only registered steps.
@@ -42,6 +49,38 @@ class StepContext:
     strict_mode: bool
     settings: dict[str, Any]
     say: Callable[[str, str, dict[str, Any]], None]
+
+
+def run_query(ctx: StepContext, purpose: str, sql: str):
+    """One scan-style query: saved in `query_runs`, then returned (or raised)."""
+    try:
+        result = ctx.connector.run_query(sql)
+    except ConnectorError as err:
+        ctx.session.add(
+            QueryRun(
+                learning_run_id=ctx.run_id,
+                purpose=purpose,
+                sql_text=sql,
+                status="timeout" if err.code == "query_timeout" else "failed",
+                row_count=0,
+                duration_ms=0,
+                error=err.message,
+            )
+        )
+        ctx.session.flush()
+        raise
+    ctx.session.add(
+        QueryRun(
+            learning_run_id=ctx.run_id,
+            purpose=purpose,
+            sql_text=sql,
+            status="ok",
+            row_count=result.row_count,
+            duration_ms=result.duration_ms,
+        )
+    )
+    ctx.session.flush()
+    return result
 
 
 @dataclass(frozen=True)

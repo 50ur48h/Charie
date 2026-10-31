@@ -7,7 +7,7 @@ that table name in any known schema.
 """
 
 from charie.shared.knowledge.store import list_entries
-from charie.shared.safety.catalog import Catalog, RequiredFilter, normalize_table
+from charie.shared.safety.catalog import Catalog, Link, RequiredFilter, normalize_table
 
 
 def _known_tables(session, version_id: int) -> list[str]:
@@ -91,6 +91,24 @@ def build_catalog(session, version_id: int) -> Catalog:
     known = _known_tables(session, version_id)
     forbidden: set[str] = set()
     required: list[RequiredFilter] = []
+    links: list[Link] = []
+    for entry in list_entries(session, version_id, kinds=["link"]):
+        details = entry.details if isinstance(entry.details, dict) else {}
+        if details.get("cardinality") != "many_to_one":
+            continue
+        from_columns = details.get("from_columns") or []
+        to_columns = details.get("to_columns") or []
+        if not from_columns or not to_columns:
+            continue
+        # Rule 5 only follows tables, so one pair carries a composite join.
+        links.append(
+            Link(
+                one_table=details.get("to_table") or "",
+                one_column=to_columns[0],
+                many_table=details.get("from_table") or "",
+                many_column=from_columns[0],
+            )
+        )
     for entry in _rule_entries(session, version_id):
         details = entry.details if isinstance(entry.details, dict) else {}
         rule_type = details.get("rule_type")
@@ -114,4 +132,5 @@ def build_catalog(session, version_id: int) -> Catalog:
         tables=known,
         forbidden_tables=sorted(forbidden),
         required_filters=required,
+        links=links,
     )

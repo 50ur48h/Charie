@@ -12,6 +12,7 @@ from charie.learner.locks import RunActiveError, serialize_learning_runs
 from charie.learner.steps.base import (
     STEP_NUMBERS,
     STEPS,
+    SkipItem,
     Step,
     StepContext,
     register_step_handler,
@@ -351,6 +352,13 @@ def run_step_job(info: JobInfo) -> None:
             pause_run(session, run.id, "spending")
             session.commit()
             raise
+        except SkipItem as skipped:
+            savepoint.rollback()
+            ctx.say("info", str(skipped))
+            finish_job(session, info.id, "done")
+            _record_step_progress(session, run, name)
+            advance_run(session, run.id)
+            return
         except Exception as err:
             savepoint.rollback()
             if info.attempts >= 3:
