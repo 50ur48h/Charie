@@ -330,37 +330,83 @@ def _oriented_link(main_table: str, link: JoinLink) -> JoinLink | None:
     return None
 
 
-def _resolve_join(main_table: str, needed: str, links: list[JoinLink]) -> JoinLink:
-    """One tested hop from the main table, or the exact refusal for why not."""
-    direct = [link for link in links if {link.from_table, link.to_table} == {main_table, needed}]
+def _link_key(link: JoinLink) -> tuple[str, str, str, str]:
+    """Sort key for one link, so equal paths always resolve the same way."""
+    return (link.from_table, link.to_table, link.from_column, link.to_column)
+
+
+def _many_to_one_step(current: str, link: JoinLink) -> tuple[str, str, str] | None:
+    """Step past one tested link from its many side: next table and columns."""
+    if not link.tested or link.from_table == link.to_table:
+        return None
+    if link.multiplicity == "many_to_one" and current == link.from_table:
+        return (link.to_table, link.from_column, link.to_column)
+    if link.multiplicity == "one_to_many" and current == link.to_table:
+        return (link.from_table, link.to_column, link.from_column)
+    return None
+
+
+def _resolve_path(main_table: str, needed: str, links: list[JoinLink]) -> list[JoinLink] | None:
+    """Shortest tested many-to-one path; ties go to the first link keys.
+
+    Single tested hops keep their direction (the overlap case joins the
+    many side on purpose). Direct untested links refuse; without any path
+    the caller decides the refusal, so a hard rule is never silently lost.
+    """
+    if main_table == needed:
+        return []
+    direct = [
+        link
+        for link in links
+        if {link.from_table, link.to_table} == {main_table, needed}
+        and link.from_table != link.to_table
+    ]
     tested = [link for link in direct if link.tested]
     if tested:
         oriented = _oriented_link(main_table, tested[0])
         if oriented is None:
             raise QueryBuildError("This number needs a join, which isn't supported yet.")
-        return oriented
+        return [oriented]
     if direct:
         raise QueryBuildError(f"The {needed} table needs a tested link to join on.")
-    reached = {main_table}
-    frontier = [main_table]
+    ordered = sorted(links, key=_link_key)
+    frontier = [(main_table, [], {main_table})]
     while frontier:
-        current = frontier.pop()
-        for link in links:
-            if not link.tested or link.from_table == link.to_table:
-                continue
-            other = None
-            if link.from_table == current and link.to_table not in reached:
-                other = link.to_table
-            elif link.to_table == current and link.from_table not in reached:
-                other = link.from_table
-            if other is not None:
-                if other == needed:
-                    raise QueryBuildError(
-                        "This question needs more than one join, which isn't supported yet."
+        arrivals = []
+        nxt_frontier = []
+        for current, hops, seen in frontier:
+            for link in ordered:
+                step = _many_to_one_step(current, link)
+                if step is None:
+                    continue
+                nxt = step[0]
+                if nxt in seen:
+                    continue
+                nhops = (*hops, (link, step))
+                if nxt == needed:
+                    arrivals.append(nhops)
+                else:
+                    nxt_frontier.append((nxt, nhops, seen | {nxt}))
+        if arrivals:
+            keyed = min((tuple(_link_key(link) for link, _ in hops), hops) for hops in arrivals)
+            path = []
+            current = main_table
+            for link, (_nxt, many_column, one_column) in keyed[1]:
+                path.append(
+                    JoinLink(
+                        from_table=current,
+                        to_table=_nxt,
+                        from_column=many_column,
+                        to_column=one_column,
+                        multiplicity="many_to_one",
+                        tested=True,
+                        reason=link.reason,
                     )
-                reached.add(other)
-                frontier.append(other)
-    raise QueryBuildError("This number needs a join, which isn't supported yet.")
+                )
+                current = _nxt
+            return path
+        frontier = nxt_frontier
+    return None
 
 
 def _resolve_ratio(recipe: Recipe, recipes: dict[str, Recipe]) -> tuple[Recipe, Recipe]:
@@ -580,16 +626,52 @@ def _build_simple(
             raise QueryBuildError(f"The {table} table is outside the tenant's data.")
         if table in SYSTEM_TABLES:
             raise QueryBuildError(f"The {table} table is a system table, not a dimension.")
-        try:
-            link = _resolve_join(side.table, table, context.links)
-        except QueryBuildError:
-            continue
-        if link.multiplicity != "many_to_one":
-            continue
         needed.append(table)
+    dim_key_by_table = {}
+    for dimension in requested:
+        if dimension.table and dimension.table != side.table:
+            dim_key_by_table.setdefault(dimension.table, dimension.key)
+    overlap_table = None
+    if overlap is not None:
+        overlap_table = _resolve_dimension(side, side_key, overlap[0]).table
+    title = side.title or side_key
+
+    def refuse(table: str) -> None:
+        if table in context.required_filters:
+            raise QueryBuildError(f"Can't enforce the hard rule on {table} from {side.table}.")
+        key = dim_key_by_table.get(table)
+        if key is not None:
+            raise QueryBuildError(
+                f'"{title}" can\'t be split by {key}: one {side.table} row '
+                f"has many {table}, so it would count some rows more than once."
+            )
+        raise QueryBuildError("This number needs a join, which isn't supported yet.")
+
     for table in needed:
-        link = _resolve_join(side.table, table, context.links)
-        builder.join(side.table, main_alias, link)
+        hops = _resolve_path(side.table, table, context.links)
+        if table == overlap_table:
+            if hops is None or len(hops) != 1:
+                raise QueryBuildError("This number needs a join, which isn't supported yet.")
+        else:
+            if hops is None:
+                refuse(table)
+            assert hops is not None
+            if any(hop.multiplicity != "many_to_one" for hop in hops):
+                refuse(table)
+        assert hops is not None
+        current_table, current_alias = side.table, main_alias
+        for hop in hops:
+            assert hop.from_table == current_table
+            nxt = hop.to_table
+            if nxt in context.forbidden_tables:
+                raise QueryBuildError(f"The {nxt} table is outside the tenant's data.")
+            if nxt in SYSTEM_TABLES:
+                raise QueryBuildError(f"The {nxt} table is a system table, not a dimension.")
+            if nxt in builder.aliases:
+                current_alias = builder.aliases[nxt]
+            else:
+                current_alias = builder.join(current_table, current_alias, hop)
+            current_table = nxt
     bare_tables: dict[str, str] = {}
     for full in builder.aliases:
         bare = full.split(".")[-1]

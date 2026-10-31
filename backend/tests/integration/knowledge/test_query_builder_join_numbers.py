@@ -179,3 +179,58 @@ def test_count_joined_column_skips_unmatched(shop_db, db) -> None:
         ]
         total = build_query("ids", {"ids": recipe}, _request(dimensions=[]), _context())
         assert shop_db(total.sql).rows == [(12,)]
+
+
+@contextlib.contextmanager
+def _test_order_items(db):
+    """Nine extra single items on test-restaurant order 5; removed afterwards."""
+    engine = create_engine(db)
+    try:
+        rows = ", ".join(f"(10{i}, 5, 'Extra', 1, 1.00)" for i in range(1, 10))
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO shop.order_items (id, order_id, name, quantity, price) "
+                    f"VALUES {rows}"
+                )
+            )
+        yield
+    finally:
+        with engine.begin() as conn:
+            conn.execute(text("DELETE FROM shop.order_items WHERE id >= 100"))
+        engine.dispose()
+
+
+def _item_rule_context() -> BuildContext:
+    return BuildContext(
+        time_zone="America/Chicago",
+        links=[ORDERS_RESTAURANTS, ITEMS_ORDERS],
+        required_filters={"shop.restaurants": ["restaurants.is_test = false"]},
+    )
+
+
+def test_item_rule_reaches_two_hops(shop_db, db) -> None:
+    with _test_order_items(db):
+        built = build_query(
+            "item_sales",
+            {"item_sales": ITEM_SALES},
+            _request(dimensions=[]),
+            _item_rule_context(),
+        )
+        assert built.sql.count("LEFT JOIN") == 2
+        assert "restaurants.is_test = false" in built.sql
+        # Nine new items sit on a test restaurant: the rule keeps the four real ones.
+        assert shop_db(built.sql).rows == [(4,)]
+
+
+def test_item_split_by_restaurant_adds_up(shop_db) -> None:
+    recipe = ITEM_SALES.model_copy(update={"dimensions": [RESTAURANT_NAME_DIM]})
+    built = build_query(
+        "item_sales",
+        {"item_sales": recipe},
+        _request(),
+        BuildContext(time_zone="America/Chicago", links=[ORDERS_RESTAURANTS, ITEMS_ORDERS]),
+    )
+    result = shop_db(built.sql)
+    assert result.rows == [("Bella Forno", 4)]
+    assert sum(row[1] for row in result.rows) == 4
