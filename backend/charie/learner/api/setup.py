@@ -5,13 +5,20 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from charie.learner.locks import RunActiveError
 from charie.shared.db import get_session
-from charie.shared.settings import get_setting
+from charie.shared.errors import ApiError
+from charie.shared.settings import get_setting, set_setting
+from charie.shared.tables.knowledge import KbVersion
 from charie.shared.tables.learning import LearningRun
 from charie.shared.tables.questions import OwnerQuestion
 from charie.shared.tables.sources import DataSource, Document, OwnerNote
 
 setup_router = APIRouter()
+
+
+class FinishBody(BaseModel):
+    version_id: int | None = None
 
 
 class SetupState(BaseModel):
@@ -85,3 +92,46 @@ def get_setup(session: Session = Depends(get_session)) -> dict[str, object]:
         "step": setup_step(session),
         "readiness": draft_readiness(session),
     }
+
+
+@setup_router.post("/api/setup/finish")
+def finish_setup(body: FinishBody, session: Session = Depends(get_session)) -> dict:
+    """Finish setup: publish the selected draft, then mark setup done.
+
+    The first run must be done and the self-test must have written a
+    readiness report. A failed publish leaves setup unfinished."""
+    from charie.shared.knowledge.versions import (
+        PublishBlocked,
+        PublishError,
+        VersionNotFound,
+        get_draft,
+        publish_version,
+    )
+
+    run = first_run(session)
+    if run is None or run.status != "done":
+        raise ApiError(409, "finish_first_run", "Finish the first learning run first.")
+    if body.version_id is not None:
+        draft = session.get(KbVersion, body.version_id)
+        if draft is None:
+            raise ApiError(404, "not_found", "Charie couldn\u2019t find that version.")
+    else:
+        draft = get_draft(session)
+    if draft is None:
+        raise ApiError(400, "no_draft", "There\u2019s no draft version to publish.")
+    if not isinstance(draft.readiness, dict):
+        raise ApiError(
+            409,
+            "finish_not_ready",
+            "The self-test hasn\u2019t written a readiness report yet.",
+        )
+    try:
+        publish_version(session, draft.id)
+    except PublishBlocked as err:
+        raise ApiError(409, "big_changes", str(err)) from err
+    except PublishError as err:
+        raise ApiError(409, "not_draft", str(err)) from err
+    except (VersionNotFound, RunActiveError) as err:
+        raise ApiError(409, "busy", str(err)) from err
+    set_setting(session, "setup_done", True)
+    return {"setup_done": True}
