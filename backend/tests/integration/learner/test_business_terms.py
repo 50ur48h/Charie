@@ -1,6 +1,6 @@
 """Business term discovery from learned evidence (P09.3, fake AI)."""
 
-from charie.learner.steps import business_numbers
+from charie.learner.steps import business_numbers, recipes
 from charie.learner.steps.base import StepContext
 from charie.shared.ai.client import AiClient
 from charie.shared.ai.cost_log import MemoryCostLog
@@ -111,8 +111,11 @@ def _ctx(db_session, version_id: int, source=None, connector=None):
 def _run(ctx, monkeypatch, reply: dict, dimensions: dict | None = None) -> FakeAi:
     fake = FakeAi().reply("find_business_terms", reply)
     fake.reply("find_dimensions", dimensions if dimensions is not None else {"dimensions": []})
+    for _ in range(3):
+        fake.reply("write_term_recipe", {"recipes": []})
     client = AiClient(provider=fake, cost_log=MemoryCostLog(), sleep=lambda s: None)
     monkeypatch.setattr(business_numbers, "get_ai", lambda: client)
+    monkeypatch.setattr(recipes, "get_ai", lambda: client)
     business_numbers.run_job(
         JobInfo(
             id=1,

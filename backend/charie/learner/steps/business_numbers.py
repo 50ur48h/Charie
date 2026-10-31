@@ -197,9 +197,9 @@ def _ours(ctx: StepContext) -> dict:
 
 
 def make_jobs(ctx: StepContext) -> list[dict]:
-    """One discovery job until proposals and dimensions are both done."""
+    """One discovery job until proposals, dimensions and recipes are all done."""
     ours = _ours(ctx)
-    if ours.get("proposals") and ours.get("dimensions_done"):
+    if ours.get("proposals") and ours.get("dimensions_done") and ours.get("recipes_done"):
         return []
     busy = {
         (job.payload or {}).get("step")
@@ -474,7 +474,13 @@ def _attach_dimension(
     return True
 
 
-def _save(ctx: StepContext, proposals: list[dict], dimensions_done: bool) -> None:
+def _save(
+    ctx: StepContext,
+    proposals: list[dict],
+    dimensions_done: bool,
+    recipes_done: bool = False,
+    recipe_failures: list[dict] | None = None,
+) -> None:
     """Proposals live in the run's progress, marked untested, with a checkpoint."""
     run = ctx.session.get(LearningRun, ctx.run_id)
     time_zone = get_setting(ctx.session, "time_zone") or "UTC"
@@ -485,6 +491,10 @@ def _save(ctx: StepContext, proposals: list[dict], dimensions_done: bool) -> Non
         "time_zone": time_zone,
         "discovered_at": saved.get("discovered_at") or datetime.now(UTC).isoformat(),
         "dimensions_done": dimensions_done,
+        "recipes_done": recipes_done or saved.get("recipes_done", False),
+        "recipe_failures": recipe_failures
+        if recipe_failures is not None
+        else saved.get("recipe_failures", []),
     }
     run.progress = progress
     flag_modified(run, "progress")
@@ -502,6 +512,11 @@ def run_job(info: JobInfo, ctx: StepContext) -> None:
             kept = discover_dimensions(ctx, proposals)
             _save(ctx, proposals, dimensions_done=True)
             ctx.say("found", f"Kept {kept} checked split(s) for the terms.")
+        if not _ours(ctx).get("recipes_done"):
+            from charie.learner.steps import recipes as recipes_step
+
+            kept, failures = recipes_step.discover_and_test(ctx, proposals)
+            _save(ctx, proposals, dimensions_done=True, recipes_done=True, recipe_failures=failures)
     except SpendingPaused:
         raise
     except Exception as err:  # noqa: BLE001 (the worker retries first; see below)
@@ -517,17 +532,22 @@ def run_job(info: JobInfo, ctx: StepContext) -> None:
 
 
 def finish_step(ctx: StepContext) -> None:
-    """Count what discovery proposed and kept; nothing here is usable yet."""
+    """Count what discovery proposed, kept and tested."""
     ours = _ours(ctx)
     proposals = ours.get("proposals") or []
     if not proposals:
         ctx.say("found", "No business numbers proposed.")
         return
     kept = sum(len(proposal.get("dimensions") or []) for proposal in proposals)
+    tested = sum(
+        1
+        for entry in list_entries(ctx.session, ctx.version_id, kinds=["metric"])
+        if entry.confidence == "checked"
+    )
     ctx.say(
         "found",
         f"{len(proposals)} candidate business number(s) with {kept} checked split(s); "
-        "they stay proposals until recipe checks pass.",
+        f"{tested} tested recipe(s) can be trusted.",
     )
 
 

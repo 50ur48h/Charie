@@ -104,7 +104,7 @@ def build_status(session: Session, now: datetime | None = None) -> dict[str, obj
     return {
         "knowledge": knowledge,
         "data": data,
-        "learning": learning,
+        "learning": {**learning, "questions_waiting": waiting},
         "spending": spending,
         "questions_waiting": waiting,
     }

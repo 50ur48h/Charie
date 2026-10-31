@@ -16,6 +16,9 @@ FRONTEND_E2E = "npm --prefix frontend run e2e:mock"
 PROMPT_TESTS = {
     "find_business_terms": "tests/integration/learner/test_business_terms.py",
     "find_dimensions": "tests/integration/knowledge/test_dimension_proofs.py",
+    "write_term_recipe": "tests/integration/learner/test_recipes.py",
+    "propose_defaults": "tests/integration/learner/test_defaults.py",
+    "write_owner_questions": "tests/integration/learner/test_make_questions.py",
 }
 
 

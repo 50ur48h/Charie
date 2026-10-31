@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
-import { CHAT, signedIn } from "./apps";
+import { CHAT, LEARNER, signedIn } from "./apps";
+import { openLearner } from "./helpers/learner";
 
 // P03.10 questions on the mocked API: answer, skip, tabs and ask-about.
 
@@ -29,9 +30,10 @@ test("answer_skip_change updates tabs and the badge", async ({ page }) => {
   if ((page.viewportSize()?.width ?? 0) < 900) {
     await page.getByRole("button", { name: "Open menu" }).click();
   }
-  const nav = page.viewportSize()!.width < 900
-    ? page.getByRole("dialog", { name: "Menu" })
-    : page.locator("aside");
+  const nav =
+    page.viewportSize()!.width < 900
+      ? page.getByRole("dialog", { name: "Menu" })
+      : page.locator("aside");
   await expect(nav.getByRole("link", { name: /Questions for you/ })).toContainText("1");
   // The drawer covered the page; close it before using the tabs.
   if ((page.viewportSize()?.width ?? 0) < 900) {
@@ -51,7 +53,9 @@ test("answer_skip_change updates tabs and the badge", async ({ page }) => {
   await answered.getByRole("radio", { name: "The last 7 days" }).click();
   await answered.getByRole("button", { name: "Save answer" }).click();
   // Both saves toast, so the earlier toast may still be on screen; check the latest.
-  await expect(page.getByText("Saved. Charie is re-checking what this affects.").last()).toBeVisible();
+  await expect(
+    page.getByText("Saved. Charie is re-checking what this affects.").last(),
+  ).toBeVisible();
   await expect(page.getByText("The last 7 days")).toBeVisible();
   await expect(page.getByText("Last full week, Monday to Sunday")).toBeHidden();
 });
@@ -70,4 +74,53 @@ test("ask_about_question fills a new-chat draft", async ({ page }) => {
   await expect(page.getByRole("textbox", { name: "Ask a question" })).toHaveValue(
     'What should "sales" mean by default?',
   );
+});
+test("answer_refresh_badge follows the waiting count", async ({ page }) => {
+  await expect(page.getByRole("tab", { name: /Waiting/ })).toContainText("3");
+  const first = page.getByRole("region", { name: /What should "sales" mean by default\?/ });
+  await first.getByRole("radio", { name: /Without delivery fees/ }).click();
+  await first.getByRole("button", { name: "Save answer" }).click();
+  await expect(page.getByText("Saved. Charie is re-checking what this affects.")).toBeVisible();
+  await expect(first).toBeHidden();
+  await expect(page.getByRole("tab", { name: /Waiting/ })).toContainText("2");
+  if ((page.viewportSize()?.width ?? 0) < 900) {
+    await page.getByRole("button", { name: "Open menu" }).click();
+  }
+  const nav =
+    page.viewportSize()!.width < 900
+      ? page.getByRole("dialog", { name: "Menu" })
+      : page.locator("aside");
+  await expect(nav.getByRole("link", { name: /Questions for you/ })).toContainText("2");
+});
+
+test("change_answer updates the saved answer", async ({ page }) => {
+  const first = page.getByRole("region", { name: /What should "sales" mean by default\?/ });
+  await first.getByRole("radio", { name: /Without delivery fees/ }).click();
+  await first.getByRole("button", { name: "Save answer" }).click();
+  await expect(page.getByText("Saved. Charie is re-checking what this affects.")).toBeVisible();
+  await page.getByRole("tab", { name: /Answered/ }).click();
+  await page.getByRole("button", { name: /Change your answer to.*sales/ }).click();
+  const answered = page.getByRole("region", { name: /What should "sales" mean by default\?/ });
+  await expect(answered.getByRole("radio", { checked: true })).toHaveCount(1);
+  await answered.getByRole("radio", { name: "Including delivery fees" }).click();
+  await answered.getByRole("button", { name: "Save answer" }).click();
+  await expect(
+    page.getByText("Saved. Charie is re-checking what this affects.").last(),
+  ).toBeVisible();
+  await expect(answered).toBeHidden();
+  await expect(page.getByText("Including delivery fees")).toBeVisible();
+});
+
+test("setup_question_shared answers from the setup step", async ({ page }) => {
+  await openLearner(page);
+  await page.goto(`${LEARNER}/setup?step=4`);
+  await expect(page.getByRole("heading", { name: "Answer its questions" })).toBeVisible();
+  await expect(page.getByText(/3 things/)).toBeVisible();
+  await page.getByRole("button", { name: /What should "sales" mean by default\?/ }).click();
+  const card = page.getByRole("region", { name: /What should "sales" mean by default\?/ });
+  await card.getByRole("radio", { name: /Without delivery fees/ }).click();
+  await card.getByRole("button", { name: "Save answer" }).click();
+  await expect(page.getByText("Saved. Charie is re-checking what this affects.")).toBeVisible();
+  await expect(card).toBeHidden();
+  await expect(page.getByText(/2 things/)).toBeVisible();
 });

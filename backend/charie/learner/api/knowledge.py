@@ -19,6 +19,7 @@ from charie.shared.knowledge.store import (
     entry_to_dict,
     get_entry,
 )
+from charie.shared.knowledge.todos import TodoNotFound, add_learner_todo, dismiss_todo
 from charie.shared.knowledge.versions import get_draft, get_or_create_draft, get_published
 from charie.shared.tables.questions import LearnerTodo
 
@@ -132,14 +133,26 @@ def mark_knowledge_wrong(
     if entry is None:
         raise ApiError(404, "not_found", f"There's no knowledge entry called {key}.")
     note = body.note.strip() if isinstance(body.note, str) and body.note.strip() else None
-    todo = LearnerTodo(
-        kind="correction",
-        text_=f"{entry.title}: {note}" if note else f"{entry.title}: marked as wrong",
-        details={"chat_title": None, "words": note, "key": key, "version": version_number},
-        status="open",
+    todo_id = add_learner_todo(
+        session,
+        "correction",
+        f"{entry.title}: {note}" if note else f"{entry.title}: marked as wrong",
+        {"chat_title": None, "words": note, "key": key, "version": version_number},
     )
-    session.add(todo)
-    session.flush()
+    todo = session.get(LearnerTodo, todo_id)
+    assert todo is not None
+    shape = _todo_shape(todo)
+    session.commit()
+    return {"todo": shape}
+
+
+@knowledge_router.post("/api/todos/{todo_id}/dismiss")
+def dismiss_todo_item(todo_id: int, session: Session = Depends(get_session)) -> dict:
+    """Dismiss one to-do; the entry itself never changes."""
+    try:
+        todo = dismiss_todo(session, todo_id)
+    except TodoNotFound as err:
+        raise ApiError(404, "not_found", str(err)) from err
     shape = _todo_shape(todo)
     session.commit()
     return {"todo": shape}

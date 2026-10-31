@@ -1,0 +1,8 @@
+# Reviewed false positives for gitleaks (default rules otherwise apply).
+[allowlist]
+description = "Test timezone string mistaken for a generic API key; not a secret."
+matchCondition = "or"
+regexTarget = "line"
+regexes = [
+    '''monkeypatch\.setattr\(recipes_step, "get_setting", lambda session, key: "America/Chicago"\)''',
+]

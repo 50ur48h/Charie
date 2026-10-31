@@ -117,10 +117,11 @@ class QueryRequest(BaseModel):
 
 
 class BuildContext(BaseModel):
-    """What the builder may assume: links, rules, time zone, week start."""
+    """What the builder may assume: tables, links, rules, time zone, week start."""
 
     model_config = ConfigDict(extra="forbid")
 
+    tables: list[str] = []
     links: list[JoinLink] = []
     required_filters: dict[str, list[str]] = {}
     forbidden_tables: list[str] = []
@@ -843,7 +844,8 @@ def load_build_context(session, version_id: int, time_zone: str = "UTC") -> Buil
     always builds the same context.
     """
     from charie.shared.knowledge import catalog as knowledge_catalog
-    from charie.shared.knowledge.store import list_entries
+    from charie.shared.knowledge.calendar import CALENDAR_KEY
+    from charie.shared.knowledge.store import get_entry, list_entries
     from charie.shared.safety.catalog import required_filters_for
 
     links: list[JoinLink] = []
@@ -883,10 +885,17 @@ def load_build_context(session, version_id: int, time_zone: str = "UTC") -> Buil
     dimension_details: dict[str, DimensionDetails] = {}
     for entry in list_entries(session, version_id, kinds=["dimension"]):
         dimension_details[entry.key] = DimensionDetails.model_validate(entry.details or {})
+    week_starts: Literal["monday", "sunday"] = "monday"
+    learned_calendar = get_entry(session, version_id, CALENDAR_KEY)
+    learned_details = learned_calendar.details if learned_calendar is not None else None
+    if isinstance(learned_details, dict) and learned_details.get("week_start") == "sunday":
+        week_starts = "sunday"
     return BuildContext(
+        tables=sorted(known.tables),
         links=links,
         required_filters=required,
         forbidden_tables=forbidden,
         time_zone=time_zone or "UTC",
+        week_starts=week_starts,
         dimension_details=dimension_details,
     )

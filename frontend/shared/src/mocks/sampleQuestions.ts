@@ -276,15 +276,40 @@ export function waitingMockCount(): number {
   return currentQuestions().filter((q) => q.status === "waiting").length;
 }
 
-// Answer a waiting question (mock only). Exactly one of optionId/text;
-// unknown options and empty text are refused like the real API.
+// Answer a question (mock only). Exactly one of optionId/text; unknown
+// options and empty text are refused like the real API. Changing an
+// answered question needs the saved answer as previous, like the real
+// API: the same answer stays idempotent, anything else conflicts.
 export function answerMockQuestion(
   id: number,
   answer: { optionId: string } | { text: string },
-): "ok" | "not_found" | "bad_answer" {
+  previous?: { optionId: string } | { text: string },
+): "ok" | "not_found" | "bad_answer" | "conflict" {
   const patches = readPatches();
   const base = seedQuestions.find((q) => q.id === id);
   if (!base && !patches.has(id)) return "not_found";
+  const stored = currentQuestions().find((q) => q.id === id)?.answer;
+  const answered =
+    currentQuestions().find((q) => q.id === id)?.status === "answered" && stored;
+  const same =
+    answered &&
+    (("optionId" in answer &&
+      stored?.optionId !== undefined &&
+      answer.optionId === stored.optionId) ||
+      ("text" in answer &&
+        stored?.text !== undefined &&
+        answer.text.trim() === stored.text));
+  if (answered && !same) {
+    const matches =
+      previous !== undefined &&
+      (("optionId" in previous &&
+        stored?.optionId !== undefined &&
+        previous.optionId === stored.optionId) ||
+        ("text" in previous &&
+          stored?.text !== undefined &&
+          previous.text.trim() === stored.text));
+    if (!matches) return "conflict";
+  }
   if ("optionId" in answer) {
     if (!base || !base.options.some((o) => o.id === answer.optionId)) return "bad_answer";
     patches.set(id, {

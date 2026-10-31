@@ -169,8 +169,15 @@ export function QuestionsPage() {
                               "optionId" in selection
                                 ? { optionId: selection.optionId }
                                 : { text: selection.text };
+                            const saved = question.answer;
+                            const previous =
+                              saved?.optionId !== undefined
+                                ? { optionId: saved.optionId }
+                                : saved?.text !== undefined
+                                  ? { text: saved.text }
+                                  : undefined;
                             answer.mutate(
-                              { questionId: question.id, answer: payload },
+                              { questionId: question.id, answer: payload, previous },
                               {
                                 onSuccess: () => {
                                   setEditing(null);

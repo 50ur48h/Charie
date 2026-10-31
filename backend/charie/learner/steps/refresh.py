@@ -139,6 +139,21 @@ def consume(session: Session, run: LearningRun) -> None:
     if not isinstance(scope, dict) or "snapshot" not in scope:
         return
     save_consumed(session, scope["snapshot"], run.id)
+    from charie.learner import runs as learner_runs
+    from charie.learner.events import add_event
+    from charie.learner.steps import todos as todos_step
+
+    try:
+        todos_step.handle_todos(learner_runs._context(session, run))
+    except Exception as err:  # noqa: BLE001 (a stuck to-do never fails the refresh)
+        add_event(
+            session,
+            run.id,
+            "warning",
+            f"Couldn't work through the to-do list: {err}.",
+            step=run.step,
+        )
+    session.flush()
 
 
 def apply_removals(session: Session, version_id: int, removed_ids: list[int]) -> int:
