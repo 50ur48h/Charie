@@ -2,6 +2,7 @@
 # Used by hand and by the Stop hook. The map comes from docs/architecture/08.
 import json
 import os
+import re
 import subprocess
 import sys
 
@@ -87,6 +88,18 @@ def changed_files():
     return sorted(f for f in files if f)
 
 
+def _target_missing(command):
+    """A pytest target with no test dir has nothing to run (generic rules only)."""
+    if "pytest" not in command:
+        return False
+    targets = re.findall(r"tests/\S+", command)
+    return bool(targets) and not any(
+        os.path.isdir(os.path.join("backend", target))
+        or os.path.isfile(os.path.join("backend", target))
+        for target in targets
+    )
+
+
 def planned_commands():
     commands = set()
     for path in changed_files():
@@ -96,6 +109,8 @@ def planned_commands():
         if command.startswith("uv run") and not os.path.isfile("backend/pyproject.toml"):
             continue
         if command.startswith("npm") and not os.path.isfile("frontend/package.json"):
+            continue
+        if _target_missing(command):
             continue
         ready.append(command)
     return ready

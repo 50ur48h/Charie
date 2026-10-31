@@ -92,7 +92,7 @@ def _sections(session, document_id: int) -> list[DocumentSection]:
     )
 
 
-def test_notes_vectors_and_word_index(db_session, monkeypatch) -> None:
+def test_note_section_notes_vectors_and_words(db_session, monkeypatch) -> None:
     doc_id = _add_indexed_doc(db_session)
     fake = _notes_client(monkeypatch, "Refund policy: 30 days.", "Shipping: 2 days.")
     stub = _stub_embed(monkeypatch)

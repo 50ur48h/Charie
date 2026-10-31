@@ -284,6 +284,12 @@ def test_pause_spending_and_budget_resume(db, three_steps) -> None:
 
 def test_skipped_step_says_why(db) -> None:
     """A step with no jobs leaves its reason as a feed line (B008)."""
+    # The real documents step exists now (P08.3), so stow it while the fake
+    # with the same canonical name stands in.
+    saved_steps = dict(STEPS)
+    saved_handlers = dict(HANDLERS)
+    del STEPS["documents"]
+    del HANDLERS["read_document"]
     step = Step(
         name="documents",
         title="Study the documents",
@@ -313,3 +319,7 @@ def test_skipped_step_says_why(db) -> None:
     finally:
         del STEPS["documents"]
         del HANDLERS["test_documents"]
+        STEPS.clear()
+        HANDLERS.clear()
+        STEPS.update(saved_steps)
+        HANDLERS.update(saved_handlers)
