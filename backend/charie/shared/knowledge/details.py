@@ -184,8 +184,17 @@ class DataProblemDetails(LaterDetails):
     pass
 
 
-class DefaultDetails(LaterDetails):
-    pass
+class DefaultDetails(StrictModel):
+    """One default meaning: a vague word and what it stands for."""
+
+    word: str = ""
+    value: str = ""
+    evidence: list[Source] = []
+    metrics: list[str] = []
+    # Note hints predate default meanings and share the kind: their
+    # tables and columns ride along, unset on real defaults.
+    tables: list[str] = []
+    columns: list[str] = []
 
 
 class CalendarDetails(LaterDetails):

@@ -2,6 +2,7 @@
 
 from charie.learner.steps import (
     business_numbers,  # noqa: F401 (registers the step)
+    defaults,  # noqa: F401 (registers the step)
     doc_facts,  # noqa: F401 (registers the step)
     documents,  # noqa: F401 (registers the step)
     explain_tables,  # noqa: F401 (registers the step)
