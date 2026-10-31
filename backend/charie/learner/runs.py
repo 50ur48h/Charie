@@ -336,7 +336,9 @@ def run_step_job(info: JobInfo) -> None:
     outer transaction — even when the step broke the database.
     """
     with session_scope() as session:
-        run = session.get(LearningRun, info.run_id, with_for_update=True)
+        # NO KEY UPDATE: the step's AI cost rows reference this run, and
+        # their foreign-key checks need a compatible lock (P07.10).
+        run = session.get(LearningRun, info.run_id, with_for_update={"key_share": True})
         if run is None or run.status in TERMINAL_STATUSES:
             return
         name = dict(info.payload).get("step", "")

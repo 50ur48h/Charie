@@ -150,4 +150,28 @@ describe("DocumentsStep", () => {
     expect(await screen.findByText("Notes added")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Edit notes" })).toBeTruthy();
   });
+
+  test("Add notes stays reachable when documents fail to load", async () => {
+    stubUpload([]);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+        if (url.includes("/api/documents")) {
+          return Promise.resolve(json({ detail: "Not Found" }, 404));
+        }
+        if (url.includes("/api/owner-notes") && (init?.method ?? "GET") === "GET") {
+          return Promise.resolve(
+            json({ text: "", saved_at: null, sorted: null, sorted_at: null }),
+          );
+        }
+        return Promise.resolve(json({}));
+      }),
+    );
+    renderStep();
+    expect(await screen.findByText(/Couldn\u2019t load your documents/)).toBeTruthy();
+    fireEvent.click(await screen.findByRole("button", { name: "Add notes" }));
+    expect(
+      await screen.findByRole("button", { name: "Load from a file" }),
+    ).toBeTruthy();
+  });
 });
