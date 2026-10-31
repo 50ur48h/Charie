@@ -3,7 +3,8 @@
 The same router serves the chat and learner apps; login is enforced by
 the apps. Evidence is serialized safe: plain summaries and quotes only,
 never credentials. Exactly one of option_id or text answers a question;
-a different answer to an answered question conflicts.
+a different answer conflicts unless it sends the saved answer back as
+previous, which proves the change is deliberate and not stale.
 """
 
 from fastapi import APIRouter, Depends
@@ -29,6 +30,8 @@ STATUSES = ("waiting", "answered", "skipped")
 class AnswerBody(BaseModel):
     option_id: str | None = None
     text: str | None = None
+    previous_option_id: str | None = None
+    previous_text: str | None = None
 
 
 def _source_name(source: dict) -> str:
@@ -159,7 +162,12 @@ def answer_question(
         summary = apply_answer(
             session,
             question_id,
-            {"option_id": body.option_id, "text": body.text},
+            {
+                "option_id": body.option_id,
+                "text": body.text,
+                "previous_option_id": body.previous_option_id,
+                "previous_text": body.previous_text,
+            },
             _run_for(session),
             get_setting(session, "time_zone") or "UTC",
         )

@@ -169,7 +169,7 @@ def _catalog(context: BuildContext, tables: set[str]) -> Catalog:
         for sql in sqls
     ]
     return Catalog(
-        tables=sorted(tables),
+        tables=sorted(set(context.tables) | tables),
         forbidden_tables=list(context.forbidden_tables),
         required_filters=required,
         links=links,
@@ -245,6 +245,30 @@ def _check_runs(
 
 def _check_believable(recipe: Recipe, totals: dict[str, Decimal]) -> RecipeCheck:
     """Unit-derived bounds: counts can't be negative, shares stay 0-100."""
+    if recipe.kind == "ratio" and recipe.unit == "percent":
+        num, den = totals.get("num"), totals.get("den")
+        if num is None or den is None:
+            return RecipeCheck(
+                name="believable", passed=False, text="The percentage has no numbers."
+            )
+        if den == 0:
+            return RecipeCheck(
+                name="believable",
+                passed=False,
+                text="The percentage divides by zero.",
+            )
+        result = num / den * 100
+        if result < 0 or result > 100:
+            return RecipeCheck(
+                name="believable",
+                passed=False,
+                text=f"The percentage comes out {result}, outside 0 to 100.",
+            )
+        return RecipeCheck(
+            name="believable",
+            passed=True,
+            text="The percentage stays between 0 and 100.",
+        )
     if recipe.unit in ("count",):
         bad = [role for role, value in totals.items() if value < 0]
         if bad:

@@ -158,6 +158,89 @@ def test_unknown_columns_fail_before_a_customer_query_runs() -> None:
         )
 
 
+def _ratio(key: str, num: str, den: str, title: str = "Share") -> Recipe:
+    return Recipe(
+        kind="ratio",
+        title=title,
+        numerator=num,
+        denominator=den,
+        unit="percent",
+        steps_in_words=["Divide the parts.", "Share the result."],
+    )
+
+
+def _sides() -> tuple[Recipe, Recipe]:
+    num = _recipe(title="Completed", filters=["orders.status = 'completed'"])
+    den = _recipe(title="Orders")
+    return num, den
+
+
+def _run_totals(num_total: Decimal, den_total: Decimal):
+    def run(sql: str):
+        if "completed" in sql:
+            return [(num_total,)]
+        return [(den_total,)]
+
+    return run
+
+
+def test_percent_ratio_checks_result_not_inputs() -> None:
+    """20 over 10 is 200%: outside 0 to 100, even though both inputs fit."""
+    num, den = _sides()
+    ratio = _ratio("metric.share", "metric.num", "metric.den")
+    recipes = {"metric.num": num, "metric.den": den}
+    checks, _, _ = recipe_tests.test_recipe(
+        ratio,
+        "metric.share",
+        recipes,
+        _period(),
+        _context(),
+        _run_totals(Decimal(20), Decimal(10)),
+        [],
+    )
+    by_name = {check.name: check for check in checks}
+    assert by_name["runs"].passed is True
+    assert by_name["believable"].passed is False
+
+
+def test_percent_ratio_valid_result_passes() -> None:
+    """150 over 300 is 50%: valid, even though the inputs exceed 100."""
+    num, den = _sides()
+    ratio = _ratio("metric.share", "metric.num", "metric.den")
+    recipes = {"metric.num": num, "metric.den": den}
+    checks, _, _ = recipe_tests.test_recipe(
+        ratio,
+        "metric.share",
+        recipes,
+        _period(),
+        _context(),
+        _run_totals(Decimal(150), Decimal(300)),
+        [],
+    )
+    by_name = {check.name: check for check in checks}
+    assert by_name["runs"].passed is True
+    assert by_name["believable"].passed is True
+
+
+def test_percent_ratio_zero_denominator_fails() -> None:
+    """Dividing by zero is never a believable percentage."""
+    num, den = _sides()
+    ratio = _ratio("metric.share", "metric.num", "metric.den")
+    recipes = {"metric.num": num, "metric.den": den}
+    checks, _, _ = recipe_tests.test_recipe(
+        ratio,
+        "metric.share",
+        recipes,
+        _period(),
+        _context(),
+        _run_totals(Decimal(20), Decimal(0)),
+        [],
+    )
+    by_name = {check.name: check for check in checks}
+    assert by_name["runs"].passed is True
+    assert by_name["believable"].passed is False
+
+
 def test_ratio_cycle() -> None:
     simple = _recipe(title="Orders")
     tested = {"term.orders": ("metric.orders", simple)}

@@ -2,10 +2,12 @@
 
 An answer picks one validated option or writes free text. Selected
 proposals update the draft (defaults confirmed, calendar confirmed with
-its setting, metrics and entries retested); free text becomes a learner
-to-do until P09.7 converts it. Resubmitting the same answer is
-idempotent; a different answer to an answered question conflicts instead
-of silently replacing it. Published knowledge never changes here.
+its setting, conflicts resolved, metrics and entries retested); free
+text becomes a learner to-do until P09.7 converts it. Resubmitting the
+same answer is idempotent; changing an answered question sends the
+saved answer back as `previous`, and anything else that differs
+conflicts instead of silently replacing it. Published knowledge never
+changes here.
 """
 
 from datetime import UTC, datetime
@@ -121,6 +123,47 @@ def _need_entry(session, version_id: int, key: str, kind: str) -> None:
         raise BadAnswer("That answer does not fit this question.")
 
 
+def _apply_conflict(
+    session, version_id: int, question, key: str, label: str, run
+) -> tuple[list[dict], dict]:
+    """Resolve the one conflict this question asked about."""
+    evidence = question.evidence if isinstance(question.evidence, dict) else {}
+    if evidence.get("origin") != "conflict":
+        raise BadAnswer("That answer does not fit this question.")
+    scope = set(question.affects or [])
+    if evidence.get("entry_key"):
+        scope.add(evidence["entry_key"])
+    if key not in scope:
+        raise BadAnswer("That answer does not fit this question.")
+    entry = get_entry(session, version_id, key)
+    if entry is None:
+        raise BadAnswer("That answer does not fit this question.")
+    if entry.confidence != "conflicting":
+        raise BadAnswer("That conflict is already resolved.")
+    sources = list(entry.sources) if isinstance(entry.sources, list) else []
+    sources.append({"type": "owner_answer", "text": label})
+    details = dict(entry.details) if isinstance(entry.details, dict) else {}
+    upsert_entry(
+        session,
+        version_id,
+        key,
+        entry.kind,
+        entry.title,
+        entry.meaning,
+        details,
+        "confirmed",
+        sources,
+        "The owner picked this side.",
+    )
+    retested: dict = {}
+    if run is not None:
+        from charie.learner.steps import recipes as recipes_step
+
+        tables = _retest_tables(session, version_id, sorted(scope))
+        retested = recipes_step.retest_affected(session, version_id, tables, run)
+    return [{"entry": key, "before": "conflicting", "after": "confirmed"}], retested
+
+
 def apply_answer(session, question_id: int, payload: dict, run, time_zone: str) -> dict:
     """Apply one answer; returns the id, status and what changed.
 
@@ -140,6 +183,18 @@ def apply_answer(session, question_id: int, payload: dict, run, time_zone: str) 
     has_text = isinstance(text, str) and text.strip() != ""
     if has_option == has_text:
         raise BadAnswer("Send exactly one of option_id or text.")
+    previous_option = payload.get("previous_option_id") if isinstance(payload, dict) else None
+    previous_text = payload.get("previous_text") if isinstance(payload, dict) else None
+    has_prev_option = isinstance(previous_option, str) and previous_option.strip() != ""
+    has_prev_text = isinstance(previous_text, str) and previous_text.strip() != ""
+    if has_prev_option and has_prev_text:
+        raise BadAnswer("Send exactly one of previous_option_id or previous_text.")
+    if has_prev_option:
+        prev: dict | None = {"option_id": previous_option.strip()}
+    elif has_prev_text:
+        prev = {"text": previous_text.strip()}
+    else:
+        prev = None
     options = {
         option.get("id"): option
         for option in (question.options or [])
@@ -148,10 +203,12 @@ def apply_answer(session, question_id: int, payload: dict, run, time_zone: str) 
     if has_option and option_id not in options:
         raise BadAnswer("That answer does not fit this question.")
     new = {"option_id": option_id} if has_option else {"text": text.strip()}
-    if question.status == "answered" and _core(question.answer) != new:
-        raise AnswerConflict("This question was already answered with a different answer.")
     if question.status == "answered":
-        return {"id": question.id, "status": question.status, "idempotent": True}
+        stored = _core(question.answer)
+        if stored == new:
+            return {"id": question.id, "status": question.status, "idempotent": True}
+        if prev is None or stored != prev:
+            raise AnswerConflict("This question was already answered with a different answer.")
     draft = get_or_create_draft(session, "owner_edit")
     version_id = draft.id
     applied: list[dict] = []
@@ -191,12 +248,7 @@ def apply_answer(session, question_id: int, payload: dict, run, time_zone: str) 
             applied = [{"entry": key}]
         elif "entry" in proposal:
             key = proposal["entry"] or ""
-            _need_entry(session, version_id, key, "")
-            if run is not None:
-                from charie.learner.steps import recipes as recipes_step
-
-                retested = recipes_step.retest_affected(session, version_id, [key], run)
-            applied = [{"entry": key}]
+            applied, retested = _apply_conflict(session, version_id, question, key, label, run)
         else:
             raise BadAnswer("That answer does not fit this question.")
     question.answer = {

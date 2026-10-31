@@ -412,3 +412,210 @@ def test_concurrent_answer(db_session, version_id, practice_shop) -> None:
         row = session.get(OwnerQuestion, question_id)
         assert row.status == "answered"
         assert row.answer["option_id"] in ("a", "b")
+
+
+def _ask_conflict_row(db_session, entry_key: str = "metric.net_sales") -> int:
+    row = OwnerQuestion(
+        status="waiting",
+        rank=1,
+        importance=1,
+        topic="Which evidence about Net sales is right",
+        title="Which evidence about Net sales is right?",
+        body="Two pieces of evidence disagree about Net sales.",
+        evidence={
+            "origin": "conflict",
+            "entry_key": entry_key,
+            "metric_key": "",
+            "context": {"title": "Net sales"},
+            "fingerprint": "seed-conflict",
+            "sources": [],
+        },
+        options=[
+            {
+                "id": "a",
+                "label": "The monthly report",
+                "explanation": "The report states this number.",
+                "proposal": {"entry": entry_key},
+            },
+            {
+                "id": "b",
+                "label": "The owner notes",
+                "explanation": "The notes state this number.",
+                "proposal": {"entry": entry_key},
+            },
+        ],
+        default_option="a",
+        affects=[entry_key],
+        source="learning",
+    )
+    db_session.add(row)
+    db_session.commit()
+    return row.id
+
+
+def test_change_answer_with_previous(
+    db_session, version_id, practice_shop, practice_source, learner_client
+) -> None:
+    _seed_metrics(db_session, version_id)
+    question_id = _ask_row(db_session)
+    log_in(learner_client)
+    first = learner_client.post(f"/api/questions/{question_id}/answer", json={"option_id": "a"})
+    assert first.status_code == 200, first.text
+    change = learner_client.post(
+        f"/api/questions/{question_id}/answer",
+        json={"option_id": "b", "previous_option_id": "a"},
+    )
+    assert change.status_code == 200, change.text
+    row = db_session.get(OwnerQuestion, question_id)
+    assert row.status == "answered"
+    assert row.answer["option_id"] == "b"
+    assert row.answer["previous"] == {"option_id": "a"}
+    entry = store.get_entry(db_session, version_id, "default.sales")
+    assert entry.confidence == "confirmed"
+    assert entry.details["value"] == "metric.gross_sales"
+
+
+def test_change_answer_without_previous_conflicts(
+    db_session, version_id, practice_shop, practice_source, learner_client
+) -> None:
+    _seed_metrics(db_session, version_id)
+    question_id = _ask_row(db_session)
+    log_in(learner_client)
+    first = learner_client.post(f"/api/questions/{question_id}/answer", json={"option_id": "a"})
+    assert first.status_code == 200, first.text
+    change = learner_client.post(f"/api/questions/{question_id}/answer", json={"option_id": "b"})
+    assert change.status_code == 409
+    row = db_session.get(OwnerQuestion, question_id)
+    assert row.answer["option_id"] == "a"
+    entry = store.get_entry(db_session, version_id, "default.sales")
+    assert entry.details["value"] == "metric.net_sales"
+
+
+def test_change_answer_stale_previous_conflicts(
+    db_session, version_id, practice_shop, practice_source, learner_client
+) -> None:
+    _seed_metrics(db_session, version_id)
+    question_id = _ask_row(db_session)
+    log_in(learner_client)
+    assert (
+        learner_client.post(f"/api/questions/{question_id}/answer", json={"option_id": "a"})
+    ).status_code == 200
+    changed = learner_client.post(
+        f"/api/questions/{question_id}/answer",
+        json={"option_id": "b", "previous_option_id": "a"},
+    )
+    assert changed.status_code == 200, changed.text
+    stale = learner_client.post(
+        f"/api/questions/{question_id}/answer",
+        json={"option_id": "a", "previous_option_id": "a"},
+    )
+    assert stale.status_code == 409
+    row = db_session.get(OwnerQuestion, question_id)
+    assert row.answer["option_id"] == "b"
+
+
+def test_change_text_with_previous(
+    db_session, version_id, practice_shop, practice_source, learner_client
+) -> None:
+    _seed_metrics(db_session, version_id)
+    question_id = _ask_row(db_session)
+    log_in(learner_client)
+    first = learner_client.post(
+        f"/api/questions/{question_id}/answer", json={"text": "Sales means net"}
+    )
+    assert first.status_code == 200, first.text
+    change = learner_client.post(
+        f"/api/questions/{question_id}/answer",
+        json={"text": "Sales means gross", "previous_text": "Sales means net"},
+    )
+    assert change.status_code == 200, change.text
+    row = db_session.get(OwnerQuestion, question_id)
+    assert row.answer["text"] == "Sales means gross"
+    assert row.answer["previous"] == {"text": "Sales means net"}
+
+
+def test_conflict_choice_resolves_entry(
+    db_session, version_id, practice_shop, practice_source, learner_client
+) -> None:
+    _seed_metrics(db_session, version_id)
+    current = store.get_entry(db_session, version_id, "metric.net_sales")
+    store.upsert_entry(
+        db_session,
+        version_id,
+        "metric.net_sales",
+        "metric",
+        current.title,
+        current.meaning,
+        dict(current.details),
+        "conflicting",
+        list(current.sources),
+        "Two documents disagree.",
+    )
+    db_session.commit()
+    question_id = _ask_conflict_row(db_session)
+    log_in(learner_client)
+    response = learner_client.post(f"/api/questions/{question_id}/answer", json={"option_id": "a"})
+    assert response.status_code == 200, response.text
+    row = db_session.get(OwnerQuestion, question_id)
+    assert row.status == "answered"
+    assert row.answer["applied"] == [
+        {"entry": "metric.net_sales", "before": "conflicting", "after": "confirmed"}
+    ]
+    assert row.answer["retested"] == {"metric.gross_sales": True, "metric.net_sales": True}
+    entry = store.get_entry(db_session, version_id, "metric.net_sales")
+    assert entry.confidence == "confirmed"
+    assert any(source.get("type") == "owner_answer" for source in entry.sources or [])
+
+
+def test_conflict_choice_rejected_when_not_conflicting(
+    db_session, version_id, practice_shop, practice_source, learner_client
+) -> None:
+    _seed_metrics(db_session, version_id)
+    question_id = _ask_conflict_row(db_session)
+    log_in(learner_client)
+    response = learner_client.post(f"/api/questions/{question_id}/answer", json={"option_id": "a"})
+    assert response.status_code == 400
+    row = db_session.get(OwnerQuestion, question_id)
+    assert row.status == "waiting"
+    entry = store.get_entry(db_session, version_id, "metric.net_sales")
+    assert entry.confidence == "checked"
+    assert not any(source.get("type") == "owner_answer" for source in entry.sources or [])
+
+
+def test_conflict_choice_rejected_outside_scope(
+    db_session, version_id, practice_shop, practice_source, learner_client
+) -> None:
+    _seed_metrics(db_session, version_id)
+    row = OwnerQuestion(
+        status="waiting",
+        rank=1,
+        importance=1,
+        topic="Which evidence about Net sales is right",
+        title="Which evidence about Net sales is right?",
+        body="Two pieces of evidence disagree about Net sales.",
+        evidence={
+            "origin": "conflict",
+            "entry_key": "metric.net_sales",
+            "metric_key": "",
+            "context": {"title": "Net sales"},
+            "fingerprint": "seed-scope",
+            "sources": [],
+        },
+        options=[
+            {
+                "id": "a",
+                "label": "Gross sales instead",
+                "explanation": "A different entry entirely.",
+                "proposal": {"entry": "metric.gross_sales"},
+            },
+        ],
+        default_option="a",
+        affects=["metric.net_sales"],
+        source="learning",
+    )
+    db_session.add(row)
+    db_session.commit()
+    log_in(learner_client)
+    response = learner_client.post(f"/api/questions/{row.id}/answer", json={"option_id": "a"})
+    assert response.status_code == 400
+    assert db_session.get(OwnerQuestion, row.id).status == "waiting"

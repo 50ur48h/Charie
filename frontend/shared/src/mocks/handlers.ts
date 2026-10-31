@@ -266,7 +266,12 @@ function knowledgeListResponse(
     } catch {
       body = undefined;
     }
-    const record = (body ?? {}) as { option_id?: unknown; text?: unknown };
+    const record = (body ?? {}) as {
+      option_id?: unknown;
+      text?: unknown;
+      previous_option_id?: unknown;
+      previous_text?: unknown;
+    };
     const hasOption = typeof record.option_id === "string" && record.option_id !== "";
     const hasText = typeof record.text === "string" && record.text.trim() !== "";
     if (hasOption === hasText) {
@@ -275,9 +280,32 @@ function knowledgeListResponse(
         { status: 400 },
       );
     }
+    const hasPrevOption =
+      typeof record.previous_option_id === "string" && record.previous_option_id !== "";
+    const hasPrevText =
+      typeof record.previous_text === "string" && record.previous_text.trim() !== "";
+    if (hasPrevOption && hasPrevText) {
+      return HttpResponse.json(
+        { error: "bad_answer", message: "Send exactly one of previous_option_id or previous_text." },
+        { status: 400 },
+      );
+    }
+    const previous = hasPrevOption
+      ? { optionId: record.previous_option_id as string }
+      : hasPrevText
+        ? { text: (record.previous_text as string).trim() }
+        : undefined;
     const outcome = hasOption
-      ? answerMockQuestion(Number(params.id), { optionId: record.option_id as string })
-      : answerMockQuestion(Number(params.id), { text: (record.text as string).trim() });
+      ? answerMockQuestion(
+          Number(params.id),
+          { optionId: record.option_id as string },
+          previous,
+        )
+      : answerMockQuestion(
+          Number(params.id),
+          { text: (record.text as string).trim() },
+          previous,
+        );
     if (outcome === "not_found") {
       return HttpResponse.json(
         { error: "not_found", message: "That question is gone." },
@@ -288,6 +316,12 @@ function knowledgeListResponse(
       return HttpResponse.json(
         { error: "bad_answer", message: "That answer does not fit this question." },
         { status: 400 },
+      );
+    }
+    if (outcome === "conflict") {
+      return HttpResponse.json(
+        { error: "already_answered", message: "This question was already answered." },
+        { status: 409 },
       );
     }
     return HttpResponse.json({ ok: true });

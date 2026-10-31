@@ -275,7 +275,7 @@ def _catalog(context, tables: set[str]) -> Catalog:
             )
         )
     return Catalog(
-        tables=sorted(tables),
+        tables=sorted(set(context.tables) | tables),
         forbidden_tables=list(context.forbidden_tables),
         required_filters=[
             RequiredFilter(table=table, sql=sql, reason="a hard rule")

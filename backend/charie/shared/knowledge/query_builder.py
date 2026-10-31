@@ -117,10 +117,11 @@ class QueryRequest(BaseModel):
 
 
 class BuildContext(BaseModel):
-    """What the builder may assume: links, rules, time zone, week start."""
+    """What the builder may assume: tables, links, rules, time zone, week start."""
 
     model_config = ConfigDict(extra="forbid")
 
+    tables: list[str] = []
     links: list[JoinLink] = []
     required_filters: dict[str, list[str]] = {}
     forbidden_tables: list[str] = []
@@ -890,6 +891,7 @@ def load_build_context(session, version_id: int, time_zone: str = "UTC") -> Buil
     if isinstance(learned_details, dict) and learned_details.get("week_start") == "sunday":
         week_starts = "sunday"
     return BuildContext(
+        tables=sorted(known.tables),
         links=links,
         required_filters=required,
         forbidden_tables=forbidden,
