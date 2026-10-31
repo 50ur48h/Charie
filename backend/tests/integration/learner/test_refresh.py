@@ -401,14 +401,18 @@ def test_failure_keeps_published(db_session, monkeypatch) -> None:
     assert kept is not None and kept.meaning == "Keep this always."
 
 
-def test_first_run_consumes_its_snapshot(db_session, monkeypatch) -> None:
+def test_first_run_consumes_its_snapshot(db_session) -> None:
+    from charie.learner import runs as learner_runs
     from charie.learner.api import learning as learning_api
 
     _add_md_doc(db_session, "old.md", status="learned")
     db_session.add(OwnerNote(text_="Remember this."))
     db_session.commit()
-    monkeypatch.setattr(learning_api, "STEPS", {})
     shape = learning_api._start(db_session, "first", None)
-    assert shape["status"] == "done"
+    assert shape["status"] == "running"
+    run = db_session.get(LearningRun, shape["id"])
+    assert run is not None
+    assert run.progress["steps"]["owner_notes"]["jobs"] != []
+    learner_runs._finish_run(db_session, run, None)
     assert refresh.last_consumed(db_session) is not None
     assert refresh.pending(db_session) == {"documents": [], "removed": [], "notes_changed": False}

@@ -131,8 +131,11 @@ def begin(session: Session, kind: str = "refresh", reason: str | None = None):
 
 
 def consume(session: Session, run: LearningRun) -> None:
-    """Save the start snapshot when a refresh run succeeds; failures keep it pending."""
-    scope = (run.progress or {}).get("refresh")
+    """Save the start snapshot when a learning run succeeds; failures keep it pending."""
+    progress = run.progress or {}
+    scope = progress.get("refresh")
+    if not isinstance(scope, dict):
+        scope = progress.get("refresh_snapshot")
     if not isinstance(scope, dict) or "snapshot" not in scope:
         return
     save_consumed(session, scope["snapshot"], run.id)

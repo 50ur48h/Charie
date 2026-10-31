@@ -122,7 +122,7 @@ def _start(session: Session, kind: str, reason: str | None) -> dict:
     """Start with every registered step, in canonical order."""
     from charie.learner.steps.refresh import take_snapshot
 
-    scope = {"refresh": {"snapshot": take_snapshot(session)}}
+    scope = {"refresh_snapshot": {"snapshot": take_snapshot(session)}}
     try:
         run = runs.start_run(session, kind, list(STEPS), reason, extra_progress=scope)
     except runs.RunActiveError as err:
