@@ -35,6 +35,7 @@ def test_missing_file_exits_1(capsys) -> None:
 
 def test_hidden_missing_file_message(capsys, tmp_path, monkeypatch) -> None:
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(check, "REPO", tmp_path)
     code = check.run(["--set", "hidden"])
     assert code == 0
     assert "No hidden file yet. Follow P06.4 to create it." in capsys.readouterr().out
