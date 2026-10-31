@@ -188,7 +188,7 @@ def _columns(ctx: StepContext) -> dict[tuple[str, str], dict]:
     return found
 
 
-def _test_query(candidate: dict, source: str) -> str:
+def _test_query(candidate: dict, source: str, sampled: bool = False) -> str:
     """Empty, non-empty, different and orphan counts for one candidate."""
     cols = [quote_ident(column) for column in candidate["from_columns"]]
     to_cols = [quote_ident(column) for column in candidate["to_columns"]]
@@ -196,12 +196,17 @@ def _test_query(candidate: dict, source: str) -> str:
     rows = ", ".join(f"a.{column}" for column in cols)
     pairs = " AND ".join(f"b.{to_col} = a.{col}" for col, to_col in zip(cols, to_cols, strict=True))
     empty = " OR ".join(f"a.{column} IS NULL" for column in cols)
+    # The sample clause goes after the alias: PostgreSQL rejects an alias
+    # after TABLESAMPLE, and a bare parenthesized sample does not parse.
+    sample = " TABLESAMPLE SYSTEM (1) REPEATABLE (42)" if sampled else ""
     return (
         f"SELECT count(*) AS n, count(*) FILTER (WHERE {empty}) AS empty_from,"
-        f" count(DISTINCT ({rows})) AS different,"
+        # Distinct keys over the same fully non-NULL rows `non_empty` counts:
+        # PostgreSQL counts a partly NULL tuple as its own distinct value.
+        f" count(DISTINCT ({rows})) FILTER (WHERE NOT ({empty})) AS different,"
         f" count(*) FILTER (WHERE NOT ({empty}) AND NOT EXISTS"
         f" (SELECT 1 FROM {to_ref} AS b WHERE {pairs})) AS orphans"
-        f" FROM {source} AS a"
+        f" FROM {source} AS a{sample}"
     )
 
 
@@ -224,8 +229,7 @@ def run_job(info, ctx: StepContext) -> None:
         if err.code != "query_timeout":
             raise
         try:
-            source = f"{table_ref(from_schema, from_name)} TABLESAMPLE SYSTEM (1) REPEATABLE (42)"
-            sql = _test_query(candidate, source)
+            sql = _test_query(candidate, table_ref(from_schema, from_name), sampled=True)
             row = run_query(ctx, purpose, sql).rows[0]
         except ConnectorError as retry_err:
             if retry_err.code == "query_timeout":

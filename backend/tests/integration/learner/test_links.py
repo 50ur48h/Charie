@@ -6,6 +6,7 @@ from sqlalchemy import text
 from charie.learner.steps import links
 from charie.learner.steps.base import StepContext
 from charie.learner.steps.structure import run_job as run_structure
+from charie.shared.connectors.base import ConnectorError
 from charie.shared.jobs.registry import JobInfo
 from charie.shared.knowledge import store, versions
 from charie.shared.knowledge.catalog import build_catalog
@@ -218,3 +219,91 @@ def test_finish_counts_links(links_ctx) -> None:
         _run(ctx, **job)
     links.finish_step(ctx)
     assert said[-1] == ("found", "4 links between tables (3 checked)")
+
+
+def test_composite_nulls_do_not_hide_fan_out(links_ctx, db_session, shop_db) -> None:
+    ctx, _ = links_ctx
+    with shop_db["owner"].begin() as conn:
+        conn.execute(
+            text(
+                "CREATE TABLE shop.review_parent (tenant integer, code integer,"
+                " amount numeric, PRIMARY KEY (tenant, code))"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE TABLE shop.review_child (id integer PRIMARY KEY, tenant integer,"
+                " code integer, FOREIGN KEY (tenant, code)"
+                " REFERENCES shop.review_parent (tenant, code))"
+            )
+        )
+        conn.execute(text("INSERT INTO shop.review_parent VALUES (1, 1, 10)"))
+        conn.execute(
+            text("INSERT INTO shop.review_child VALUES (1, 1, 1), (2, 1, 1), (3, NULL, 2)")
+        )
+        conn.execute(
+            text(
+                "GRANT SELECT ON shop.review_parent, shop.review_child"
+                f' TO "{ctx.connector.username}"'
+            )
+        )
+    run_structure(
+        JobInfo(id=3, kind="scan_structure", payload={"step": "structure"}, run_id=ctx.run_id),
+        ctx,
+    )
+    _run(
+        ctx,
+        from_table="shop.review_child",
+        from_columns=["tenant", "code"],
+        to_table="shop.review_parent",
+        to_columns=["tenant", "code"],
+        via="fk",
+    )
+    entry = store.get_entry(
+        db_session,
+        ctx.version_id,
+        "link.shop.review_child.tenant+code~shop.review_parent.tenant+code",
+    )
+    assert entry is not None
+    assert entry.details["cardinality"] == "many_to_one"
+    catalog = build_catalog(db_session, ctx.version_id)
+    blocked = check_sql(
+        "SELECT SUM(p.amount) FROM shop.review_parent p JOIN shop.review_child c"
+        " ON (c.tenant, c.code) = (p.tenant, p.code)",
+        catalog,
+    )
+    assert not blocked.ok
+    assert blocked.rules == ["double_counting"]
+
+
+def test_slow_link_falls_back_to_valid_sampled_sql(links_ctx, monkeypatch) -> None:
+    ctx, _ = links_ctx
+    real = ctx.connector.run_query
+    seen: list[str] = []
+
+    def flaky(sql, *args, **kwargs):
+        seen.append(sql)
+        if "AS empty_from" in sql and "TABLESAMPLE" not in sql:
+            raise ConnectorError("query_timeout", "Synthetic timeout, without waiting.")
+        return real(sql, *args, **kwargs)
+
+    monkeypatch.setattr(ctx.connector, "run_query", flaky)
+    links.run_job(
+        JobInfo(
+            id=4,
+            kind="test_link",
+            payload={
+                "step": "links",
+                "from_table": "shop.order_lines",
+                "from_columns": ["order_id"],
+                "to_table": "shop.orders",
+                "to_columns": ["id"],
+                "via": "fk",
+            },
+            run_id=ctx.run_id,
+        ),
+        ctx,
+    )
+    fallback = next(sql for sql in seen if "TABLESAMPLE" in sql)
+    rows = real(fallback).rows
+    assert len(rows) == 1 and len(rows[0]) == 4
