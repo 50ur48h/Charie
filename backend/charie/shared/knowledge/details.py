@@ -6,8 +6,9 @@ accept extra fields because Phases 8-9 add their own.
 """
 
 from typing import Any, Literal
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
 from charie.shared.knowledge.recipe import DimensionDetails, Recipe
 
@@ -197,8 +198,32 @@ class DefaultDetails(StrictModel):
     columns: list[str] = []
 
 
-class CalendarDetails(LaterDetails):
-    pass
+class CalendarDetails(StrictModel):
+    """The business calendar: zone proposal, week start, fiscal year start."""
+
+    time_zone: str = ""
+    week_start: Literal["monday", "sunday"] = "monday"
+    fiscal_year_start: int = 1
+
+    @field_validator("time_zone")
+    @classmethod
+    def _known_zone(cls, value: str) -> str:
+        """Empty means none proposed; anything else must be an IANA zone."""
+        if not value:
+            return value
+        try:
+            ZoneInfo(value)
+        except ZoneInfoNotFoundError:
+            raise ValueError(f"Unknown time zone: {value!r}.") from None
+        return value
+
+    @field_validator("fiscal_year_start")
+    @classmethod
+    def _real_month(cls, value: int) -> int:
+        """The fiscal year starts in a real month, 1 to 12."""
+        if 1 <= value <= 12:
+            return value
+        raise ValueError(f"Fiscal year start must be a month 1-12, not {value!r}.")
 
 
 class HowToDetails(LaterDetails):

@@ -162,8 +162,12 @@ def make_jobs(ctx: StepContext) -> list[dict]:
 
 
 def run_job(info, ctx: StepContext) -> None:
-    """Propose and save the defaults for this run."""
+    """Propose and save the defaults and calendar for this run."""
+    from charie.shared.knowledge.calendar import ensure_calendar
+
     discover_defaults(ctx)
+    ensure_calendar(ctx.session, ctx.version_id)
+    ctx.say("found", "Checked the business calendar.")
 
 
 def finish_step(ctx: StepContext) -> None:
