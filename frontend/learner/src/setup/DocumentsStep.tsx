@@ -17,7 +17,8 @@ import { EditNotesDialog } from "../sources/EditNotesDialog";
 
 // Step 2: documents and notes. Dropped files upload with progress (XHR);
 // the row shows "Adding…" then "Added". A bad file shows the plain-English
-// message in the red box. The notes row opens the editor dialog.
+// message in the red box. The notes row opens the editor dialog and stays
+// visible when documents fail to load (their API comes in Phase 8).
 export function DocumentsStep({ onBack, onNext }: { onBack: () => void; onNext: () => void }) {
   const client = useQueryClient();
   const documents = useDocuments();
@@ -97,8 +98,8 @@ export function DocumentsStep({ onBack, onNext }: { onBack: () => void; onNext: 
             Try again
           </button>
         </p>
-      ) : (
-        <ul className="mt-3.5 grid max-h-[280px] gap-2 overflow-y-auto" aria-label="Your documents">
+      ) : null}
+      <ul className="mt-3.5 grid max-h-[280px] gap-2 overflow-y-auto" aria-label="Your documents">
           {uploads.map((upload) => (
             <li
               key={upload.key}
@@ -134,8 +135,7 @@ export function DocumentsStep({ onBack, onNext }: { onBack: () => void; onNext: 
               </Button>
             )}
           </li>
-        </ul>
-      )}
+      </ul>
       <div className="mt-6 flex flex-wrap gap-2.5 border-t border-border-soft pt-[18px]">
         <Button variant="ghost" onClick={onBack}>
           <ArrowLeft aria-hidden="true" className="[--icon:16px]" />
