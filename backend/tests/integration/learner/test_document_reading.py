@@ -13,10 +13,14 @@ from charie.learner.steps.documents import (
     make_jobs,
     run_job,
 )
+from charie.shared.ai.client import AiClient
+from charie.shared.ai.cost_log import MemoryCostLog
 from charie.shared.ai.errors import AiError, AiUnavailable
+from charie.shared.ai.fake import FakeAi
 from charie.shared.documents.reader import DocumentText
 from charie.shared.jobs.queue import add_job
 from charie.shared.jobs.registry import JobInfo
+from charie.shared.search.embeddings import EmbeddingResult
 from charie.shared.tables.learning import Job
 from charie.shared.tables.sources import Document, DocumentFile, DocumentSection
 
@@ -68,6 +72,32 @@ def _info(document_id: int, *, attempts: int = 1) -> JobInfo:
     )
 
 
+def _index_fakes(monkeypatch) -> None:
+    """Fake the index seams; the index job has its own tests."""
+    from charie.learner.steps import document_index
+
+    fake = (
+        FakeAi()
+        .reply("note_section", {"note": "Refunds."})
+        .reply("note_section", {"note": "Exceptions."})
+    )
+    monkeypatch.setattr(
+        document_index,
+        "get_ai",
+        lambda: AiClient(provider=fake, cost_log=MemoryCostLog(), sleep=lambda s: None),
+    )
+
+    class StubEmbed:
+        def embed_texts(self, texts, **kwargs):
+            return EmbeddingResult(
+                vectors=[[1.0] + [0.0] * 1535 for _ in texts],
+                prompt_tokens=0,
+                cost_usd=Decimal("0"),
+            )
+
+    monkeypatch.setattr(document_index, "embeddings", StubEmbed())
+
+
 def _stub_read(monkeypatch, result=None, error=None):
     def fake_read(data: bytes, **kwargs) -> DocumentText:
         if error is not None:
@@ -76,6 +106,7 @@ def _stub_read(monkeypatch, result=None, error=None):
         return result
 
     monkeypatch.setattr(documents.reader, "read_document", fake_read)
+    _index_fakes(monkeypatch)
 
 
 def test_make_jobs_only_new_without_active_read(db_session) -> None:
@@ -90,7 +121,8 @@ def test_make_jobs_only_new_without_active_read(db_session) -> None:
     assert make_jobs(ctx) == [{"document_id": fresh}]
 
 
-def test_read_stores_sections_and_queues_index(db_session, monkeypatch) -> None:
+def test_read_indexes_inline_in_run(db_session, monkeypatch) -> None:
+
     doc_id = _add_document(db_session, file_type="pdf", content=b"%PDF-fake")
     _stub_read(
         monkeypatch,
@@ -103,7 +135,7 @@ def test_read_stores_sections_and_queues_index(db_session, monkeypatch) -> None:
     assert doc.status == "reading"
     assert doc.pages == 2
     assert doc.unreadable_pages == 0
-    assert doc.progress == 50
+    assert doc.progress == 100  # Read and indexed in one in-run pass.
     assert doc.error is None
     sections = (
         db_session.query(DocumentSection)
@@ -113,12 +145,35 @@ def test_read_stores_sections_and_queues_index(db_session, monkeypatch) -> None:
     )
     assert [section.heading_path for section in sections] == ["Refunds", "Refunds > Exceptions"]
     assert sections[0].page_from is None  # No page marks in a multi-page read.
+    assert ("found", "Read guide.pdf: 2 section(s).") in said
+    assert all(section.note for section in sections)
+    assert all(section.embedding is not None for section in sections)
+    assert db_session.query(Job).filter(Job.kind == INDEX_JOB).count() == 0  # No chain needed.
+
+
+def test_standalone_read_queues_index(db_session, monkeypatch) -> None:
+    from charie.learner.steps.documents import process_document
+
+    doc_id = _add_document(db_session, file_type="pdf", content=b"%PDF-fake")
+    _stub_read(
+        monkeypatch,
+        DocumentText(filename="guide.pdf", markdown=MARKDOWN, page_count=2, cost_usd=Decimal("0")),
+    )
+    said: list = []
+    process_document(
+        db_session,
+        db_session.get(Document, doc_id),
+        say=lambda kind, message, details=None: said.append((kind, message)),
+        learning_run_id=None,
+    )
+    db_session.commit()
+    assert db_session.get(Document, doc_id).progress == 50
     jobs = db_session.query(Job).filter(Job.kind == INDEX_JOB).all()
     assert len(jobs) == 1 and jobs[0].payload["document_id"] == doc_id
-    assert ("found", "Read guide.pdf: 2 section(s).") in said
 
 
-def test_md_decodes_locally_without_ai(db_session) -> None:
+def test_md_decodes_locally_without_ai(db_session, monkeypatch) -> None:
+    _index_fakes(monkeypatch)
     doc_id = _add_document(db_session, file_type="md")
     ctx, _ = _ctx(db_session)
     run_job(_info(doc_id), ctx)  # No read stub: Markdown never touches the provider.
