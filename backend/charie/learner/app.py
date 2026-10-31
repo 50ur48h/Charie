@@ -2,6 +2,7 @@
 
 from fastapi import FastAPI
 
+from charie.learner.api.documents import documents_router
 from charie.learner.api.knowledge import knowledge_router
 from charie.learner.api.learning import learning_router
 from charie.learner.api.owner_notes import owner_notes_router
@@ -21,6 +22,7 @@ def build_app() -> FastAPI:
         routers=(
             auth_router,
             settings_router,
+            documents_router,
             sources_router,
             knowledge_router,
             make_knowledge_router(allow_draft=True),

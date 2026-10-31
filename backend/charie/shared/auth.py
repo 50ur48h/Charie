@@ -197,7 +197,12 @@ def change_password(
 
 
 class OriginAndJsonCheck(BaseHTTPMiddleware):
-    """Changes must come from our own screens, as JSON."""
+    """Changes must come from our own screens, as JSON.
+
+    The one exception is document upload: `POST /api/documents` carries
+    the file as multipart, so the JSON check is skipped there — but the
+    same-origin check still applies.
+    """
 
     CHANGE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
@@ -213,7 +218,11 @@ class OriginAndJsonCheck(BaseHTTPMiddleware):
                         ),
                     },
                 )
-            if self._has_body(request) and not self._is_json(request):
+            if (
+                self._has_body(request)
+                and not self._is_json(request)
+                and not self._is_upload(request)
+            ):
                 return JSONResponse(
                     status_code=415,
                     content={
@@ -247,6 +256,14 @@ class OriginAndJsonCheck(BaseHTTPMiddleware):
     def _is_json(request: Request) -> bool:
         content_type = request.headers.get("content-type", "")
         return content_type.split(";")[0].strip().lower() == "application/json"
+
+    @staticmethod
+    def _is_upload(request: Request) -> bool:
+        """The multipart exception: one file upload, same origin still required."""
+        if request.url.path != "/api/documents" or request.method != "POST":
+            return False
+        content_type = request.headers.get("content-type", "")
+        return content_type.split(";")[0].strip().lower().startswith("multipart/")
 
 
 def _port_of(host: str) -> int | None:
