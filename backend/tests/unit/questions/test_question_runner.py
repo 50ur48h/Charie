@@ -207,7 +207,7 @@ def test_public_dry_run_scores_best_total() -> None:
         total_seconds=0.0,
         private=False,
     )
-    assert sum(row.points for row in report.results) == len(questions) == 23
+    assert sum(row.points for row in report.results) == len(questions) == 28
 
 
 def test_hidden_output_shows_only_ids_and_scores(capsys) -> None:
@@ -238,7 +238,7 @@ def test_estimate_counts_earlier_turns() -> None:
     smoke = _select("smoke", None, [])
     assert len(smoke) == 10
     assert (
-        estimate(smoke) == "Fresh run of 10 questions (12 answers, 10 judge calls): about $12–37."
+        estimate(smoke) == "Fresh run of 10 questions (11 answers, 10 judge calls): about $11–34."
     )
 
 

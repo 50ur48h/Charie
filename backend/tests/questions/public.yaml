@@ -276,7 +276,7 @@
   why_fair: The last question is plain; only November 2025 counts.
 - id: follow_up-002
   kind: follow_up
-  smoke: true
+  smoke: false
   chat:
     - Which 5 restaurants had the highest net sales in 2025?
   question: How did the second one do in 2024?
@@ -461,3 +461,74 @@
   answer_key_sql: SELECT COUNT(*) FROM (SELECT o.user_id FROM public.orders o WHERE o.created_at >= DATE '2025-01-01' AND o.created_at < DATE '2026-01-01' GROUP BY o.user_id HAVING COUNT(DISTINCT o.restaurant_id) >= 3) t
   checked_by: Muse Code, 2026-10-30
   why_fair: One row per customer from completed 2025 orders.
+- id: documents-001
+  kind: documents
+  smoke: false
+  chat: []
+  question: What does net sales mean, and how is it worked out?
+  expect:
+    numbers: []
+    must_say:
+      - Net sales
+      - refunds
+    must_not_say: []
+    should_ask: false
+  checked_by: Muse Code, 2026-10-31
+  why_fair: Both the definition and the formula sit in one short section.
+- id: documents-002
+  kind: documents
+  smoke: false
+  chat: []
+  question: What were net sales in December 2025?
+  expect:
+    numbers:
+      - name: net sales
+        value: '1354004.6300'
+        tolerance: 1
+    must_say:
+      - Dec 2025
+    must_not_say: []
+    should_ask: false
+  answer_key_sql: SELECT ROUND(SUM(o.total_amount - o.tax_amount - o.delivery_fee)::numeric, 4) FROM public.orders o WHERE o.created_at >= DATE '2025-12-01' AND o.created_at < DATE '2026-01-01'
+  checked_by: Muse Code, 2026-10-31
+  why_fair: A plain month sum with the house net-sales recipe.
+- id: documents-003
+  kind: documents
+  smoke: true
+  chat: []
+  question: Which checkout code appears in the policy document?
+  expect:
+    numbers: []
+    must_say:
+      - MEGA0926
+    must_not_say: []
+    should_ask: false
+  checked_by: Muse Code, 2026-10-31
+  why_fair: The code sits word for word in one sentence.
+- id: documents-004
+  kind: documents
+  smoke: false
+  chat: []
+  question: What does net sales mean according to the documents?
+  expect:
+    numbers: []
+    must_say:
+      - refunds
+      - gross profit
+    must_not_say: []
+    should_ask: false
+  checked_by: Muse Code, 2026-10-31
+  why_fair: Both claims must surface; the files disagree on purpose.
+- id: documents-005
+  kind: documents
+  smoke: false
+  chat: []
+  question: In the prices table, what is the price of Margherita?
+  expect:
+    numbers: []
+    must_say:
+      - '18.00'
+    must_not_say: []
+    should_ask: false
+  checked_by: Muse Code, 2026-10-31
+  why_fair: One checkable cell in a three-row table.

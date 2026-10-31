@@ -13,7 +13,7 @@ def test_public_file_is_valid(capsys) -> None:
     code = check.run(["--set", "public"])
     assert code == 0
     out = capsys.readouterr().out
-    assert "public.yaml is valid: 23 questions " in out
+    assert "public.yaml is valid: 28 questions " in out
     assert "Smoke: 10." in out
 
 
@@ -27,12 +27,13 @@ def test_public_mix() -> None:
         "why": 3,
         "not_in_data": 2,
         "new_kind": 2,
+        "documents": 5,
     }
     assert sum(1 for question in questions if question.smoke) == 10
 
 
-def test_smoke_covers_every_kind_but_documents() -> None:
+def test_smoke_covers_every_kind() -> None:
     questions = load_questions(PUBLIC, "public")
     smoked = {question.kind for question in questions if question.smoke}
     kinds = {question.kind for question in questions}
-    assert smoked == kinds - {"documents"}
+    assert smoked == kinds
