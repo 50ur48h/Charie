@@ -4,7 +4,33 @@ Constants the query-builder tests share. Units follow P06.2: percentages
 are in points, and every number here is hand-worked from shop_db.sql.
 """
 
-from charie.shared.knowledge.recipe import Recipe
+from charie.shared.knowledge.recipe import Recipe, RecipeDimension
+
+STATUS_DIM = RecipeDimension(
+    key="dimension.status",
+    title="Status",
+    kind="attribute",
+    table="shop.orders",
+    expression="orders.status",
+)
+
+MONTH_DIM = RecipeDimension(
+    key="dimension.month",
+    title="Month",
+    kind="time",
+    table="shop.orders",
+    expression="orders.created_at",
+    grain="month",
+)
+
+WEEK_DIM = RecipeDimension(
+    key="dimension.week",
+    title="Week",
+    kind="time",
+    table="shop.orders",
+    expression="orders.created_at",
+    grain="week",
+)
 
 NET_SALES = Recipe(
     kind="simple",
@@ -14,6 +40,7 @@ NET_SALES = Recipe(
     filters=["orders.status = 'completed'"],
     time_column="orders.created_at",
     time_column_type="timestamptz",
+    dimensions=[STATUS_DIM, MONTH_DIM, WEEK_DIM],
     unit="money",
     currency="USD",
     steps_in_words=[
@@ -27,13 +54,14 @@ ORDER_COUNT = Recipe(
     table="shop.orders",
     aggregate="count",
     expression="*",
-    filters=["orders.status = 'completed'"],
+    filters=[],
     time_column="orders.created_at",
     time_column_type="timestamptz",
+    dimensions=[STATUS_DIM],
     unit="count",
     steps_in_words=[
-        "Count every completed order.",
-        "Leave out cancelled orders.",
+        "Count every order in the period.",
+        "Filter by status to keep completed or cancelled ones.",
     ],
 )
 

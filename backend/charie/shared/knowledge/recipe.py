@@ -62,6 +62,7 @@ class Recipe(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     kind: Literal["simple", "ratio"]
+    title: str = ""
     table: str = ""
     aggregate: Literal["sum", "count", "count_distinct"] | None = None
     expression: str = ""

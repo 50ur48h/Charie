@@ -7,7 +7,6 @@ from charie.shared.knowledge.query_builder import (
     BuiltQuery,
     DateRange,
     QueryBuildError,
-    QueryFilter,
     QueryRequest,
     TopN,
     build_query,
@@ -103,14 +102,10 @@ def test_unsupported_requests_are_refused_for_now() -> None:
     with pytest.raises(QueryBuildError, match="Ratio numbers aren't supported yet"):
         build_query("r", {"r": ratio}, _request(), _context())
     with pytest.raises(QueryBuildError, match="Top N isn't supported yet"):
-        build_query("net_sales", RECIPES, _request(top_n=TopN(n=5)), _context())
-    with pytest.raises(QueryBuildError, match="Splits and filters aren't supported yet"):
-        build_query("net_sales", RECIPES, _request(dimensions=["status"]), _context())
-    with pytest.raises(QueryBuildError, match="Splits and filters aren't supported yet"):
         build_query(
             "net_sales",
             RECIPES,
-            _request(filters=[QueryFilter(dimension="status", op="in", values=["completed"])]),
+            _request(top_n=TopN(n=5), dimensions=["dimension.status"]),
             _context(),
         )
     joined = Recipe(
