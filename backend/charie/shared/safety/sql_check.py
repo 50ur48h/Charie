@@ -346,6 +346,12 @@ def _rule_functions(tree: exp.Expression, fail) -> None:
             )
 
 
+def is_dangerous_function(name: str) -> bool:
+    """True when rule 3 would refuse this function name as dangerous."""
+    upper = name.strip().upper()
+    return upper in _DANGEROUS_EXACT or upper.startswith(_DANGEROUS_PREFIX)
+
+
 def _unwrap(node: exp.Expression) -> exp.Expression:
     """Strip redundant parentheses for the filter comparison."""
     while isinstance(node, exp.Paren):
