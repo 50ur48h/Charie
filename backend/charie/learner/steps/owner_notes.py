@@ -9,6 +9,7 @@ from sqlalchemy import select
 
 from charie.learner.number_check import find_new_numbers
 from charie.learner.steps.base import Step, StepContext, register_step, register_step_handler
+from charie.learner.steps.refresh import scope_for
 from charie.shared.ai.client import get_ai
 from charie.shared.knowledge.keys import note_key, rule_key, style_key
 from charie.shared.knowledge.store import list_entries, remove_entry, upsert_entry
@@ -89,6 +90,14 @@ def _count_text(hard: int, style: int, hints: int) -> str:
 
 def make_jobs(ctx: StepContext) -> list[dict]:
     """One job for the newest non-empty notes; none without notes."""
+    scope = scope_for(ctx.session, ctx.run_id)
+    if scope is not None:
+        if scope["notes_id"] is None:
+            return []
+        note = ctx.session.get(OwnerNote, scope["notes_id"])
+        if note is None or not note.text_.strip():
+            return []
+        return [{"owner_notes_id": note.id}]
     note = ctx.session.scalar(select(OwnerNote).order_by(OwnerNote.id.desc()).limit(1))
     if note is None or not note.text_.strip():
         return []

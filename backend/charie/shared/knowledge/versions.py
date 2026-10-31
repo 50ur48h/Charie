@@ -45,6 +45,7 @@ def get_or_create_draft(session: Session, made_by: str) -> KbVersion:
                     details=dict(entry.details),
                     confidence=entry.confidence,
                     sources=list(entry.sources),
+                    embedding=list(entry.embedding) if entry.embedding is not None else None,
                 )
             )
         session.flush()

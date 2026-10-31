@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from charie.learner import runs
 from charie.learner.events import feed_lines
 from charie.learner.steps.base import STEP_NUMBERS, STEPS
+from charie.learner.steps.refresh import begin as begin_refresh
 from charie.shared.db import get_session, session_scope
 from charie.shared.errors import ApiError
 from charie.shared.tables.knowledge import KbVersion
@@ -53,6 +54,12 @@ class StartRunIn(BaseModel):
 
 class RefreshRunIn(BaseModel):
     reason: str | None = None
+
+
+class RefreshStatusOut(BaseModel):
+    documents: list[int]
+    removed: list[int]
+    notes_changed: bool
 
 
 class PauseOut(BaseModel):
@@ -113,8 +120,11 @@ def _overview(session: Session) -> dict:
 
 def _start(session: Session, kind: str, reason: str | None) -> dict:
     """Start with every registered step, in canonical order."""
+    from charie.learner.steps.refresh import take_snapshot
+
+    scope = {"refresh_snapshot": {"snapshot": take_snapshot(session)}}
     try:
-        run = runs.start_run(session, kind, list(STEPS), reason)
+        run = runs.start_run(session, kind, list(STEPS), reason, extra_progress=scope)
     except runs.RunActiveError as err:
         raise ApiError(409, "run_active", str(err)) from err
     except ValueError as err:
@@ -133,9 +143,19 @@ def post_start(body: StartRunIn, session: Session = Depends(get_session)) -> dic
     return _start(session, body.kind, body.reason)
 
 
+@learning_router.get("/api/learning/refresh-status", response_model=RefreshStatusOut)
+def get_refresh_status(session: Session = Depends(get_session)) -> dict:
+    """What one refresh would learn, from the last consumed snapshot."""
+    from charie.learner.steps.refresh import pending as pending_changes
+
+    return pending_changes(session)
+
+
 @learning_router.post("/api/learning/refresh", response_model=LearningRunOut, status_code=201)
 def post_refresh(body: RefreshRunIn, session: Session = Depends(get_session)) -> dict:
-    return _start(session, "refresh", body.reason)
+    run = begin_refresh(session, kind="refresh", reason=body.reason)
+    session.commit()
+    return run_shape(session, run)
 
 
 @learning_router.post("/api/learning/pause", response_model=PauseOut)

@@ -101,6 +101,7 @@ export function useSaveOwnerNotes() {
       apiFetch<OwnerNotes>("/api/owner-notes", { method: "PUT", body: { text } }),
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: ["learner-notes"] });
+      void client.invalidateQueries({ queryKey: ["learner-refresh-status"] });
       void client.invalidateQueries({ queryKey: ["learner-setup"] });
     },
   });
@@ -112,6 +113,7 @@ export function useRemoveDocument() {
     mutationFn: (id: number) => apiFetch<void>(`/api/documents/${id}`, { method: "DELETE" }),
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: ["learner-documents"] });
+      void client.invalidateQueries({ queryKey: ["learner-refresh-status"] });
       void client.invalidateQueries({ queryKey: ["learner-setup"] });
     },
   });
@@ -125,6 +127,7 @@ export function useRetryDocument() {
       apiFetch<{ document: LearnerDocument }>(`/api/documents/${id}/retry`, { method: "POST" }),
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: ["learner-documents"] });
+      void client.invalidateQueries({ queryKey: ["learner-refresh-status"] });
       void client.invalidateQueries({ queryKey: ["learner-setup"] });
     },
   });

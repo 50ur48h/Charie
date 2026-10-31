@@ -115,3 +115,21 @@ class Job(Base):
         DateTime(timezone=True), nullable=False, server_default=text("now()")
     )
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class RefreshSnapshot(Base):
+    """The last successfully processed refresh snapshot; pending clears on save."""
+
+    __tablename__ = "refresh_snapshots"
+    __table_args__ = (Index("ix_refresh_snapshots_run_id", "run_id"),)
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    snapshot: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb")
+    )
+    run_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("learning_runs.id", ondelete="CASCADE"), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("now()")
+    )

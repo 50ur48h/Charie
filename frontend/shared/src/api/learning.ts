@@ -34,7 +34,27 @@ export function useRefreshLearning() {
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: ["learner-learning"] });
       void client.invalidateQueries({ queryKey: ["learner-setup"] });
+      void client.invalidateQueries({ queryKey: ["learner-refresh-status"] });
     },
+  });
+}
+
+// GET /api/learning/refresh-status: snapshot-based pending changes. The
+// banner reads this, so removals show and failed runs keep their pending
+// changes (the timestamps alone cannot tell those cases apart).
+export interface RefreshStatus {
+  documents: number[];
+  removed: number[];
+  notes_changed: boolean;
+}
+
+export function useRefreshStatus(running: boolean) {
+  return useQuery({
+    queryKey: ["learner-refresh-status"],
+    queryFn: ({ signal }) => apiFetch<RefreshStatus>("/api/learning/refresh-status", { signal }),
+    // A running refresh consumes the snapshot when it finishes; poll until
+    // the run ends so the banner clears without a reload.
+    refetchInterval: running ? 5000 : false,
   });
 }
 // POST /api/learning/pause and /resume. 409 when there is nothing to do.

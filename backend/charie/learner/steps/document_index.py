@@ -50,7 +50,17 @@ def _plain_error(err: Exception) -> str:
     return INDEX_FAILED
 
 
-def index_document(session: Session, doc: Document, *, learning_run_id: int | None) -> None:
+def _settle(session: Session, commit: bool) -> None:
+    """Commit standalone; inside a run just flush for the outer scope."""
+    if commit:
+        session.commit()
+    else:
+        session.flush()
+
+
+def index_document(
+    session: Session, doc: Document, *, learning_run_id: int | None, commit: bool = True
+) -> None:
     """Note and embed one document's sections, committing as it goes."""
     sections = session.scalars(
         select(DocumentSection)
@@ -75,7 +85,8 @@ def index_document(session: Session, doc: Document, *, learning_run_id: int | No
             raise AiFormError(NOTE_JOB)
         section.note = form.note.strip()
         section.content_hash = hashed
-        session.commit()
+        _settle(session, commit)
+
     pending = [
         section
         for section in session.scalars(
@@ -95,12 +106,14 @@ def index_document(session: Session, doc: Document, *, learning_run_id: int | No
         for section, vector in zip(pending, result.vectors, strict=True):
             section.embedding = vector
             section.content_hash = content_hash(section.heading_path, section.text_)
-        session.commit()
+
+        _settle(session, commit)
     doc.progress = 100
     doc.error = None
     if doc.status == "failed":
         doc.status = "reading"  # The resume finished; facts still land in P08.6.
-    session.commit()
+
+    _settle(session, commit)
 
 
 @job_handler(INDEX_JOB)

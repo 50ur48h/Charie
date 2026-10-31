@@ -21,6 +21,7 @@ KIND_ORDER = (
     "link",
     "metric",
     "dimension",
+    "definition",
     "rule",
     "style",
     "code",

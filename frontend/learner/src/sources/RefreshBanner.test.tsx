@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { RefreshBanner } from "./RefreshBanner";
-import type { LearnerDocument, LearningRun } from "@charie/shared";
+import type { LearningRun, RefreshStatus } from "@charie/shared";
 
 afterEach(() => {
   cleanup();
@@ -15,23 +15,6 @@ function json(data: unknown, status = 200): Response {
     status,
     headers: { "Content-Type": "application/json" },
   });
-}
-
-function doc(id: number, status: LearnerDocument["status"]): LearnerDocument {
-  return {
-    id,
-    file_name: `doc-${id}.pdf`,
-    file_type: "pdf",
-    size_bytes: 1024,
-    pages: 2,
-    unreadable_pages: 0,
-    fact_count: 0,
-    status,
-    progress: null,
-    error: null,
-    uploaded_at: "2025-10-27T21:00:00+05:30",
-    learned_at: null,
-  };
 }
 
 function run(status: LearningRun["status"]): LearningRun {
@@ -54,20 +37,19 @@ function run(status: LearningRun["status"]): LearningRun {
   };
 }
 
-function renderBanner(documents: LearnerDocument[], runs: LearningRun[], savedAt: string | null = null) {
+const EMPTY: RefreshStatus = { documents: [], removed: [], notes_changed: false };
+
+function renderBanner(status: RefreshStatus, runs: LearningRun[]) {
   const posted: string[] = [];
-  const fetched: string[] = [];
   vi.stubGlobal(
     "fetch",
-    vi.fn().mockImplementation((url: string) => {
-      fetched.push(url);
+    vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+      if (url.includes("/api/learning/refresh-status")) return Promise.resolve(json(status));
       if (url.includes("/api/learning/refresh")) {
-        posted.push(url);
+        if (init?.method === "POST") posted.push(url);
         return Promise.resolve(json({ ok: true }));
       }
       if (url.includes("/api/learning")) return Promise.resolve(json({ runs }));
-      if (url.includes("/api/documents")) return Promise.resolve(json({ documents })); if (url.includes("owner-notes"))
-        return Promise.resolve(json({ text: "My rule.", saved_at: savedAt, sorted: null, sorted_at: null }));
       return Promise.resolve(json({}));
     }),
   );
@@ -84,52 +66,63 @@ function renderBanner(documents: LearnerDocument[], runs: LearningRun[], savedAt
       </MemoryRouter>
     </QueryClientProvider>,
   );
-  return { posted, fetched };
+  return { posted };
 }
 
 describe("RefreshBanner", () => {
-  test("shows 3 new documents", async () => {
-    renderBanner([doc(1, "new"), doc(2, "new"), doc(3, "reading"), doc(4, "learned")], []);
+  test("shows new documents", async () => {
+    renderBanner({ documents: [1, 2, 3], removed: [], notes_changed: false }, []);
     expect(await screen.findByText("3 new documents since the last learning")).toBeTruthy();
   });
 
-  test("hides when nothing is new", async () => {
-    const { fetched } = renderBanner([doc(1, "learned")], []);
+  test("hides when nothing is pending", async () => {
+    renderBanner(EMPTY, []);
     await waitFor(() =>
-      expect(fetched.some((url) => url.includes("/api/documents"))).toBe(true),
+      expect(
+        vi
+          .mocked(fetch)
+          .mock.calls.some(([url]) => String(url).includes("refresh-status")),
+      ).toBe(true),
     );
     expect(screen.queryByText(/since the last learning/)).toBeNull();
   });
 
   test("starts a refresh when nothing is running", async () => {
-    const { posted } = renderBanner([doc(1, "new")], []);
+    const { posted } = renderBanner({ documents: [1], removed: [], notes_changed: false }, []);
     fireEvent.click(await screen.findByRole("button", { name: "Refresh knowledge base" }));
     expect(await screen.findByText("Learning page")).toBeTruthy();
     expect(posted).toEqual(["/api/learning/refresh"]);
   });
 
   test("only opens Learning while a run is going", async () => {
-    const { posted } = renderBanner([doc(1, "new")], [run("running")]);
+    const { posted } = renderBanner({ documents: [1], removed: [], notes_changed: false }, [run("running")]);
     fireEvent.click(await screen.findByRole("button", { name: "Refresh knowledge base" }));
     expect(await screen.findByText("Learning page")).toBeTruthy();
     expect(posted).toEqual([]);
   });
 
   test("says notes changed", async () => {
-    renderBanner([doc(1, "learned")], [run("done")], "2026-10-27T21:00:00+05:30");
+    renderBanner({ documents: [], removed: [], notes_changed: true }, [run("done")]);
     expect(await screen.findByText("Your notes changed since the last learning")).toBeTruthy();
   });
 
   test("says documents and notes", async () => {
-    renderBanner([doc(1, "new"), doc(2, "new")], [], "2026-10-27T21:00:00+05:30");
+    renderBanner({ documents: [1, 2], removed: [], notes_changed: true }, []);
     expect(
       await screen.findByText("2 new documents and changed notes since the last learning"),
     ).toBeTruthy();
   });
 
-  test("stays hidden when notes predate the run", async () => {
-    const { fetched } = renderBanner([doc(1, "learned")], [run("done")], "2025-10-26T21:00:00+05:30");
-    await waitFor(() => expect(fetched.some((url) => url.includes("owner-notes"))).toBe(true));
-    expect(screen.queryByText(/since the last learning/)).toBeNull();
+  test("shows a removed document", async () => {
+    renderBanner({ documents: [], removed: [7], notes_changed: false }, [run("done")]);
+    expect(await screen.findByText("1 removed document since the last learning")).toBeTruthy();
+  });
+
+  test("keeps pending changes after a failed run", async () => {
+    const { posted } = renderBanner({ documents: [1], removed: [], notes_changed: false }, [run("failed")]);
+    expect(await screen.findByText("1 new document since the last learning")).toBeTruthy();
+    fireEvent.click(await screen.findByRole("button", { name: "Refresh knowledge base" }));
+    expect(await screen.findByText("Learning page")).toBeTruthy();
+    expect(posted).toEqual(["/api/learning/refresh"]);
   });
 });

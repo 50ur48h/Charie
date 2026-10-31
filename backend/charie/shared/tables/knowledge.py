@@ -23,7 +23,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from charie.shared.db import Base
 
 ENTRY_KINDS = (
-    "'table', 'column', 'link', 'metric', 'dimension', 'rule', 'style',"
+    "'table', 'column', 'link', 'metric', 'dimension', 'definition', 'rule', 'style',"
     " 'code', 'event', 'data_problem', 'default', 'calendar', 'how_to',"
     " 'example', 'name', 'data_range'"
 )

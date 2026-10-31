@@ -10,6 +10,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from charie.learner.steps.base import Step, StepContext, register_step
+from charie.learner.steps.refresh import scope_for
 from charie.shared.ai.errors import AiError, SpendingPaused
 from charie.shared.db import session_scope
 from charie.shared.documents import reader
@@ -43,7 +44,12 @@ def make_jobs(ctx: StepContext) -> list[dict]:
     rows = ctx.session.scalars(
         select(Document).where(Document.status == "new").order_by(Document.id)
     ).all()
-    return [{"document_id": row.id} for row in rows if row.id not in busy]
+    jobs = [{"document_id": row.id} for row in rows if row.id not in busy]
+    scope = scope_for(ctx.session, ctx.run_id)
+    if scope is not None:
+        wanted = set(scope["documents"])
+        jobs = [job for job in jobs if job["document_id"] in wanted]
+    return jobs
 
 
 def process_document(
@@ -79,7 +85,13 @@ def process_document(
     doc.unreadable_pages = unreadable
     doc.progress = 50
     session.flush()
-    queue_index(session, doc.id, learning_run_id)
+    if learning_run_id is not None:
+        # Inside a run the index happens now, so the facts step sees it.
+        from charie.learner.steps import document_index
+
+        document_index.index_document(session, doc, learning_run_id=learning_run_id, commit=False)
+    else:
+        queue_index(session, doc.id, None)
     say("found", f"Read {doc.file_name}: {len(drafts)} section(s).")
     if unreadable:
         say("warning", f"{unreadable} page(s) couldn't be read.")

@@ -26,6 +26,9 @@ class Source(BaseModel):
     quote: str | None = None
     sql: str | None = None
     at: str | None = None
+    document: str | None = None
+    section_id: int | None = None
+    location: str | None = None
 
 
 class ForeignKeyRef(StrictModel):
@@ -163,6 +166,10 @@ class LaterDetails(BaseModel):
     columns: list[str] = []
 
 
+class DefinitionDetails(LaterDetails):
+    pass
+
+
 class MetricDetails(LaterDetails):
     pass
 
@@ -207,6 +214,7 @@ DETAILS_MODELS: dict[str, type[BaseModel]] = {
     "rule": RuleDetails,
     "style": StyleDetails,
     "name": NameDetails,
+    "definition": DefinitionDetails,
     "metric": MetricDetails,
     "dimension": DimensionDetails,
     "code": CodeDetails,

@@ -19,6 +19,7 @@ export function useFinishSetup() {
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: ["learner-setup"] });
       void client.invalidateQueries({ queryKey: ["learner-documents"] });
+      void client.invalidateQueries({ queryKey: ["learner-refresh-status"] });
       void client.invalidateQueries({ queryKey: ["learner-learning"] });
       void client.invalidateQueries({ queryKey: ["questions"] });
       void client.invalidateQueries({ queryKey: ["me"] });

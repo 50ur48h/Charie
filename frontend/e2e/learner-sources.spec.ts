@@ -44,6 +44,26 @@ test("an upload goes from New to Reading to Learned", async ({ page }) => {
   await expect(page.getByText(/Learned · \d+ facts/)).toBeVisible({ timeout: 15000 });
 });
 
+// P08.8 the refresh banner clears once the refresh run learns the changes.
+test("refresh banner clears consumed changes", async ({ page }) => {
+  await openLearner(page, "/sources", "new");
+  await expect(page.getByText("No documents yet. Drop files here to start.")).toBeVisible();
+  const [chooser] = await Promise.all([
+    page.waitForEvent("filechooser"),
+    page.getByRole("button", { name: /Drop files here/ }).click(),
+  ]);
+  await chooser.setFiles([
+    { name: "Extra rules.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4 extra") },
+  ]);
+  await expect(page.getByText("1 new document since the last learning")).toBeVisible({ timeout: 15000 });
+  await page.getByRole("button", { name: "Refresh knowledge base" }).click();
+  await expect(page).toHaveURL(/\/learning/);
+  // Back client-side: no reload, so the run and its clocks keep going.
+  await page.goBack();
+  await expect(page.getByText(/Learned · \d+ facts/)).toBeVisible({ timeout: 15000 });
+  await expect(page.getByText("since the last learning")).toBeHidden({ timeout: 15000 });
+});
+
 test("remove asks, then removes", async ({ page }) => {
   await openLearner(page, "/sources", "still");
   await expect(page.getByText("Menu guide, autumn.pdf")).toBeVisible();
