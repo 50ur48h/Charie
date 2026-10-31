@@ -12,6 +12,11 @@ import sys
 BACKEND_TEST = 'uv run --directory backend pytest -q -m "not live_ai and not practice_db" '
 FRONTEND_TEST = "npm --prefix frontend test"
 FRONTEND_E2E = "npm --prefix frontend run e2e:mock"
+# Discovery prompts are tested through the suites that run their jobs.
+PROMPT_TESTS = {
+    "find_business_terms": "tests/integration/learner/test_business_terms.py",
+    "find_dimensions": "tests/integration/knowledge/test_dimension_proofs.py",
+}
 
 
 def commands_for(path):
@@ -29,7 +34,11 @@ def commands_for(path):
         commands.add(BACKEND_TEST + "tests/integration/chat")
     elif p.startswith("backend/charie/prompts/") and p.endswith(".md"):
         job = p.rsplit("/", 1)[-1][:-3]
-        commands.add(BACKEND_TEST + f"tests/integration -k {job}")
+        target = PROMPT_TESTS.get(job)
+        if target is not None:
+            commands.add(BACKEND_TEST + target)
+        else:
+            commands.add(BACKEND_TEST + f"tests/integration -k {job}")
     elif p.startswith("backend/tests/questions/"):
         commands.add(BACKEND_TEST + "tests/unit/questions")
     elif p.startswith("backend/charie/shared/"):
@@ -151,6 +160,14 @@ def self_test():
         ("frontend/shared/src/components/Button.tsx", ["npm", "test"]),
         ("frontend/chat/src/pages/Chat.tsx", ["npm", "e2e:mock"]),
         ("backend/charie/prompts/plan_round.md", ["tests/integration", "plan_round"]),
+        (
+            "backend/charie/prompts/find_business_terms.md",
+            ["tests/integration/learner/test_business_terms.py"],
+        ),
+        (
+            "backend/charie/prompts/find_dimensions.md",
+            ["tests/integration/knowledge/test_dimension_proofs.py"],
+        ),
         ("backend/tests/questions/format.py", ["tests/unit/questions"]),
         ("docs/STATUS.md", []),
         ("", []),
