@@ -57,3 +57,13 @@ class Catalog(BaseModel):
     _norm_columns = field_validator("average_columns", mode="before")(
         lambda names: [normalize_column(name) for name in (names or [])]
     )
+
+
+def required_filters_for(catalog: Catalog, tables: list[str]) -> list[str]:
+    """The required WHERE lines for these tables, in catalog order."""
+    wanted = {normalize_table(name) for name in tables}
+    return [
+        required.sql
+        for required in catalog.required_filters
+        if normalize_table(required.table) in wanted
+    ]

@@ -5,7 +5,7 @@ known business number. The checker still checks the result.
 """
 
 import datetime
-from typing import Any, Literal
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
@@ -14,6 +14,31 @@ from charie.shared.knowledge.recipe import FragmentInfo, Recipe, RecipeError, ch
 
 class QueryBuildError(ValueError):
     """The builder refuses this request, in plain English."""
+
+
+class JoinLink(BaseModel):
+    """One tested join between two tables, both directions allowed."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    from_table: str
+    to_table: str
+    from_column: str
+    to_column: str
+    multiplicity: Literal["many_to_one", "one_to_many"]
+    tested: bool = True
+    reason: str = ""
+
+
+def on(from_alias: str, link: JoinLink, to_alias: str) -> str:
+    """The join condition, one row on the one side, many on the many side."""
+    if link.multiplicity == "many_to_one":
+        one_alias, one_column = to_alias, link.to_column
+        many_alias, many_column = from_alias, link.from_column
+    else:
+        one_alias, one_column = from_alias, link.from_column
+        many_alias, many_column = to_alias, link.to_column
+    return f"{one_alias}.{one_column} = {many_alias}.{many_column}"
 
 
 class DateRange(BaseModel):
@@ -59,11 +84,15 @@ class BuildContext(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    links: list[Any] = []
+    links: list[JoinLink] = []
     required_filters: dict[str, list[str]] = {}
     forbidden_tables: list[str] = []
     time_zone: str = "UTC"
     week_starts: Literal["monday", "sunday"] = "monday"
+
+
+#: Tables dimensions may never read: migrations and bookkeeping, not business.
+SYSTEM_TABLES = frozenset({"shop.migrations", "shop.alembic_version"})
 
 
 class BuiltQuery(BaseModel):
@@ -77,6 +106,7 @@ class BuiltQuery(BaseModel):
     dimension_columns: list[str]
     is_ratio: bool
     overlapping_dimension: str | None
+    proof: list[str] = []
 
 
 def _check_pieces(recipe: Recipe) -> dict[str, FragmentInfo]:
@@ -185,6 +215,111 @@ def _request_filter(recipe: Recipe, filtr: QueryFilter) -> str:
     raise QueryBuildError(f"Unknown dimension `{filtr.dimension}`.")
 
 
+class JoinBuilder:
+    """Aliases and joins for one build; the same table never joins twice."""
+
+    def __init__(self) -> None:
+        self.aliases: dict[str, str] = {}
+        self.joins: list[str] = []
+        self.proof: list[str] = []
+        self._generated = 2
+
+    def add(self, table: str) -> str:
+        """The alias for this table; a second join of it is refused."""
+        if table in self.aliases:
+            raise QueryBuildError(f"There is already a table called {self.aliases[table]}.")
+        base = table.split(".")[-1]
+        taken = set(self.aliases.values())
+        if len(base) < 2 or base[0].isdigit() or base in taken:
+            base = self._fresh_alias(taken)
+        self.aliases[table] = base
+        return base
+
+    def _fresh_alias(self, taken: set[str]) -> str:
+        while True:
+            alias = f"table_{self._generated}"
+            self._generated += 1
+            if alias not in taken:
+                return alias
+
+    def join(self, main_table: str, main_alias: str, link: JoinLink) -> str:
+        """Join the link's other table to the main table; returns its alias."""
+        oriented = _oriented_link(main_table, link)
+        if oriented is None:
+            raise QueryBuildError("This number needs a join, which isn't supported yet.")
+        other = oriented.to_table
+        other_alias = self.add(other)
+        self.joins.append(
+            f"JOIN {other} AS {other_alias} ON {on(main_alias, oriented, other_alias)}"
+        )
+        one_table = (
+            oriented.to_table if oriented.multiplicity == "many_to_one" else oriented.from_table
+        )
+        one_column = (
+            oriented.to_column if oriented.multiplicity == "many_to_one" else oriented.from_column
+        )
+        self.proof.append(
+            f"{other} joins {main_table} on the tested {link.multiplicity} link "
+            f"{link.from_table}.{link.from_column} = {link.to_table}.{link.to_column}; "
+            f"distinct {one_table}.{one_column}"
+        )
+        return other_alias
+
+
+def _oriented_link(main_table: str, link: JoinLink) -> JoinLink | None:
+    """The link with the main table on the from side, or None if it self-joins."""
+    if link.from_table == link.to_table:
+        return None
+    if link.from_table == main_table:
+        return link
+    if link.to_table == main_table:
+        return link.model_copy(
+            update={
+                "from_table": link.to_table,
+                "to_table": link.from_table,
+                "from_column": link.to_column,
+                "to_column": link.from_column,
+                "multiplicity": (
+                    "one_to_many" if link.multiplicity == "many_to_one" else "many_to_one"
+                ),
+            }
+        )
+    return None
+
+
+def _resolve_join(main_table: str, needed: str, links: list[JoinLink]) -> JoinLink:
+    """One tested hop from the main table, or the exact refusal for why not."""
+    direct = [link for link in links if {link.from_table, link.to_table} == {main_table, needed}]
+    tested = [link for link in direct if link.tested]
+    if tested:
+        oriented = _oriented_link(main_table, tested[0])
+        if oriented is None:
+            raise QueryBuildError("This number needs a join, which isn't supported yet.")
+        return oriented
+    if direct:
+        raise QueryBuildError(f"The {needed} table needs a tested link to join on.")
+    reached = {main_table}
+    frontier = [main_table]
+    while frontier:
+        current = frontier.pop()
+        for link in links:
+            if not link.tested or link.from_table == link.to_table:
+                continue
+            other = None
+            if link.from_table == current and link.to_table not in reached:
+                other = link.to_table
+            elif link.to_table == current and link.from_table not in reached:
+                other = link.from_table
+            if other is not None:
+                if other == needed:
+                    raise QueryBuildError(
+                        "This question needs more than one join, which isn't supported yet."
+                    )
+                reached.add(other)
+                frontier.append(other)
+    raise QueryBuildError("This number needs a join, which isn't supported yet.")
+
+
 def build_query(
     recipe_key: str,
     recipes: dict[str, Recipe],
@@ -205,39 +340,100 @@ def build_query(
     if request.period is None:
         raise QueryBuildError("Totals need a date range.")
     pieces = _check_pieces(recipe)
-    main_alias = recipe.table.split(".")[-1]
-    for info in pieces.values():
-        if any(table != main_alias for table in info.tables):
+    if recipe.table in context.forbidden_tables:
+        raise QueryBuildError(f"The {recipe.table} table is outside the tenant's data.")
+    requested = [_resolve_dimension(recipe, recipe_key, key) for key in request.dimensions]
+    for filtr in request.filters:
+        if filtr.dimension in GRAINS:
+            continue
+        filtr_dimension = _resolve_dimension(recipe, recipe_key, filtr.dimension)
+        if filtr_dimension.kind != "time" and filtr_dimension not in requested:
+            requested.append(filtr_dimension)
+    for dimension in requested:
+        if dimension.table in context.forbidden_tables:
+            raise QueryBuildError(f"The {dimension.table} table is outside the tenant's data.")
+        if dimension.table in SYSTEM_TABLES:
+            raise QueryBuildError(
+                f"The {dimension.table} table is a system table, not a dimension."
+            )
+    builder = JoinBuilder()
+    main_alias = builder.add(recipe.table)
+    main_bare = recipe.table.split(".")[-1]
+
+    def full_table(bare: str) -> str | None:
+        if bare == main_bare:
+            return recipe.table
+        for link in context.links:
+            if link.from_table.split(".")[-1] == bare:
+                return link.from_table
+            if link.to_table.split(".")[-1] == bare:
+                return link.to_table
+        return None
+
+    needed: list[str] = []
+    fragment_tables: set[str] = set()
+    for piece in ["expression", "time_column"]:
+        fragment_tables.update(pieces[piece].tables)
+    for index in range(len(recipe.filters)):
+        fragment_tables.update(pieces[f"filter {index + 1}"].tables)
+    for dimension in requested:
+        if dimension.table and dimension.table != recipe.table and dimension.table not in needed:
+            needed.append(dimension.table)
+        fragment_tables.update(pieces[f"dimension {dimension.key}"].tables)
+        label_piece = pieces.get(f"dimension {dimension.key} label")
+        if label_piece is not None:
+            fragment_tables.update(label_piece.tables)
+    for bare in sorted(fragment_tables):
+        full = full_table(bare)
+        if full is None:
             raise QueryBuildError("This number needs a join, which isn't supported yet.")
+        if full != recipe.table and full not in needed:
+            needed.append(full)
+    for table in needed:
+        link = _resolve_join(recipe.table, table, context.links)
+        builder.join(recipe.table, main_alias, link)
+    aliases = {
+        full.split(".")[-1]: alias
+        for full, alias in builder.aliases.items()
+        if alias != full.split(".")[-1]
+    }
+
+    def qualified(text: str) -> str:
+        for bare, alias in aliases.items():
+            text = text.replace(f"{bare}.", f"{alias}.")
+        return text
+
     if recipe.aggregate == "count" and recipe.expression == "*":
         select = "COUNT(*)"
     elif recipe.aggregate == "count_distinct":
-        select = f"COUNT(DISTINCT {recipe.expression})"
+        select = f"COUNT(DISTINCT {qualified(recipe.expression)})"
     else:
-        select = f"SUM({recipe.expression})"
+        select = f"SUM({qualified(recipe.expression)})"
     outputs: list[str] = []
     groupers: list[str] = []
     for key in request.dimensions:
         dimension = _resolve_dimension(recipe, recipe_key, key)
         for output in _split_columns(recipe, dimension, context):
-            outputs.append(output)
-            groupers.append(output.rsplit(" AS ", 1)[0])
-    where = [_period_condition(recipe, request.period, context)]
-    where.extend(recipe.filters)
-    where.extend(_request_filter(recipe, filtr) for filtr in request.filters)
+            outputs.append(qualified(output))
+            groupers.append(qualified(output).rsplit(" AS ", 1)[0])
+    where = [qualified(_period_condition(recipe, request.period, context))]
+    where.extend(qualified(raw) for raw in recipe.filters)
+    where.extend(qualified(_request_filter(recipe, filtr)) for filtr in request.filters)
+    for table in [recipe.table, *builder.aliases]:
+        where.extend(qualified(raw) for raw in context.required_filters.get(table, []))
+    tables = f"FROM {recipe.table} AS {main_alias}"
+    if builder.joins:
+        tables += " " + " ".join(builder.joins)
     if groupers:
         sql = (
             f"SELECT {', '.join(outputs)}, {select} AS value "
-            f"FROM {recipe.table} AS {main_alias} "
+            f"{tables} "
             f"WHERE {' AND '.join(where)} "
             f"GROUP BY {', '.join(groupers)} ORDER BY {', '.join(groupers)}"
         )
         dimension_columns = [output.rsplit(" AS ", 1)[1] for output in outputs]
     else:
-        sql = (
-            f"SELECT {select} AS value FROM {recipe.table} AS {main_alias} "
-            f"WHERE {' AND '.join(where)}"
-        )
+        sql = f"SELECT {select} AS value {tables} WHERE {' AND '.join(where)}"
         dimension_columns = []
     return BuiltQuery(
         sql=sql,
@@ -246,4 +442,5 @@ def build_query(
         dimension_columns=dimension_columns,
         is_ratio=False,
         overlapping_dimension=None,
+        proof=builder.proof,
     )
