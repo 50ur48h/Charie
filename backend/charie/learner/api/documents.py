@@ -131,18 +131,29 @@ def remove_document(document_id: int, session=Depends(get_session)):  # type: ig
 
 @documents_router.post("/{document_id}/retry", response_model=DocumentEnvelope)
 def retry_document(document_id: int, session=Depends(get_session)):  # type: ignore[no-untyped-def]
-    """Try a failed document again; finished documents have nothing to retry."""
+    """Try a failed document again; finished documents have nothing to retry.
+
+    When the read already stored sections, only the failed index stage runs
+    again — re-reading would wipe the saved notes, vectors and checkpoints.
+    """
+    from charie.learner.steps.documents import has_sections, queue_index
+
     row = session.get(Document, document_id)
     if row is None or row.status == "removed":
         raise ApiError(404, "not_found", "Charie couldn't find that document.")
     if row.status != "failed" and row.unreadable_pages == 0:
         raise ApiError(409, "nothing_to_retry", "This document doesn't need another try.")
-    row.status = "new"
     row.error = None
-    row.progress = 0
-    row.pages = 0
-    row.unreadable_pages = 0
     row.learned_at = None
-    queue_reading(session, row.id)
+    if has_sections(session, row.id):
+        row.status = "reading"
+        row.progress = 50
+        queue_index(session, row.id)
+    else:
+        row.status = "new"
+        row.progress = 0
+        row.pages = 0
+        row.unreadable_pages = 0
+        queue_reading(session, row.id)
     session.commit()
     return {"document": _shape(row)}

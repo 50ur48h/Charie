@@ -111,6 +111,18 @@ def _plain_error(doc: Document, err: Exception) -> str:
     return READ_FAILED
 
 
+def has_sections(session: Session, document_id: int) -> bool:
+    """The read stage finished at least once: sections are stored."""
+    return (
+        session.scalar(
+            select(func.count())
+            .select_from(DocumentSection)
+            .where(DocumentSection.document_id == document_id)
+        )
+        > 0
+    )
+
+
 def queue_index(session: Session, document_id: int, learning_run_id: int | None = None) -> None:
     """Queue the note-and-embed job unless one is already waiting or running."""
     waiting = session.scalars(

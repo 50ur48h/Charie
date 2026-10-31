@@ -1,9 +1,10 @@
 """Split document markdown into ordered sections (P08.3).
 
-Every heading starts a new section; tables are never cut mid-row. An
-oversized table splits by row groups with its headers repeated and a
-continuation note. Page ranges are tracked only when the text marks page
-breaks (a form feed); otherwise they stay unknown instead of guessed.
+Every heading starts a new section; pipe and HTML tables (the Azure
+Layout shape) are never cut mid-row. An oversized table splits by row
+groups with its headers repeated and a continuation note. Page ranges
+are tracked only when the text marks page breaks (a form feed);
+otherwise they stay unknown instead of guessed.
 """
 
 import re
@@ -13,6 +14,9 @@ MAX_SECTION_CHARS = 6000  # Well under the embedding input limit.
 CONTINUATION_NOTE = "> (continued from the previous section)"
 
 _HEADING = re.compile(r"^(#{1,6})\s+(.*?)\s*$")
+_TABLE_OPEN = re.compile(r"<table(\s[^>]*)?>", re.IGNORECASE)
+_THEAD = re.compile(r"<thead\b.*?</thead>", re.IGNORECASE | re.DOTALL)
+_TR = re.compile(r"<tr\b.*?</tr>", re.IGNORECASE | re.DOTALL)
 
 
 @dataclass(frozen=True)
@@ -94,6 +98,9 @@ def split_sections(markdown: str, *, page_count: int) -> list[SectionDraft]:
             elif block[0] == "table":
                 for piece in _table_pieces(block[1]):
                     push(piece, page)
+            elif block[0] == "html_table":
+                for piece in _html_table_pieces(block[1]):
+                    push(piece, page)
             else:
                 for piece in _prose_pieces(block[1]):
                     push(piece, page)
@@ -106,12 +113,16 @@ def _blocks(part: str) -> list[tuple]:
     blocks: list[tuple] = []
     prose: list[str] = []
     table: list[str] = []
+    html: list[str] = []
     fenced = False
 
     def flush() -> None:
         if table:
             blocks.append(("table", list(table)))
             table.clear()
+        if html:
+            blocks.append(("html_table", "\n".join(html).strip()))
+            html.clear()
         if prose:
             blocks.append(("prose", "\n".join(prose).strip()))
             prose.clear()
@@ -125,6 +136,17 @@ def _blocks(part: str) -> list[tuple]:
             continue
         if fenced:
             prose.append(line)
+            continue
+        if html:
+            html.append(line)
+            if "</table>" in stripped.lower():
+                flush()
+            continue
+        if _TABLE_OPEN.match(stripped):
+            flush()
+            html.append(line)
+            if "</table>" in stripped.lower():
+                flush()
             continue
         match = _HEADING.match(line)
         if match:
@@ -186,6 +208,54 @@ def _is_delimiter(line: str) -> bool:
     """A `| --- | --- |` style row: pipes, dashes, colons and spaces only."""
     stripped = line.strip()
     return len(stripped) >= 3 and "-" in stripped and set(stripped) <= set("|-: ")
+
+
+def _html_table_pieces(text: str) -> list[str]:
+    """An Azure Layout table, whole when it fits; row groups with headers when not."""
+    whole = text.strip()
+    if len(whole) <= MAX_SECTION_CHARS:
+        return [whole]
+    open_tag, header, body = _parse_html_table(whole)
+    if not body:
+        return _prose_pieces(whole)
+    tail = "\n</table>"
+    head_size = len(open_tag) + 1 + len(header) + len(tail)
+    note_size = len(CONTINUATION_NOTE) + 2
+    pieces: list[str] = []
+    group: list[str] = []
+    size = head_size
+
+    def flush_group() -> None:
+        if group:
+            chunk = f"{open_tag}\n{header}\n" + "\n".join(group) + tail
+            if pieces:
+                chunk = f"{CONTINUATION_NOTE}\n\n{chunk}"
+            pieces.append(chunk)
+            group.clear()
+
+    for row in body:
+        budget = MAX_SECTION_CHARS - (note_size if pieces else 0)
+        if size + 1 + len(row) > budget and group:
+            flush_group()
+            size = head_size
+        group.append(row)
+        size += 1 + len(row)
+    flush_group()
+    return pieces or [whole]
+
+
+def _parse_html_table(text: str) -> tuple[str, str, list[str]]:
+    """The opening tag, the header block and the body rows of one HTML table."""
+    open_match = _TABLE_OPEN.search(text)
+    open_tag = open_match.group(0) if open_match else "<table>"
+    thead = _THEAD.search(text)
+    if thead is not None:
+        header = thead.group(0)
+        body = _TR.findall(text[: thead.start()] + text[thead.end() :])
+    else:
+        rows = _TR.findall(text)
+        header, body = (rows[0], rows[1:]) if rows else ("", [])
+    return open_tag, header, body
 
 
 def _prose_pieces(text: str) -> list[str]:

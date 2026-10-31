@@ -134,3 +134,77 @@ def test_multipart_exception_documented(learner_client) -> None:
     assert multi.status_code == 201, multi.text  # No 415: multipart is the exception.
     plain = learner_client.post("/api/documents", json={})
     assert plain.status_code == 400, plain.text  # JSON without a file part uploads nothing.
+
+
+def test_retry_with_sections_resumes_index(learner_client, db_session, monkeypatch) -> None:
+    """Retry after an index failure re-indexes; notes, vectors and hashes survive."""
+    from decimal import Decimal
+
+    from charie.learner.steps import document_index
+    from charie.learner.steps.document_index import INDEX_JOB, content_hash, handle_index_document
+    from charie.shared.ai.client import AiClient
+    from charie.shared.ai.cost_log import MemoryCostLog
+    from charie.shared.ai.fake import FakeAi
+    from charie.shared.jobs.registry import JobInfo
+    from charie.shared.search.embeddings import EmbeddingResult
+    from charie.shared.tables.sources import DocumentSection
+
+    log_in(learner_client)
+    doc_id = _seed(db_session, size_bytes=len(PDF), sha256="abc", status="failed")
+    done_text = "# Refunds\n\nFull refunds within 30 days.\n"
+    pending_text = "# Shipping\n\nShips in 2 days.\n"
+    db_session.add_all(
+        [
+            DocumentSection(
+                document_id=doc_id,
+                position=0,
+                heading_path="Refunds",
+                text_=done_text,
+                note="Refund policy: 30 days.",
+                embedding=[1.0] + [0.0] * 1535,
+                content_hash=content_hash("Refunds", done_text),
+            ),
+            DocumentSection(
+                document_id=doc_id, position=1, heading_path="Shipping", text_=pending_text
+            ),
+        ]
+    )
+    db_session.commit()
+
+    retry = learner_client.post(f"/api/documents/{doc_id}/retry")
+    assert retry.status_code == 200, retry.text
+    assert retry.json()["document"]["status"] == "reading"
+    kinds = [job.kind for job in db_session.scalars(select(Job))]
+    assert kinds == ["index_document"]  # No re-read: sections are kept.
+
+    # One reply: only the pending section may spend an AI call.
+    fake = FakeAi().reply("note_section", {"note": "Shipping: 2 days."})
+    monkeypatch.setattr(
+        document_index,
+        "get_ai",
+        lambda: AiClient(provider=fake, cost_log=MemoryCostLog(), sleep=lambda s: None),
+    )
+
+    class StubEmbed:
+        def embed_texts(self, texts, **kwargs):
+            return EmbeddingResult(
+                vectors=[[1.0] + [0.0] * 1535 for _ in texts],
+                prompt_tokens=0,
+                cost_usd=Decimal("0"),
+            )
+
+    monkeypatch.setattr(document_index, "embeddings", StubEmbed())
+    handle_index_document(JobInfo(id=1, kind=INDEX_JOB, payload={"document_id": doc_id}))
+    db_session.expire_all()
+    assert [call[0] for call in fake.calls] == ["note_section"]  # Only the pending one.
+    rows = db_session.scalars(
+        select(DocumentSection)
+        .where(DocumentSection.document_id == doc_id)
+        .order_by(DocumentSection.position)
+    ).all()
+    assert [section.note for section in rows] == ["Refund policy: 30 days.", "Shipping: 2 days."]
+    assert rows[0].note == "Refund policy: 30 days."  # Untouched.
+    assert rows[0].embedding == [1.0] + [0.0] * 1535  # Untouched.
+    assert all(len(section.embedding) == 1536 for section in rows)
+    doc = db_session.get(Document, doc_id)
+    assert (doc.status, doc.progress) == ("reading", 100)

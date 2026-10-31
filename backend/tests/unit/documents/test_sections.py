@@ -65,6 +65,39 @@ def test_blank_input_has_no_sections() -> None:
     assert split_sections("   \n\n  ", page_count=2) == []
 
 
+def test_small_html_table_stays_whole() -> None:
+    markdown = (
+        "# Menu\n\n"
+        "<table>\n<tr><th>item</th><th>price</th></tr>\n"
+        "<tr>\n<td>Margherita</td>\n<td>18.00</td>\n</tr>\n"
+        "</table>\n"
+    )
+    sections = split_sections(markdown, page_count=1)
+    assert len(sections) == 1
+    assert sections[0].heading_path == "Menu"
+    assert "<td>Margherita</td>" in sections[0].text
+
+
+def test_large_html_table_keeps_rows_and_headers() -> None:
+    rows = "\n".join(f"<tr><td>item{i:04d}</td><td>{'x' * 40}</td></tr>" for i in range(400))
+    markdown = (
+        "# Prices\n\nSome intro.\n\n<table>\n<thead>\n"
+        "<tr><th>item</th><th>detail</th></tr>\n</thead>\n<tbody>\n"
+        f"{rows}\n</tbody>\n</table>\n"
+    )
+    sections = split_sections(markdown, page_count=1)
+    table_sections = [section for section in sections if "<table" in section.text]
+    assert len(table_sections) > 1
+    for section in table_sections:
+        assert "<th>item</th>" in section.text  # Headers repeat in every chunk.
+        assert len(section.text) <= MAX_SECTION_CHARS
+        assert section.text.count("<tr>") == section.text.count("</tr>")  # No split rows.
+    assert CONTINUATION_NOTE not in table_sections[0].text
+    for section in table_sections[1:]:
+        assert CONTINUATION_NOTE in section.text
+    assert sum(section.text.count("<td>item") for section in table_sections) == 400
+
+
 def test_fenced_code_is_not_a_table() -> None:
     markdown = "# Guide\n\n```\n| not | a table |\n# not a heading\n```\n\nReal text.\n"
     sections = split_sections(markdown, page_count=1)
