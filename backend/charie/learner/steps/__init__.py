@@ -8,6 +8,7 @@ from charie.learner.steps import (
     explain_tables,  # noqa: F401 (registers the step)
     links,  # noqa: F401 (registers the step)
     owner_notes,  # noqa: F401 (registers the step)
+    owner_questions,  # noqa: F401 (registers the step)
     profile,  # noqa: F401 (registers the step)
     recipes,  # noqa: F401 (recipe checks for step 8)
     structure,  # noqa: F401 (registers the step)
