@@ -24,8 +24,16 @@ MINIMAL = {
     "rule": {"rule_type": "currency", "currency": "USD"},
     "style": {},
     "name": {"table": "public.restaurants", "id_column": "id", "name_column": "name"},
-    "metric": {"tables": ["public.orders"]},
-    "dimension": {},
+    "metric": {
+        "kind": "simple",
+        "table": "shop.orders",
+        "aggregate": "sum",
+        "expression": "orders.total_amount",
+        "time_column": "orders.created_at",
+        "time_column_type": "timestamptz",
+        "steps_in_words": ["Add up the orders.", "Only completed ones count."],
+    },
+    "dimension": {"kind": "attribute", "table": "shop.orders", "column": "status"},
     "code": {},
     "event": {},
     "data_problem": {},
@@ -59,9 +67,31 @@ def test_bad_details_are_refused() -> None:
 
 def test_later_kinds_accept_extra_fields() -> None:
     checked = check_details(
-        "metric",
-        {"tables": ["public.orders"], "recipe": {"measure": "SUM(x)"}, "unit": "money"},
+        "event",
+        {"tables": ["public.orders"], "happened": "the rush", "unit": "money"},
     )
-    assert checked["recipe"] == {"measure": "SUM(x)"}
+    assert checked["happened"] == "the rush"
     assert checked["unit"] == "money"
     assert checked["columns"] == []
+
+
+def test_metric_and_dimension_refuse_extra_fields() -> None:
+    with pytest.raises(ValidationError):
+        check_details(
+            "metric",
+            {
+                "kind": "simple",
+                "table": "shop.orders",
+                "aggregate": "sum",
+                "expression": "orders.total_amount",
+                "time_column": "orders.created_at",
+                "time_column_type": "timestamptz",
+                "steps_in_words": ["Add up the orders.", "Only completed ones count."],
+                "bogus": 1,
+            },
+        )
+    with pytest.raises(ValidationError):
+        check_details(
+            "dimension",
+            {"kind": "attribute", "table": "shop.orders", "column": "status", "bogus": 1},
+        )

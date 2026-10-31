@@ -34,7 +34,11 @@ def _rule_tables(rule_table: str, known: list[str]) -> list[str]:
 
 
 def _literal(value: str) -> str:
-    """A SQL literal: bare numbers, quoted text."""
+    """A SQL literal: bare numbers and booleans, quoted text."""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, str) and value.strip().lower() in ("true", "false"):
+        return value.strip().lower()
     try:
         int(value)
         return value

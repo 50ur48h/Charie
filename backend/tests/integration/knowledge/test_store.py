@@ -29,7 +29,18 @@ def test_add_change_remove_write_the_change_log(db) -> None:
                 "metric",
                 "Net sales",
                 "Sales without delivery fees.",
-                {"tables": ["public.orders"]},
+                {
+                    "kind": "simple",
+                    "table": "shop.orders",
+                    "aggregate": "sum",
+                    "expression": "orders.total_amount",
+                    "time_column": "orders.created_at",
+                    "time_column_type": "timestamptz",
+                    "steps_in_words": [
+                        "Add up the orders.",
+                        "Only completed ones count.",
+                    ],
+                },
                 "guessed",
                 [{"type": "query"}],
                 "Testing net sales.",
@@ -44,7 +55,15 @@ def test_add_change_remove_write_the_change_log(db) -> None:
                 "metric",
                 "Net sales",
                 "Sales without fees or refunds.",
-                {"tables": ["public.orders"]},
+                {
+                    "kind": "simple",
+                    "table": "shop.orders",
+                    "aggregate": "sum",
+                    "expression": "orders.net_amount",
+                    "time_column": "orders.created_at",
+                    "time_column_type": "timestamptz",
+                    "steps_in_words": ["Add up the orders.", "Take refunds out of sales."],
+                },
                 "checked",
                 [{"type": "query"}],
                 "The refund policy says refunds come out of sales.",
@@ -111,7 +130,15 @@ def test_confirmed_entry_keeps_its_meaning(db) -> None:
             "metric",
             "Net sales",
             "Sales without delivery fees.",
-            {"tables": ["public.orders"]},
+            {
+                "kind": "simple",
+                "table": "shop.orders",
+                "aggregate": "sum",
+                "expression": "orders.total_amount",
+                "time_column": "orders.created_at",
+                "time_column_type": "timestamptz",
+                "steps_in_words": ["Add up the orders.", "Only completed ones count."],
+            },
             "confirmed",
             [{"type": "owner_approval", "text": "Approved by you"}],
             "Approved.",
@@ -124,7 +151,15 @@ def test_confirmed_entry_keeps_its_meaning(db) -> None:
                 "metric",
                 "NET SALES (learning's words)",
                 "Learning's wrong meaning.",
-                {"tables": ["public.orders", "public.refunds"]},
+                {
+                    "kind": "simple",
+                    "table": "shop.orders",
+                    "aggregate": "sum",
+                    "expression": "orders.net_amount",
+                    "time_column": "orders.created_at",
+                    "time_column_type": "timestamptz",
+                    "steps_in_words": ["Add up the orders.", "Take refunds out of sales."],
+                },
                 "guessed",
                 [{"type": "query"}],
                 "Testing net sales.",
@@ -137,8 +172,7 @@ def test_confirmed_entry_keeps_its_meaning(db) -> None:
         assert entry.title == "Net sales"
         assert entry.meaning == "Sales without delivery fees."
         assert entry.confidence == "confirmed"
-        assert entry.details["tables"] == ["public.orders", "public.refunds"]
-        assert entry.details["columns"] == []
+        assert entry.details["expression"] == "orders.net_amount"
         by_type = {source["type"]: source for source in entry.sources}
         assert by_type["query"]["text"] is None
         assert by_type["owner_approval"]["text"] == "Approved by you"
@@ -214,7 +248,15 @@ def test_list_filters_by_kind_and_words(db) -> None:
             "metric",
             "Net sales",
             "Sales without delivery fees.",
-            {"tables": ["public.orders"]},
+            {
+                "kind": "simple",
+                "table": "shop.orders",
+                "aggregate": "sum",
+                "expression": "orders.total_amount",
+                "time_column": "orders.created_at",
+                "time_column_type": "timestamptz",
+                "steps_in_words": ["Add up the orders.", "Only completed ones count."],
+            },
             "guessed",
             [],
             "Testing net sales.",
@@ -226,7 +268,14 @@ def test_list_filters_by_kind_and_words(db) -> None:
             "metric",
             "Average order",
             "Net sales divided by the number of orders.",
-            {"tables": ["public.orders"]},
+            {
+                "kind": "ratio",
+                "numerator": "net_sales",
+                "denominator": "order_count",
+                "unit": "money",
+                "currency": "USD",
+                "steps_in_words": ["Divide the totals.", "Null when nothing was sold."],
+            },
             "guessed",
             [],
             "Testing averages.",

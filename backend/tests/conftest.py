@@ -188,3 +188,33 @@ def db_session(db):
     with Session(engine) as session:
         yield session
     engine.dispose()
+
+
+@pytest.fixture()
+def shop_db(db):
+    """The shop fixture database, with a read-only query runner."""
+    from types import SimpleNamespace
+
+    engine = create_engine(db)
+    path = BACKEND_DIR / "tests" / "data" / "shop_db.sql"
+    code = "\n".join(
+        line for line in path.read_text().splitlines() if not line.strip().startswith("--")
+    )
+    with engine.begin() as conn:
+        conn.execute(text("DROP SCHEMA IF EXISTS shop CASCADE"))
+        for statement in code.split(";"):
+            if statement.strip():
+                conn.execute(text(statement))
+
+    def run_query(sql: str, **kwargs):
+        with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
+            conn.execute(text("BEGIN READ ONLY"))
+            try:
+                result = conn.execute(text(sql), kwargs or {})
+                rows = [tuple(row) for row in result.all()]
+                return SimpleNamespace(columns=list(result.keys()), rows=rows)
+            finally:
+                conn.execute(text("ROLLBACK"))
+
+    yield run_query
+    engine.dispose()

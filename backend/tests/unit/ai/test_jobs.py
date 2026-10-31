@@ -12,6 +12,7 @@ JOBS_03 = [
     "compare_facts",
     "explain_table",
     "find_business_terms",
+    "find_dimensions",
     "write_term_recipe",
     "propose_defaults",
     "write_owner_questions",

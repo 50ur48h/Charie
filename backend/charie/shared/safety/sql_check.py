@@ -208,6 +208,7 @@ def check_sql(
         _rule_required_filters(tree, catalog, fail)
         _rule_double_counting(tree, catalog, fail)
         _rule_average_of_averages(tree, catalog, fail)
+        _rule_derived_tables(tree, catalog, fail)
 
     if len(trees) == 1 and isinstance(trees[0], exp.Select):
         # Rule 7 judges the query as written: the row cap below would make any
@@ -344,6 +345,12 @@ def _rule_functions(tree: exp.Expression, fail) -> None:
                 FUNCTIONS,
                 f"The function `{name}` isn't on Charie's list of allowed functions.",
             )
+
+
+def is_dangerous_function(name: str) -> bool:
+    """True when rule 3 would refuse this function name as dangerous."""
+    upper = name.strip().upper()
+    return upper in _DANGEROUS_EXACT or upper.startswith(_DANGEROUS_PREFIX)
 
 
 def _unwrap(node: exp.Expression) -> exp.Expression:
@@ -625,6 +632,161 @@ def _rule_average_of_averages(tree: exp.Expression, catalog: Catalog, fail) -> N
                     f"This query averages numbers that are already averages (`{shown}`). "
                     "Work out the average as total ÷ count instead.",
                 )
+
+
+def _derived_sources(scope) -> dict[str, exp.Select]:
+    """Alias to inner SELECT for each derived table this scope reads."""
+    if not isinstance(scope.expression, exp.Select):
+        return {}
+    from_ = scope.expression.args.get("from_")
+    items = []
+    if from_ is not None:
+        items.append(from_.this)
+        items.extend(from_.args.get("expressions", []))
+    for join in scope.expression.args.get("joins", []):
+        items.append(join.this)
+    found: dict[str, exp.Select] = {}
+    for item in items:
+        if isinstance(item, exp.Subquery) and isinstance(item.this, exp.Select):
+            alias = item.args.get("alias")
+            if alias is None:
+                continue
+            name = alias.sql(dialect="postgres").split("(")[0].strip().strip('"').lower()
+            if name:
+                found[name] = item.this
+    return found
+
+
+def _derived_keys(inner: exp.Select) -> set[str]:
+    """Output columns a scope may join on: grouped keys, or every column."""
+    names: dict[str, str] = {}
+    for item in inner.args.get("expressions", []):
+        if isinstance(item, exp.Alias):
+            names[_render(item.this)] = item.alias.lower()
+        elif isinstance(item, exp.Column):
+            names[_render(item)] = item.name.lower()
+    group = inner.args.get("group")
+    if group is None:
+        if inner.args.get("distinct") is None:
+            return set()
+        return set(names.values())
+    wanted = {_render(part) for part in group.expressions}
+    return {name for render, name in names.items() if render in wanted}
+
+
+def _join_parts(condition: exp.Expression) -> list:
+    """The top-level AND parts of a JOIN condition."""
+    parts: list = []
+    stack = [_unwrap(condition)]
+    while stack:
+        node = _unwrap(stack.pop())
+        if isinstance(node, exp.And):
+            stack.append(node.left)
+            stack.append(node.right)
+        else:
+            parts.append(node)
+    return parts
+
+
+def _rule_derived_tables(tree: exp.Expression, catalog: Catalog, fail) -> None:
+    """Rule 5b: joins of derived tables stay on grouped keys; no re-adding.
+
+    Each derived table the builder emits is grouped (or distinct) at a
+    proven grain. A join to one is safe only on its key columns, and an
+    outer aggregate over joined sources would count rows twice.
+    """
+    del catalog
+    for scope in traverse_scope(tree):
+        if not isinstance(scope.expression, exp.Select):
+            continue
+        sources = _derived_sources(scope)
+        if not sources:
+            continue
+        keys = {name: _derived_keys(inner) for name, inner in sources.items()}
+        real = [full for full, _ in _scope_real_tables(scope)]
+        aggregations = _own_nodes(scope, (exp.Sum, exp.Avg, exp.Count))
+        if aggregations and len(sources) + len(real) > 1:
+            fail(
+                DOUBLE_COUNTING,
+                "This query adds up numbers after joining, so joined rows "
+                "would count twice. Add each side up in a sub-query first.",
+            )
+            continue
+        if aggregations and len(sources) == 1 and not real:
+            name = next(iter(sources))
+            inner = sources[name]
+            if inner.args.get("group") is None and inner.args.get("distinct") is None:
+                fail(
+                    DOUBLE_COUNTING,
+                    "This query adds up a sub-query with no grouping, so its "
+                    "grain is unproven. Group the sub-query first.",
+                )
+                continue
+            columns: list[str] = []
+            for node in aggregations:
+                arg = node.this
+                if arg is not None:
+                    columns.extend(col for col in arg.find_all(exp.Column))
+            if any(col.name.lower() not in keys[name] for col in columns):
+                fail(
+                    DOUBLE_COUNTING,
+                    "This query adds up a sub-query column that isn't grouped, "
+                    "so joined rows would count twice.",
+                )
+                continue
+        for join in scope.expression.args.get("joins", []):
+            condition = join.args.get("on")
+            if condition is None:
+                continue
+            for part in _join_parts(condition):
+                if not isinstance(part, exp.Binary):
+                    cols = [
+                        node
+                        for node in part.find_all(exp.Column)
+                        if (node.table or "").lower() in keys
+                    ]
+                    if cols:
+                        fail(
+                            DOUBLE_COUNTING,
+                            "This query joins a sub-query on something that isn't "
+                            "an equality, so the grain is unproven.",
+                        )
+                        break
+                    continue
+                touched = any(
+                    (node.table or "").lower() in keys
+                    for node in (part.left, part.right)
+                    if isinstance(node, exp.Column)
+                )
+                if not touched:
+                    continue
+                if not isinstance(part, (exp.EQ, exp.NullSafeEQ)):
+                    fail(
+                        DOUBLE_COUNTING,
+                        "This query joins a sub-query on something that isn't "
+                        "an equality, so the grain is unproven.",
+                    )
+                    break
+                left, right = part.left, part.right
+                if not (isinstance(left, exp.Column) and isinstance(right, exp.Column)):
+                    fail(
+                        DOUBLE_COUNTING,
+                        "This query joins a sub-query on something that isn't "
+                        "two columns, so the grain is unproven.",
+                    )
+                    break
+                bad = False
+                for column in (left, right):
+                    qualifier = (column.table or "").lower()
+                    if qualifier in keys and column.name.lower() not in keys[qualifier]:
+                        bad = True
+                if bad:
+                    fail(
+                        DOUBLE_COUNTING,
+                        "This query joins a sub-query on columns that aren't "
+                        "grouped, so rows would count twice.",
+                    )
+                    break
 
 
 def _rule_too_heavy(sql: str, explain, max_plan_cost: int, fail) -> None:

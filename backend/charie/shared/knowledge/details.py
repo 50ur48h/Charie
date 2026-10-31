@@ -9,6 +9,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict
 
+from charie.shared.knowledge.recipe import DimensionDetails, Recipe
+
 
 class StrictModel(BaseModel):
     """A details model: unknown fields are refused."""
@@ -170,14 +172,6 @@ class DefinitionDetails(LaterDetails):
     pass
 
 
-class MetricDetails(LaterDetails):
-    pass
-
-
-class DimensionDetails(LaterDetails):
-    pass
-
-
 class CodeDetails(LaterDetails):
     pass
 
@@ -215,7 +209,7 @@ DETAILS_MODELS: dict[str, type[BaseModel]] = {
     "style": StyleDetails,
     "name": NameDetails,
     "definition": DefinitionDetails,
-    "metric": MetricDetails,
+    "metric": Recipe,
     "dimension": DimensionDetails,
     "code": CodeDetails,
     "event": EventDetails,
