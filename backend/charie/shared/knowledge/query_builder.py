@@ -778,9 +778,13 @@ def load_build_context(session, version_id: int, time_zone: str = "UTC") -> Buil
         if filters:
             required[table] = filters
     forbidden = sorted(knowledge_catalog.forbidden_tables(session, version_id))
+    dimension_details: dict[str, DimensionDetails] = {}
+    for entry in list_entries(session, version_id, kinds=["dimension"]):
+        dimension_details[entry.key] = DimensionDetails.model_validate(entry.details or {})
     return BuildContext(
         links=links,
         required_filters=required,
         forbidden_tables=forbidden,
         time_zone=time_zone or "UTC",
+        dimension_details=dimension_details,
     )

@@ -29,6 +29,7 @@ _DEFAULT_EFFORTS = {
     "compare_facts": "high",
     "explain_table": "high",
     "find_business_terms": "high",
+    "find_dimensions": "high",
     "write_term_recipe": "high",
     "propose_defaults": "high",
     "write_owner_questions": "high",

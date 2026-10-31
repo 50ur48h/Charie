@@ -197,6 +197,33 @@ def test_forbidden(db_session) -> None:
     assert context.required_filters["shop.restaurants"] == ["restaurants.is_test = false"]
 
 
+def test_dimension_details_loaded(db_session) -> None:
+    version_id = _seed(db_session)
+    upsert_entry(
+        db_session,
+        version_id,
+        "dimension.status",
+        "dimension",
+        "dimension.status",
+        "Split by shop.orders.status.",
+        {
+            "kind": "attribute",
+            "table": "shop.orders",
+            "column": "status",
+            "label_column": "",
+            "grain": None,
+            "unique_with": [],
+        },
+        "checked",
+        [{"type": "ai", "text": "Split checked against learned columns"}],
+        "seed",
+    )
+    db_session.commit()
+    context = load_build_context(db_session, version_id)
+    assert set(context.dimension_details) == {"dimension.status"}
+    assert context.dimension_details["dimension.status"].column == "status"
+
+
 def test_unchecked_link_ignored(db_session) -> None:
     version_id = versions.get_or_create_draft(db_session, "first_learning").id
     upsert_entry(
