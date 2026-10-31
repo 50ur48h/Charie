@@ -140,3 +140,45 @@ def test_every_split_query_passes_sql_check() -> None:
         built = build_query("net_sales", RECIPES, request, _context())
         report = check_sql(built.sql, catalog)
         assert report.ok, report.reasons
+
+
+def _day_recipe(column: str, column_type: str) -> Recipe:
+    day = RecipeDimension(
+        key="dimension.day",
+        title="Day",
+        kind="time",
+        table="shop.orders",
+        expression=column,
+        grain="day",
+    )
+    return Recipe(
+        kind="simple",
+        table="shop.orders",
+        aggregate="count",
+        expression="*",
+        time_column=column,
+        time_column_type=column_type,
+        dimensions=[day],
+        steps_in_words=["Count the orders.", "Split them by day."],
+    )
+
+
+def test_time_split_skips_zone_shift_for_date_and_timestamp() -> None:
+    dated = build_query(
+        "dated",
+        {"dated": _day_recipe("orders.created_on", "date")},
+        _request(dimensions=["dimension.day"]),
+        _context(),
+    )
+    assert "date_trunc('day', orders.created_on)" in dated.sql
+    assert "AT TIME ZONE" not in dated.sql
+    stamped = build_query(
+        "stamped",
+        {"stamped": _day_recipe("orders.created_local", "timestamp")},
+        _request(dimensions=["dimension.day"]),
+        _context(),
+    )
+    assert "date_trunc('day', orders.created_local)" in stamped.sql
+    assert "AT TIME ZONE" not in stamped.sql
+    zoned = build_query("net_sales", RECIPES, _request(dimensions=["dimension.month"]), _context())
+    assert "AT TIME ZONE 'America/Chicago'" in zoned.sql

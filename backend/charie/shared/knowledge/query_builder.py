@@ -181,13 +181,14 @@ def sql_literal(value: str | int | float) -> str:
     raise QueryBuildError("Only text, whole numbers and decimals can be used to filter.")
 
 
-def _time_split(column: str, grain: str, context: BuildContext) -> str:
-    """`CAST(date_trunc(...)) AS <grain>`, in the business time zone."""
-    zoned = f"{column} AT TIME ZONE '{context.time_zone}'"
+def _time_split(column: str, column_type: str | None, grain: str, context: BuildContext) -> str:
+    """`CAST(date_trunc(...)) AS <grain>`; only instants shift to the zone."""
+    if column_type == "timestamptz":
+        column = f"{column} AT TIME ZONE '{context.time_zone}'"
     if context.week_starts == "sunday" and grain == "week":
-        inner = f"date_trunc('week', {zoned} + INTERVAL '1 day') - INTERVAL '1 day'"
+        inner = f"date_trunc('week', {column} + INTERVAL '1 day') - INTERVAL '1 day'"
     else:
-        inner = f"date_trunc('{grain}', {zoned})"
+        inner = f"date_trunc('{grain}', {column})"
     return f"CAST({inner} AS DATE) AS {grain}"
 
 
@@ -232,7 +233,7 @@ def _split_columns(recipe: Recipe, dimension, context: BuildContext) -> list[str
     if dimension.kind == "time":
         if not dimension.grain:
             raise QueryBuildError("Time dimensions need a grain to split by.")
-        return [_time_split(recipe.time_column, dimension.grain, context)]
+        return [_time_split(recipe.time_column, recipe.time_column_type, dimension.grain, context)]
     name = dimension.key.split(".")[-1]
     columns = [f"{dimension.expression} AS {name}"]
     if dimension.label_expression:
@@ -291,7 +292,7 @@ class JoinBuilder:
         other = oriented.to_table
         other_alias = self.add(other)
         self.joins.append(
-            f"JOIN {other} AS {other_alias} ON {on(main_alias, oriented, other_alias)}"
+            f"LEFT JOIN {other} AS {other_alias} ON {on(main_alias, oriented, other_alias)}"
         )
         one_table = (
             oriented.to_table if oriented.multiplicity == "many_to_one" else oriented.from_table
@@ -302,7 +303,8 @@ class JoinBuilder:
         self.proof.append(
             f"{other} joins {main_table} on the tested {link.multiplicity} link "
             f"{link.from_table}.{link.from_column} = {link.to_table}.{link.to_column}; "
-            f"distinct {one_table}.{one_column}"
+            f"distinct {one_table}.{one_column}; "
+            "rows without a match stay in the total and land in an empty group"
         )
         return other_alias
 
@@ -571,6 +573,20 @@ def _build_simple(
             raise QueryBuildError("This number needs a join, which isn't supported yet.")
         if full != side.table and full not in needed:
             needed.append(full)
+    for table in sorted(context.required_filters):
+        if table == side.table or table in needed:
+            continue
+        if table in context.forbidden_tables:
+            raise QueryBuildError(f"The {table} table is outside the tenant's data.")
+        if table in SYSTEM_TABLES:
+            raise QueryBuildError(f"The {table} table is a system table, not a dimension.")
+        try:
+            link = _resolve_join(side.table, table, context.links)
+        except QueryBuildError:
+            continue
+        if link.multiplicity != "many_to_one":
+            continue
+        needed.append(table)
     for table in needed:
         link = _resolve_join(side.table, table, context.links)
         builder.join(side.table, main_alias, link)
@@ -598,6 +614,10 @@ def _build_simple(
         select = "COUNT(*)"
         inner_measure = ""
         outer_measure = "COUNT(*)"
+    elif side.aggregate == "count":
+        select = f"COUNT({qualified(side.expression)})"
+        inner_measure = qualified(side.expression)
+        outer_measure = "COUNT(m)"
     elif side.aggregate == "count_distinct":
         select = f"COUNT(DISTINCT {qualified(side.expression)})"
         inner_measure = qualified(side.expression)

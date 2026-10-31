@@ -396,3 +396,17 @@ def test_cross_schema_tables_sharing_a_name_are_refused() -> None:
             _request(dimensions=["dimension.region"]),
             context,
         )
+
+
+def test_overlap_counts_column_values() -> None:
+    recipe = SESSION_SPEND.model_copy(
+        update={"aggregate": "count", "expression": "sessions.amount"}
+    )
+    built = build_query(
+        "session_spend",
+        {"session_spend": recipe},
+        _request(dimensions=["dimension.channel"]),
+        _overlap_context(),
+    )
+    assert "COUNT(m)" in built.sql
+    assert "SUM(" not in built.sql

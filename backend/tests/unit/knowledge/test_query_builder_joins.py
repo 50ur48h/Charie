@@ -151,3 +151,25 @@ def test_dimensions_cant_select_shop_tables() -> None:
             _request(dimensions=["dimension.version"]),
             _context(),
         )
+
+
+def test_splits_use_left_join() -> None:
+    built = build_query("net_sales", _recipes(), _request(), _context())
+    assert (
+        "LEFT JOIN shop.restaurants AS restaurants ON restaurants.id = orders.restaurant_id"
+        in built.sql
+    )
+
+
+def test_hard_rule_table_is_joined_for_total() -> None:
+    built = build_query(
+        "net_sales",
+        _recipes(),
+        _request(dimensions=[]),
+        _context(required_filters={"shop.restaurants": ["restaurants.is_test = false"]}),
+    )
+    assert (
+        "LEFT JOIN shop.restaurants AS restaurants ON restaurants.id = orders.restaurant_id"
+        in built.sql
+    )
+    assert "restaurants.is_test = false" in built.sql

@@ -111,3 +111,20 @@ def test_every_total_passes_sql_check() -> None:
         built = build_query(key, RECIPES, _request(), _context())
         report = check_sql(built.sql, catalog)
         assert report.ok, report.reasons
+
+
+def test_count_column_counts_values_not_sum() -> None:
+    counted = Recipe(
+        kind="simple",
+        table="shop.orders",
+        aggregate="count",
+        expression="orders.id",
+        time_column="orders.created_at",
+        time_column_type="timestamptz",
+        steps_in_words=["Count the orders.", "One row counts once."],
+    )
+    built = build_query("order_ids", {"order_ids": counted}, _request(), _context())
+    assert built.sql.startswith(
+        "SELECT COUNT(orders.id) AS value FROM shop.orders AS orders WHERE "
+    )
+    assert "SUM(" not in built.sql

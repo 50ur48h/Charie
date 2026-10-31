@@ -85,3 +85,23 @@ def test_date_and_timestamp_columns(shop_db) -> None:
     stamped = build_query("stamped", recipes, _request("2025-11-01", "2025-11-30"), context)
     assert shop_db(dated.sql).rows[0][0] == Decimal("168.00")
     assert shop_db(stamped.sql).rows[0][0] == Decimal("168.00")
+
+
+def test_count_column_counts_orders(shop_db) -> None:
+    counted = Recipe(
+        kind="simple",
+        table="shop.orders",
+        aggregate="count",
+        expression="orders.id",
+        time_column="orders.created_at",
+        time_column_type="timestamptz",
+        steps_in_words=["Count the orders.", "One row counts once."],
+    )
+    built = build_query(
+        "order_ids",
+        {"order_ids": counted},
+        _request("2025-11-01", "2025-12-31"),
+        _context("America/Chicago"),
+    )
+    # The ids 1 to 12 add up to 78; counting them gives 12.
+    assert shop_db(built.sql).rows == [(12,)]

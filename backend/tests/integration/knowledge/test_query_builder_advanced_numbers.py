@@ -239,3 +239,17 @@ def test_all_pass_checker(shop_db) -> None:
         report = check_sql(built.sql, catalog)
         assert report.ok, (built.sql, report.reasons)
         shop_db(report.sql)
+
+
+def test_overlap_counts_column_values(shop_db) -> None:
+    recipe = SESSION_SPEND.model_copy(
+        update={"aggregate": "count", "expression": "sessions.amount"}
+    )
+    built = build_query(
+        "session_spend",
+        {"session_spend": recipe},
+        _request(dimensions=["dimension.channel"]),
+        _overlap_context(),
+    )
+    result = shop_db(built.sql)
+    assert result.rows == [("mail", 2), ("web", 2)]
