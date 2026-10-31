@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from charie.learner.steps.base import Step, StepContext, register_step, register_step_handler
@@ -238,6 +238,25 @@ def compare_run(
     groups: dict[str, list[DocFact]] = {}
     for fact in facts:
         groups.setdefault(normalize_text(fact.topic).lower(), []).append(fact)
+    if groups and document_ids:
+        topics = {fact.topic for fact in facts}
+        lowered = {topic.lower() for topic in topics}
+        prior = session.scalars(
+            select(DocFact)
+            .join(Document, DocFact.document_id == Document.id)
+            .where(
+                or_(
+                    DocFact.topic.in_(topics),
+                    func.lower(DocFact.topic).in_(lowered),
+                ),
+                DocFact.status == "ok",
+                Document.status != "removed",
+                DocFact.document_id.not_in(document_ids),
+            )
+            .order_by(DocFact.id)
+        ).all()
+        for fact in prior:
+            groups.setdefault(normalize_text(fact.topic).lower(), []).append(fact)
     conflicts: list[str] = []
     for topic, group in groups.items():
         statements = {normalize_text(fact.statement) for fact in group}

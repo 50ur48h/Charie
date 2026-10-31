@@ -93,10 +93,19 @@ def scope_for(session: Session, run_id: int | None) -> dict | None:
     return dict(scope) if isinstance(scope, dict) else None
 
 
+REFRESH_STEPS = ["owner_notes", "documents", "doc_facts"]
+
+
+def refresh_steps() -> list[str]:
+    """Refresh steps in canonical order, only when registered."""
+    from charie.learner.steps.base import STEPS
+
+    return [name for name in REFRESH_STEPS if name in STEPS]
+
+
 def begin(session: Session, kind: str = "refresh", reason: str | None = None):
     """Snapshot, queue only the changes, and mark removals; the run learns them."""
     from charie.learner import runs
-    from charie.learner.steps.base import STEPS
 
     snapshot = take_snapshot(session)
     diff = plan(session)
@@ -106,7 +115,7 @@ def begin(session: Session, kind: str = "refresh", reason: str | None = None):
         "notes_id": diff["notes_id"],
         "removed": diff["removed"],
     }
-    run = runs.start_run(session, kind, list(STEPS), reason, extra_progress={"refresh": scope})
+    run = runs.start_run(session, kind, refresh_steps(), reason, extra_progress={"refresh": scope})
     marked = apply_removals(session, run.version_id, diff["removed"])
     if marked:
         from charie.learner.events import add_event

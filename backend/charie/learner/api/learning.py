@@ -56,6 +56,12 @@ class RefreshRunIn(BaseModel):
     reason: str | None = None
 
 
+class RefreshStatusOut(BaseModel):
+    documents: list[int]
+    removed: list[int]
+    notes_changed: bool
+
+
 class PauseOut(BaseModel):
     status: str
 
@@ -114,8 +120,11 @@ def _overview(session: Session) -> dict:
 
 def _start(session: Session, kind: str, reason: str | None) -> dict:
     """Start with every registered step, in canonical order."""
+    from charie.learner.steps.refresh import take_snapshot
+
+    scope = {"refresh": {"snapshot": take_snapshot(session)}}
     try:
-        run = runs.start_run(session, kind, list(STEPS), reason)
+        run = runs.start_run(session, kind, list(STEPS), reason, extra_progress=scope)
     except runs.RunActiveError as err:
         raise ApiError(409, "run_active", str(err)) from err
     except ValueError as err:
@@ -132,6 +141,14 @@ def get_learning(session: Session = Depends(get_session)) -> dict:
 @learning_router.post("/api/learning/start", response_model=LearningRunOut, status_code=201)
 def post_start(body: StartRunIn, session: Session = Depends(get_session)) -> dict:
     return _start(session, body.kind, body.reason)
+
+
+@learning_router.get("/api/learning/refresh-status", response_model=RefreshStatusOut)
+def get_refresh_status(session: Session = Depends(get_session)) -> dict:
+    """What one refresh would learn, from the last consumed snapshot."""
+    from charie.learner.steps.refresh import pending as pending_changes
+
+    return pending_changes(session)
 
 
 @learning_router.post("/api/learning/refresh", response_model=LearningRunOut, status_code=201)

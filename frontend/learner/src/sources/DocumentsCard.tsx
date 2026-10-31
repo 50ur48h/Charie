@@ -50,6 +50,7 @@ export function DocumentsCard() {
         () => {
           setUploads((current) => current.filter((upload) => upload.key !== key));
           void client.invalidateQueries({ queryKey: ["learner-documents"] });
+          void client.invalidateQueries({ queryKey: ["learner-refresh-status"] });
           void client.invalidateQueries({ queryKey: ["learner-setup"] });
         },
         (error: unknown) => {

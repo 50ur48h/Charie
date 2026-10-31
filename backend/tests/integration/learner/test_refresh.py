@@ -243,6 +243,57 @@ def test_change_during_run(db_session, monkeypatch) -> None:
     assert db_session.get(Document, late_id).status == "new"
 
 
+def test_removal_only_pending(db_session, learner_client) -> None:
+    from tests.conftest import log_in
+
+    doc_id = _seed_learned_doc(db_session, "gone.md")
+    db_session.commit()
+    first = _begin(db_session)
+    assert first.status == "done"
+    row = db_session.get(Document, doc_id)
+    row.status = "removed"
+    db_session.commit()
+    log_in(learner_client)
+    response = learner_client.get("/api/learning/refresh-status")
+    assert response.status_code == 200, response.text
+    assert response.json() == {"documents": [], "removed": [doc_id], "notes_changed": False}
+
+
+def test_failed_run_keeps_pending(db_session, monkeypatch) -> None:
+    from charie.shared.ai.client import AiClient
+    from charie.shared.ai.cost_log import MemoryCostLog
+    from charie.shared.ai.errors import AiError
+    from charie.shared.ai.fake import FakeAi
+
+    new_id = _add_md_doc(db_session, "new.md", status="new")
+    db_session.add(OwnerNote(text_="Keep this."))
+    db_session.commit()
+    run = _begin(db_session)
+    assert run.status == "running"
+    note_id = db_session.scalar(select(OwnerNote.id))
+    job_id = run.progress["steps"]["owner_notes"]["jobs"][0]
+    monkeypatch.setattr(
+        "charie.learner.steps.owner_notes.get_ai",
+        lambda: AiClient(provider=FakeAi(), cost_log=MemoryCostLog(), sleep=lambda s: None),
+    )
+    info = JobInfo(
+        id=job_id,
+        kind="sort_owner_notes",
+        payload={"owner_notes_id": note_id, "step": "owner_notes"},
+        run_id=run.id,
+        attempts=3,
+    )
+    with pytest.raises(AiError):
+        runs.run_step_job(info)
+    db_session.expire_all()
+    failed = db_session.get(LearningRun, run.id)
+    assert failed is not None and failed.status == "failed"
+    assert refresh.last_consumed(db_session) is None
+    pending = refresh.pending(db_session)
+    assert pending["documents"] == [new_id]
+    assert pending["notes_changed"] is True
+
+
 def test_refresh_endpoint_starts_selective_run(db_session, learner_client) -> None:
     from tests.conftest import log_in
 
@@ -261,6 +312,45 @@ def test_refresh_endpoint_starts_selective_run(db_session, learner_client) -> No
     assert run.progress["refresh"]["notes_id"] is None
     queued = run.progress["steps"]["documents"]["jobs"]
     assert len(queued) == 1
+
+
+def test_refresh_selects_only_changed_work(db_session) -> None:
+    from charie.shared.knowledge import store as knowledge_store
+    from charie.shared.knowledge.versions import get_or_create_draft
+    from charie.shared.tables.learning import Job
+
+    _seed_learned_doc(db_session, "old.md")
+    version = get_or_create_draft(db_session, "first_learning")
+    knowledge_store.upsert_entry(
+        db_session,
+        version.id,
+        "table.public.orders",
+        "table",
+        "orders",
+        "The orders table.",
+        {"schema": "public", "name": "orders"},
+        "checked",
+        [{"type": "structure", "text": "Read from the database structure"}],
+        "seed",
+    )
+    db_session.commit()
+    first = _begin(db_session)
+    assert first.status == "done"
+    assert sorted(first.progress["steps"]) == ["doc_facts", "documents", "owner_notes"]
+    assert "connectors" not in first.progress["steps"]
+    assert all(step["jobs"] == [] for step in first.progress["steps"].values())
+    db_session.flush()
+
+    new_id = _add_md_doc(db_session, "new.md", status="new")
+    db_session.commit()
+    second = _begin(db_session)
+    assert second.status == "running"
+    assert sorted(second.progress["steps"]) == ["doc_facts", "documents", "owner_notes"]
+    db_session.expire_all()
+    jobs = db_session.scalars(select(Job)).all()
+    mine = [job for job in jobs if job.id in second.progress["steps"]["documents"]["jobs"]]
+    assert [job.kind for job in mine] == ["read_document"]
+    assert [job.payload["document_id"] for job in mine] == [new_id]
 
 
 def test_failure_keeps_published(db_session, monkeypatch) -> None:
@@ -309,3 +399,16 @@ def test_failure_keeps_published(db_session, monkeypatch) -> None:
     assert published_now is not None and published_now.id == published.id
     kept = get_entry(db_session, published.id, "rule.keep")
     assert kept is not None and kept.meaning == "Keep this always."
+
+
+def test_first_run_consumes_its_snapshot(db_session, monkeypatch) -> None:
+    from charie.learner.api import learning as learning_api
+
+    _add_md_doc(db_session, "old.md", status="learned")
+    db_session.add(OwnerNote(text_="Remember this."))
+    db_session.commit()
+    monkeypatch.setattr(learning_api, "STEPS", {})
+    shape = learning_api._start(db_session, "first", None)
+    assert shape["status"] == "done"
+    assert refresh.last_consumed(db_session) is not None
+    assert refresh.pending(db_session) == {"documents": [], "removed": [], "notes_changed": False}

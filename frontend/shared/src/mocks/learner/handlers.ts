@@ -18,6 +18,7 @@ export const LEARNER_DATABASE_TEST_URL = "*/api/sources/database/test";
 export const LEARNER_NOTES_URL = "*/api/owner-notes";
 export const LEARNER_START_URL = "*/api/learning/start";
 export const LEARNER_REFRESH_URL = "*/api/learning/refresh";
+export const LEARNER_REFRESH_STATUS_URL = "*/api/learning/refresh-status";
 export const LEARNER_PAUSE_URL = "*/api/learning/pause";
 export const LEARNER_RESUME_URL = "*/api/learning/resume";
 export const LEARNER_STREAM_URL = "*/api/learning/stream";
@@ -89,6 +90,27 @@ function notesChangedSinceRun(): boolean {
   return Date.parse(savedAt) > Date.parse(newest.started_at);
 }
 
+// Snapshot-based pending changes (mock only): new or reading documents,
+// removals not yet consumed by a successful refresh, and notes saved since
+// the consumed save. Failed runs never consume, so their changes stay.
+function refreshStatus(): { documents: number[]; removed: number[]; notes_changed: boolean } {
+  const store = learner();
+  const consumed = store.refresh_consumed;
+  const documents = store.documents
+    .filter((doc) => doc.status === "new" || doc.status === "reading")
+    .map((doc) => doc.id);
+  const removed = store.documents
+    .filter(
+      (doc) => doc.status === "removed" && !(consumed?.removed.includes(doc.id) ?? false),
+    )
+    .map((doc) => doc.id);
+  const savedAt = setup().notes.saved_at;
+  const notesChanged = consumed
+    ? savedAt !== null && savedAt !== consumed.notes_at
+    : notesChangedSinceRun();
+  return { documents, removed, notes_changed: notesChanged };
+}
+
 function sse(event: LearningEvent): string {
   const data = JSON.stringify({
     seq: event.seq,
@@ -156,6 +178,12 @@ export const learnerHandlers = [
     return HttpResponse.json({ runs });
   }),
 
+  http.get(LEARNER_REFRESH_STATUS_URL, () => {
+    const blocked = needSession();
+    if (blocked) return blocked;
+    return HttpResponse.json(refreshStatus());
+  }),
+
   http.post(LEARNER_START_URL, () => {
     const blocked = needSession();
     if (blocked) return blocked;
@@ -203,15 +231,14 @@ export const learnerHandlers = [
     const count = store.documents.filter(
       (doc) => doc.status === "new" || doc.status === "reading",
     ).length;
+    const removedCount = store.documents.filter((doc) => doc.status === "removed").length;
     const notesChanged = notesChangedSinceRun();
-    const reason =
-      count > 0 && notesChanged
-        ? `${count === 1 ? "1 new document" : `${count} new documents`} and changed notes`
-        : notesChanged
-          ? "changed notes"
-          : count === 1
-            ? "1 new document"
-            : `${count} new documents`;
+    const parts: string[] = [];
+    if (count > 0) parts.push(count === 1 ? "1 new document" : `${count} new documents`);
+    if (removedCount > 0)
+      parts.push(removedCount === 1 ? "1 removed document" : `${removedCount} removed documents`);
+    if (notesChanged) parts.push("changed notes");
+    const reason = parts.length > 0 ? parts.join(" and ") : "changed documents";
     const draftNote = openDraft()?.summary.note ?? null;
     const draft = ensureDraft("refresh", reason);
     store.runs.push({

@@ -1,7 +1,8 @@
 import { setupServer } from "msw/node";
 import { afterEach, beforeAll, describe, expect, test } from "vitest";
 import { handlers } from "../handlers";
-import { learner, resetLearnerMock } from "./state";
+import { advanceRunTick, readDocumentsTick } from "./timers";
+import { learner, resetLearnerMock, saveLearner } from "./state";
 
 const APP = "https://charie.invalid";
 
@@ -434,4 +435,82 @@ describe("learner knowledge mocks", () => {
     expect(list.entries.some((entry) => entry.key === "rule.refunds_out_of_sales")).toBe(true);
   });
 });
+});
+
+describe("refresh status mocks", () => {
+  async function refreshStatus(): Promise<{
+    documents: number[];
+    removed: number[];
+    notes_changed: boolean;
+  }> {
+    const response = await fetch(`${APP}/api/learning/refresh-status`);
+    expect(response.status).toBe(200);
+    return (await response.json()) as {
+      documents: number[];
+      removed: number[];
+      notes_changed: boolean;
+    };
+  }
+
+  function stopRunning(): void {
+    const store = learner();
+    for (const run of store.runs) {
+      if (run.status === "running" || run.status === "paused") {
+        run.status = "done";
+        run.finished_at = new Date().toISOString();
+      }
+    }
+    saveLearner();
+  }
+
+  function finishRunning(): void {
+    for (let i = 0; i < 80 && learner().runs.some((run) => run.status === "running"); i += 1) {
+      advanceRunTick();
+      readDocumentsTick();
+    }
+    expect(learner().runs.some((run) => run.status === "running")).toBe(false);
+  }
+
+  test("reports new documents with no removals or note changes", async () => {
+    await signIn();
+    await expect(refreshStatus()).resolves.toEqual({
+      documents: [1, 2, 3],
+      removed: [],
+      notes_changed: false,
+    });
+  });
+
+  test("a removal shows until a successful refresh consumes it", async () => {
+    await signIn();
+    stopRunning();
+    const gone = await fetch(`${APP}/api/documents/4`, { method: "DELETE" });
+    expect(gone.status).toBe(204);
+    await expect(refreshStatus()).resolves.toMatchObject({ removed: [4] });
+    const started = await fetch(`${APP}/api/learning/refresh`, { method: "POST" });
+    expect(started.status).toBe(200);
+    finishRunning();
+    await expect(refreshStatus()).resolves.toEqual({ documents: [], removed: [], notes_changed: false });
+  });
+
+  test("a failed refresh keeps its pending changes", async () => {
+    await signIn();
+    stopRunning();
+    const started = await fetch(`${APP}/api/learning/refresh`, { method: "POST" });
+    expect(started.status).toBe(200);
+    const saved = await fetch(`${APP}/api/owner-notes`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: "New rule." }),
+    });
+    expect(saved.status).toBe(200);
+    const store = learner();
+    const live = store.runs.find((run) => run.status === "running");
+    if (live === undefined) throw new Error("expected a running refresh run");
+    live.status = "failed";
+    live.finished_at = new Date().toISOString();
+    saveLearner();
+    const pending = await refreshStatus();
+    expect(pending.notes_changed).toBe(true);
+    expect(pending.documents).toEqual([1, 2, 3]);
+  });
 });

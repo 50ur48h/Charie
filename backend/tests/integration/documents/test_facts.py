@@ -282,6 +282,98 @@ def test_compare_conflict(db_session, monkeypatch) -> None:
     assert any(kind == "warning" and "Conflict in Net sales" in message for kind, message in said)
 
 
+def test_compare_sees_previously_learned_facts(db_session, monkeypatch) -> None:
+    version = get_or_create_draft(db_session, "first_learning")
+    old_id = _add_doc(db_session, name="old.md", status="learned")
+    old_section = _add_section(
+        db_session, old_id, 0, "Net sales", "# Net sales\n\nNet sales means total.\n"
+    )
+    db_session.add(
+        DocFact(
+            document_id=old_id,
+            section_id=old_section,
+            kind="definition",
+            topic="Net sales",
+            statement="Net sales means total.",
+            quote="Net sales means total.",
+            location="Net sales",
+            status="ok",
+        )
+    )
+    gone_id = _add_doc(db_session, name="gone.md", status="removed")
+    gone_section = _add_section(
+        db_session, gone_id, 0, "Net sales", "# Net sales\n\nNet sales means nothing.\n"
+    )
+    db_session.add(
+        DocFact(
+            document_id=gone_id,
+            section_id=gone_section,
+            kind="definition",
+            topic="Net sales",
+            statement="Net sales means nothing.",
+            quote="Net sales means nothing.",
+            location="Net sales",
+            status="needs_checking",
+        )
+    )
+    new_id = _add_doc(db_session, name="new.md")
+    _add_section(
+        db_session, new_id, 0, "Net sales", "# Net sales\n\nNet sales means gross profit.\n"
+    )
+    db_session.commit()
+    fake = FakeAi().reply(
+        "extract_doc_facts",
+        {
+            "facts": [
+                {
+                    "kind": "definition",
+                    "topic": "Net sales",
+                    "statement": "Net sales means gross profit.",
+                    "quote": "Net sales means gross profit.",
+                    "location": "Net sales",
+                }
+            ]
+        },
+    )
+    _run_extract(db_session, monkeypatch, fake, new_id, version.id)
+    base = AiClient(
+        provider=FakeAi().reply("compare_facts", {"agree": False, "topic": "Net sales"}),
+        cost_log=MemoryCostLog(),
+        sleep=lambda s: None,
+    )
+    judged: list = []
+
+    class _Recorder:
+        def run(self, job, inputs, form, **kwargs):
+            judged.append((job, inputs))
+            return base.run(job, inputs, form, **kwargs)
+
+    monkeypatch.setattr(doc_facts, "get_ai", lambda: _Recorder())
+    said: list = []
+
+    def say(kind: str, message: str, details=None) -> None:
+        said.append((kind, message))
+
+    conflicts = compare_run(db_session, version.id, [new_id], say=say)
+    db_session.commit()
+    assert conflicts == ["Net sales"]
+    assert len(judged) == 1 and judged[0][0] == "compare_facts"
+    assert set(judged[0][1]["statements"]) == {
+        "Net sales means gross profit.",
+        "Net sales means total.",
+    }
+    both = db_session.scalars(
+        select(DocFact).where(DocFact.topic == "Net sales", DocFact.kind == "definition")
+    ).all()
+    assert {fact.statement for fact in both} == {
+        "Net sales means gross profit.",
+        "Net sales means total.",
+        "Net sales means nothing.",
+    }
+    live = [fact for fact in both if fact.document_id != gone_id]
+    assert len(live) == 2 and all(fact.status == "conflicting" for fact in live)
+
+
 def test_compare_agreement_needs_no_ai(db_session, monkeypatch) -> None:
     doc_id, version_id = _seed_two_sections(db_session)
     _run_extract(db_session, monkeypatch, _extract_replies(), doc_id, version_id)

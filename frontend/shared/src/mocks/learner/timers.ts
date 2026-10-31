@@ -224,6 +224,17 @@ export function advanceRunTick(now: Date = new Date()): void {
     run.status = "done";
     run.minutes_left = null;
     run.finished_at = now.toISOString();
+    if (run.kind === "refresh") {
+      // The refresh consumed its snapshot: removals and the notes save
+      // it learned. Failed runs skip this, so their changes stay pending.
+      const finished = learner();
+      finished.refresh_consumed = {
+        removed: finished.documents
+          .filter((doc) => doc.status === "removed")
+          .map((doc) => doc.id),
+        notes_at: setup().notes.saved_at,
+      };
+    }
     const done: LearningEvent = {
       seq: (eventLog.get(run.id) ?? []).length + 1,
       at: now.toISOString(),

@@ -22,6 +22,9 @@ export interface LearnerWorld {
   publishedEntries: KnowledgeEntry[] | null;
   changesByVersion: Record<number, KbChange[]>;
   todos: LearnerTodo[];
+  // What the last successful refresh consumed (mock only): removed document
+  // ids already handled, and the notes save they included.
+  refresh_consumed?: { removed: number[]; notes_at: string | null };
 }
 
 interface DocSeed {
