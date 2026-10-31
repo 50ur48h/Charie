@@ -2,7 +2,6 @@
 
 import pytest
 
-from charie.learner.steps import recipes as recipes_step
 from charie.shared.knowledge import store, versions
 from charie.shared.knowledge.calendar import (
     CALENDAR_KEY,
@@ -18,7 +17,7 @@ from charie.shared.knowledge.query_builder import (
     load_build_context,
 )
 from charie.shared.knowledge.recipe import DimensionDetails, Recipe, RecipeDimension
-from charie.shared.settings import get_setting
+from charie.shared.settings import get_setting, set_setting
 
 
 @pytest.fixture()
@@ -88,7 +87,7 @@ def test_sunday_week(db_session, version_id) -> None:
     assert "AT TIME ZONE 'America/Chicago'" in built.sql
 
 
-def test_confirm_updates(db_session, version_id, monkeypatch) -> None:
+def test_confirm_updates(db_session, version_id) -> None:
     _seed_calendar(
         db_session,
         version_id,
@@ -188,7 +187,7 @@ def test_confirm_updates(db_session, version_id, monkeypatch) -> None:
         calls.append(sql)
         return [(5,)]
 
-    monkeypatch.setattr(recipes_step, "get_setting", lambda session, key: "America/Chicago")
+    set_setting(db_session, "time_zone", "America/Chicago")
     outcome = confirm_calendar(
         db_session,
         version_id,
