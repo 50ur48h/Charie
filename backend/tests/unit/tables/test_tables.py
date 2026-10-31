@@ -47,6 +47,7 @@ EXPECTED_TABLES = {
         "page_from",
         "page_to",
         "note",
+        "content_hash",
         "embedding",
         "search_text",
     },

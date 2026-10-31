@@ -1,8 +1,8 @@
 """Read office documents through Azure Document Intelligence (05, 08).
 
 Prebuilt Layout returns markdown; timeouts surface as a plain error.
-Saved replays are reused without touching Azure; real calls use
-persistent cost accounting.
+Pages with no lines or words count as unreadable. Saved replays are
+reused without touching Azure; real calls use persistent cost accounting.
 """
 
 import hashlib
@@ -49,6 +49,7 @@ class DocumentText:
     markdown: str
     page_count: int
     cost_usd: Decimal
+    unreadable_pages: int = 0
 
 
 def read_document(
@@ -59,6 +60,7 @@ def read_document(
     endpoint: str | None = None,
     key: str | None = None,
     app: str = "learner",
+    learning_run_id: int | None = None,
     cost_log: Any = None,
     sleep=time.sleep,
     _analyze: Callable[[bytes], tuple[str, int]] | None = None,
@@ -83,7 +85,7 @@ def read_document(
             sleep=sleep,
             _analyze=_analyze,
         )
-    _save_row(log, app, doc, _elapsed_ms(started))
+    _save_row(log, app, doc, _elapsed_ms(started), learning_run_id)
     return doc
 
 
@@ -128,16 +130,33 @@ def _read_reused_or_live(
         data, filename=filename, endpoint=endpoint, key=key, sleep=sleep, _analyze=_analyze
     )
     if _replay_mode() == "record":
-        store.save(JOB, digest, {"markdown": doc.markdown, "page_count": doc.page_count})
+        store.save(
+            JOB,
+            digest,
+            {
+                "markdown": doc.markdown,
+                "page_count": doc.page_count,
+                "unreadable_pages": doc.unreadable_pages,
+            },
+        )
     return doc
 
 
 def _from_record(filename: str, record: dict[str, Any], *, free: bool) -> DocumentText:
     markdown, page_count = record["markdown"], record["page_count"]
+    unreadable = record.get("unreadable_pages", 0)
     if not isinstance(markdown, str) or not isinstance(page_count, int) or page_count < 0:
         raise AiError("di_bad_replay", f"The saved read for `{filename}` is damaged.")
+    if not isinstance(unreadable, int) or unreadable < 0 or unreadable > page_count:
+        raise AiError("di_bad_replay", f"The saved read for `{filename}` is damaged.")
     cost = Decimal("0") if free else LAYOUT_USD_PER_PAGE * max(page_count, 1)
-    return DocumentText(filename=filename, markdown=markdown, page_count=page_count, cost_usd=cost)
+    return DocumentText(
+        filename=filename,
+        markdown=markdown,
+        page_count=page_count,
+        cost_usd=cost,
+        unreadable_pages=unreadable,
+    )
 
 
 def _read_live(
@@ -158,9 +177,11 @@ def _read_live(
     )
     try:
         if _analyze is not None:
+            # Test doubles report text and pages only, never readability.
             markdown, pages = retryer(_analyze, data)
+            unreadable = 0
         else:
-            markdown, pages = _live_result(data, retryer, endpoint, key)
+            markdown, pages, unreadable = _live_result(data, retryer, endpoint, key)
     except RetryError as err:
         raise AiUnavailable() from err
     except AiError:
@@ -172,12 +193,13 @@ def _read_live(
         markdown=markdown,
         page_count=pages,
         cost_usd=LAYOUT_USD_PER_PAGE * max(pages, 1),
+        unreadable_pages=unreadable,
     )
 
 
 def _live_result(
     data: bytes, retryer: Retrying, endpoint: str | None, key: str | None
-) -> tuple[str, int]:
+) -> tuple[str, int, int]:
     settings = get_settings()
     resolved_endpoint = endpoint if endpoint is not None else settings.azure_di_endpoint
     secret = (
@@ -199,10 +221,14 @@ def _live_result(
         MODEL, AnalyzeDocumentRequest(bytes_source=data), output_content_format="markdown"
     )
     result = retryer(poller.result)
-    return result.content or "", len(result.pages or [])
+    pages = result.pages or []
+    unreadable = sum(1 for page in pages if not (page.lines or page.words))
+    return result.content or "", len(pages), unreadable
 
 
-def _save_row(log: Any, app: str, doc: DocumentText, duration_ms: int) -> None:
+def _save_row(
+    log: Any, app: str, doc: DocumentText, duration_ms: int, learning_run_id: int | None
+) -> None:
     log.add(
         usage_row(
             job=JOB,
@@ -216,6 +242,7 @@ def _save_row(log: Any, app: str, doc: DocumentText, duration_ms: int) -> None:
             duration_ms=duration_ms,
             status="ok",
             error=None,
+            learning_run_id=learning_run_id,
         )
     )
 
