@@ -730,3 +730,57 @@ def _build_ratio(
         overlapping_dimension=None,
         proof=proof,
     )
+
+
+def load_build_context(session, version_id: int, time_zone: str = "UTC") -> BuildContext:
+    """The builder's context from learned knowledge (P09.3).
+
+    Tested many-to-one links become joins; anything else (untested,
+    one-to-one, multi-column) is left out rather than guessed. Hard rules
+    become required filters and forbidden tables. The same knowledge
+    always builds the same context.
+    """
+    from charie.shared.knowledge import catalog as knowledge_catalog
+    from charie.shared.knowledge.store import list_entries
+    from charie.shared.safety.catalog import required_filters_for
+
+    links: list[JoinLink] = []
+    for entry in list_entries(session, version_id, kinds=["link"]):
+        details = entry.details if isinstance(entry.details, dict) else {}
+        if not details.get("tested_at"):
+            continue
+        from_table = details.get("from_table") or ""
+        to_table = details.get("to_table") or ""
+        from_columns = details.get("from_columns") or []
+        to_columns = details.get("to_columns") or []
+        if not from_table or not to_table:
+            continue
+        if len(from_columns) != 1 or len(to_columns) != 1:
+            continue
+        if details.get("cardinality") != "many_to_one":
+            continue
+        links.append(
+            JoinLink(
+                from_table=from_table,
+                to_table=to_table,
+                from_column=from_columns[0],
+                to_column=to_columns[0],
+                multiplicity="many_to_one",
+                tested=True,
+                reason=entry.meaning or "",
+            )
+        )
+    links.sort(key=lambda link: (link.from_table, link.to_table, link.from_column, link.to_column))
+    known = knowledge_catalog.build_catalog(session, version_id)
+    required: dict[str, list[str]] = {}
+    for table in sorted(known.tables):
+        filters = required_filters_for(known, [table])
+        if filters:
+            required[table] = filters
+    forbidden = sorted(knowledge_catalog.forbidden_tables(session, version_id))
+    return BuildContext(
+        links=links,
+        required_filters=required,
+        forbidden_tables=forbidden,
+        time_zone=time_zone or "UTC",
+    )
