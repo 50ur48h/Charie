@@ -9,7 +9,14 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
-from charie.shared.knowledge.recipe import FragmentInfo, Recipe, RecipeError, check_fragment
+from charie.shared.knowledge.recipe import (
+    DimensionDetails,
+    DimensionProof,
+    FragmentInfo,
+    Recipe,
+    RecipeError,
+    check_fragment,
+)
 
 
 class QueryBuildError(ValueError):
@@ -28,6 +35,36 @@ class JoinLink(BaseModel):
     multiplicity: Literal["many_to_one", "one_to_many"]
     tested: bool = True
     reason: str = ""
+
+
+class BridgeGroup(BaseModel):
+    """Links out of one table to different tables: counts may duplicate."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    bridge: str
+    links: list[JoinLink]
+
+
+class OverlappingGroups(BaseModel):
+    """Every bridge-table group in this build."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    groups: list[BridgeGroup]
+
+
+def identify_overlap(links: list[JoinLink]) -> OverlappingGroups | None:
+    """Bridge-table groups: link pairs sharing a from_table, different to_tables."""
+    by_from: dict[str, list[JoinLink]] = {}
+    for link in links:
+        by_from.setdefault(link.from_table, []).append(link)
+    groups = [
+        BridgeGroup(bridge=table, links=sorted(links, key=lambda link: link.to_table))
+        for table, links in sorted(by_from.items())
+        if len({link.to_table for link in links}) > 1
+    ]
+    return OverlappingGroups(groups=groups) if groups else None
 
 
 def on(from_alias: str, link: JoinLink, to_alias: str) -> str:
@@ -89,6 +126,7 @@ class BuildContext(BaseModel):
     forbidden_tables: list[str] = []
     time_zone: str = "UTC"
     week_starts: Literal["monday", "sunday"] = "monday"
+    dimension_details: dict[str, DimensionDetails] = {}
 
 
 #: Tables dimensions may never read: migrations and bookkeeping, not business.
@@ -118,6 +156,9 @@ def _check_pieces(recipe: Recipe) -> dict[str, FragmentInfo]:
         pieces[f"dimension {dimension.key}"] = dimension.expression
         if dimension.label_expression:
             pieces[f"dimension {dimension.key} label"] = dimension.label_expression
+    pieces = {name: raw for name, raw in pieces.items() if raw and raw.strip()}
+    if not pieces:
+        raise QueryBuildError("The recipe has no expressions to build from.")
     checked = {}
     for name, raw in pieces.items():
         try:
@@ -320,33 +361,174 @@ def _resolve_join(main_table: str, needed: str, links: list[JoinLink]) -> JoinLi
     raise QueryBuildError("This number needs a join, which isn't supported yet.")
 
 
+def _resolve_ratio(recipe: Recipe, recipes: dict[str, Recipe]) -> tuple[Recipe, Recipe]:
+    """The numerator and denominator recipes, or a refusal naming the gap."""
+    title = recipe.title or "This ratio"
+    sides = []
+    for role in ("numerator", "denominator"):
+        key = recipe.numerator if role == "numerator" else recipe.denominator
+        try:
+            side = recipes[key]
+        except KeyError:
+            raise QueryBuildError(f"{title} names an unknown {role} `{key}`.") from None
+        if side.kind != "simple":
+            raise QueryBuildError("Ratios divide simple recipes, not other ratios.")
+        sides.append(side)
+    return sides[0], sides[1]
+
+
+def _overlap_proof(
+    key: str, side: Recipe, side_key: str, context: BuildContext
+) -> DimensionProof | None:
+    """The validated uniqueness proof for this split, or None when plain."""
+    details = context.dimension_details.get(key)
+    if details is None or not details.unique_with:
+        return None
+    found = None
+    for raw in details.unique_with:
+        try:
+            proof = raw if isinstance(raw, DimensionProof) else DimensionProof.model_validate(raw)
+        except ValueError as err:
+            raise QueryBuildError(f"The uniqueness proof for {key} is incomplete.") from err
+        if proof.base_table == side.table:
+            found = proof
+    if found is None:
+        raise QueryBuildError(f"The proof for {key} is about another table, not {side.table}.")
+    if not found.exact:
+        raise QueryBuildError(
+            f"The uniqueness proof for {key} isn't exact, so the split is refused."
+        )
+    if not found.base_key_columns:
+        raise QueryBuildError(f"The uniqueness proof for {key} names no base rows.")
+    if not found.checked_at:
+        raise QueryBuildError(f"The uniqueness proof for {key} has no check date.")
+    dimension = _resolve_dimension(side, side_key, key)
+    if found.dimension_expression != dimension.expression:
+        raise QueryBuildError(f"The proof for {key} is about another expression.")
+    _check_proof_path(side, dimension, found, context)
+    return found
+
+
+def _check_proof_path(
+    side: Recipe, dimension, proof: DimensionProof, context: BuildContext
+) -> None:
+    """The proof's table path is one tested join per hop, ending at the split."""
+    if not proof.link_keys:
+        raise QueryBuildError("The uniqueness proof names no tested path.")
+    if proof.link_keys[-1] != dimension.table:
+        raise QueryBuildError("The uniqueness proof leads to another table.")
+    previous = side.table
+    for table in proof.link_keys:
+        hop = [
+            link
+            for link in context.links
+            if link.tested
+            and link.from_table != link.to_table
+            and {link.from_table, link.to_table} == {previous, table}
+        ]
+        if not hop:
+            raise QueryBuildError("The uniqueness proof needs a tested link to join on.")
+        previous = table
+
+
+def _resolve_overlap(
+    request: QueryRequest,
+    sides: list[Recipe],
+    side_keys: list[str],
+    context: BuildContext,
+) -> tuple[str, DimensionProof] | None:
+    """At most one overlapping split per request, with its validated proof."""
+    found: tuple[str, DimensionProof] | None = None
+    for key in request.dimensions:
+        proof = _overlap_proof(key, sides[0], side_keys[0], context)
+        if proof is None:
+            continue
+        if found is not None:
+            raise QueryBuildError("Only one overlapping split is allowed at a time.")
+        if len(sides) > 1:
+            raise QueryBuildError("Overlapping splits can't be combined with a ratio yet.")
+        found = (key, proof)
+    return found
+
+
 def build_query(
     recipe_key: str,
     recipes: dict[str, Recipe],
     request: QueryRequest,
     context: BuildContext,
 ) -> BuiltQuery:
-    """Build a total, a split, or a time split for a date range. Joins,
-    ratios and top N arrive in later sub-phases; each raises its own
-    refusal until then."""
+    """Build a total, a split, a ratio, or a top N list for a date range."""
     try:
         recipe = recipes[recipe_key]
     except KeyError:
         raise QueryBuildError(f"Unknown recipe `{recipe_key}`.") from None
+    sides = [recipe]
+    side_keys = [recipe_key]
     if recipe.kind == "ratio":
-        raise QueryBuildError("Ratio numbers aren't supported yet.")
-    if request.top_n is not None:
-        raise QueryBuildError("Top N isn't supported yet.")
+        if recipe.filters:
+            raise QueryBuildError("Ratios take no filters of their own; filter each side.")
+        sides = list(_resolve_ratio(recipe, recipes))
+        side_keys = [recipe.numerator, recipe.denominator]
+        units = {sides[0].unit, sides[1].unit}
+        if units != {"money", "count"} and len(units) > 1:
+            raise QueryBuildError("A ratio needs its recipes to share a unit.")
+        if sides[0].time_column != sides[1].time_column:
+            raise QueryBuildError("A ratio needs its recipes on the same time column.")
+    if request.top_n is not None and request.top_n.n < 1:
+        raise QueryBuildError("Top N needs a positive whole number.")
+    if request.top_n is not None and not request.dimensions:
+        raise QueryBuildError("Top N needs a split to rank.")
     if request.period is None:
         raise QueryBuildError("Totals need a date range.")
-    pieces = _check_pieces(recipe)
-    if recipe.table in context.forbidden_tables:
-        raise QueryBuildError(f"The {recipe.table} table is outside the tenant's data.")
-    requested = [_resolve_dimension(recipe, recipe_key, key) for key in request.dimensions]
+    overlap = _resolve_overlap(request, sides, side_keys, context)
+    if recipe.kind == "ratio":
+        return _build_ratio(recipe_key, recipe, sides, side_keys, request, context)
+    result = _build_simple(sides[0], side_keys[0], request, context, overlap, apply_ranking=True)
+    return BuiltQuery(
+        sql=result.sql,
+        recipe_key=recipe_key,
+        columns=[*result.dimension_columns, "value"],
+        dimension_columns=result.dimension_columns,
+        is_ratio=False,
+        overlapping_dimension=overlap[0] if overlap is not None else None,
+        proof=result.proof,
+    )
+
+
+class _SideResult(BaseModel):
+    """One aggregated side: its SQL, split columns, groupers and proof."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    sql: str
+    dimension_columns: list[str] = []
+    groupers: list[str] = []
+    proof: list[str] = []
+
+
+def _ranked(sql: str, dimension_columns: list[str], top_n: TopN) -> str:
+    """Keep the first N groups after full aggregation, ties broken by split."""
+    tiebreak = ", ".join(dimension_columns)
+    return f"{sql} ORDER BY value DESC NULLS LAST, {tiebreak} LIMIT {top_n.n}"
+
+
+def _build_simple(
+    side: Recipe,
+    side_key: str,
+    request: QueryRequest,
+    context: BuildContext,
+    overlap: tuple[str, DimensionProof] | None,
+    apply_ranking: bool = False,
+) -> _SideResult:
+    """One simple recipe as SQL: a total, a split, or a deduplicated split."""
+    pieces = _check_pieces(side)
+    if side.table in context.forbidden_tables:
+        raise QueryBuildError(f"The {side.table} table is outside the tenant's data.")
+    requested = [_resolve_dimension(side, side_key, key) for key in request.dimensions]
     for filtr in request.filters:
         if filtr.dimension in GRAINS:
             continue
-        filtr_dimension = _resolve_dimension(recipe, recipe_key, filtr.dimension)
+        filtr_dimension = _resolve_dimension(side, side_key, filtr.dimension)
         if filtr_dimension.kind != "time" and filtr_dimension not in requested:
             requested.append(filtr_dimension)
     for dimension in requested:
@@ -357,12 +539,12 @@ def build_query(
                 f"The {dimension.table} table is a system table, not a dimension."
             )
     builder = JoinBuilder()
-    main_alias = builder.add(recipe.table)
-    main_bare = recipe.table.split(".")[-1]
+    main_alias = builder.add(side.table)
+    main_bare = side.table.split(".")[-1]
 
     def full_table(bare: str) -> str | None:
         if bare == main_bare:
-            return recipe.table
+            return side.table
         for link in context.links:
             if link.from_table.split(".")[-1] == bare:
                 return link.from_table
@@ -374,10 +556,10 @@ def build_query(
     fragment_tables: set[str] = set()
     for piece in ["expression", "time_column"]:
         fragment_tables.update(pieces[piece].tables)
-    for index in range(len(recipe.filters)):
+    for index in range(len(side.filters)):
         fragment_tables.update(pieces[f"filter {index + 1}"].tables)
     for dimension in requested:
-        if dimension.table and dimension.table != recipe.table and dimension.table not in needed:
+        if dimension.table and dimension.table != side.table and dimension.table not in needed:
             needed.append(dimension.table)
         fragment_tables.update(pieces[f"dimension {dimension.key}"].tables)
         label_piece = pieces.get(f"dimension {dimension.key} label")
@@ -387,11 +569,20 @@ def build_query(
         full = full_table(bare)
         if full is None:
             raise QueryBuildError("This number needs a join, which isn't supported yet.")
-        if full != recipe.table and full not in needed:
+        if full != side.table and full not in needed:
             needed.append(full)
     for table in needed:
-        link = _resolve_join(recipe.table, table, context.links)
-        builder.join(recipe.table, main_alias, link)
+        link = _resolve_join(side.table, table, context.links)
+        builder.join(side.table, main_alias, link)
+    bare_tables: dict[str, str] = {}
+    for full in builder.aliases:
+        bare = full.split(".")[-1]
+        if bare in bare_tables and bare_tables[bare] != full:
+            raise QueryBuildError(
+                f"The tables {bare_tables[bare]} and {full} share a name, "
+                "so Charie can't tell their columns apart."
+            )
+        bare_tables[bare] = full
     aliases = {
         full.split(".")[-1]: alias
         for full, alias in builder.aliases.items()
@@ -403,44 +594,139 @@ def build_query(
             text = text.replace(f"{bare}.", f"{alias}.")
         return text
 
-    if recipe.aggregate == "count" and recipe.expression == "*":
+    if side.aggregate == "count" and side.expression == "*":
         select = "COUNT(*)"
-    elif recipe.aggregate == "count_distinct":
-        select = f"COUNT(DISTINCT {qualified(recipe.expression)})"
+        inner_measure = ""
+        outer_measure = "COUNT(*)"
+    elif side.aggregate == "count_distinct":
+        select = f"COUNT(DISTINCT {qualified(side.expression)})"
+        inner_measure = qualified(side.expression)
+        outer_measure = "COUNT(DISTINCT m)"
     else:
-        select = f"SUM({qualified(recipe.expression)})"
+        select = f"SUM({qualified(side.expression)})"
+        inner_measure = qualified(side.expression)
+        outer_measure = "SUM(m)"
     outputs: list[str] = []
     groupers: list[str] = []
     for key in request.dimensions:
-        dimension = _resolve_dimension(recipe, recipe_key, key)
-        for output in _split_columns(recipe, dimension, context):
+        dimension = _resolve_dimension(side, side_key, key)
+        for output in _split_columns(side, dimension, context):
             outputs.append(qualified(output))
             groupers.append(qualified(output).rsplit(" AS ", 1)[0])
-    where = [qualified(_period_condition(recipe, request.period, context))]
-    where.extend(qualified(raw) for raw in recipe.filters)
-    where.extend(qualified(_request_filter(recipe, filtr)) for filtr in request.filters)
-    for table in [recipe.table, *builder.aliases]:
+    where = [qualified(_period_condition(side, request.period, context))]
+    where.extend(qualified(raw) for raw in side.filters)
+    where.extend(qualified(_request_filter(side, filtr)) for filtr in request.filters)
+    for table in [side.table, *builder.aliases]:
         where.extend(qualified(raw) for raw in context.required_filters.get(table, []))
-    tables = f"FROM {recipe.table} AS {main_alias}"
+    tables = f"FROM {side.table} AS {main_alias}"
     if builder.joins:
         tables += " " + " ".join(builder.joins)
+    proof = list(builder.proof)
+    if overlap is not None:
+        key, found = overlap
+        keys = [f"{main_alias}.{column}" for column in found.base_key_columns]
+        inner_columns = [*keys, *outputs]
+        if inner_measure:
+            inner_columns.append(f"{inner_measure} AS m")
+        inner = f"SELECT DISTINCT {', '.join(inner_columns)} {tables} WHERE {' AND '.join(where)}"
+        dimension_columns = [output.rsplit(" AS ", 1)[1] for output in outputs]
+        sql = (
+            f"SELECT {', '.join(dimension_columns)}, {outer_measure} AS value "
+            f"FROM ({inner}) AS overlap GROUP BY {', '.join(dimension_columns)}"
+        )
+        proof.append(
+            f"Splits by {key} overlap: each {side.table} row counts once per "
+            "group after deduplication, so the groups don't add up to the total."
+        )
+        if apply_ranking and request.top_n is not None:
+            sql = _ranked(sql, dimension_columns, request.top_n)
+        elif groupers:
+            sql += f" ORDER BY {', '.join(dimension_columns)}"
+        return _SideResult(
+            sql=sql, dimension_columns=dimension_columns, groupers=dimension_columns, proof=proof
+        )
     if groupers:
         sql = (
             f"SELECT {', '.join(outputs)}, {select} AS value "
             f"{tables} "
             f"WHERE {' AND '.join(where)} "
-            f"GROUP BY {', '.join(groupers)} ORDER BY {', '.join(groupers)}"
+            f"GROUP BY {', '.join(groupers)}"
         )
-        dimension_columns = [output.rsplit(" AS ", 1)[1] for output in outputs]
+        if apply_ranking and request.top_n is not None:
+            dimension_columns = [output.rsplit(" AS ", 1)[1] for output in outputs]
+            sql = _ranked(sql, dimension_columns, request.top_n)
+        else:
+            sql += f" ORDER BY {', '.join(groupers)}"
+            dimension_columns = [output.rsplit(" AS ", 1)[1] for output in outputs]
     else:
         sql = f"SELECT {select} AS value {tables} WHERE {' AND '.join(where)}"
         dimension_columns = []
+    return _SideResult(sql=sql, dimension_columns=dimension_columns, groupers=groupers, proof=proof)
+
+
+def _build_ratio(
+    recipe_key: str,
+    recipe: Recipe,
+    sides: list[Recipe],
+    side_keys: list[str],
+    request: QueryRequest,
+    context: BuildContext,
+) -> BuiltQuery:
+    """Two separately aggregated sides, divided after alignment, never mixed."""
+    numerator, denominator = sides
+    num = _build_simple(numerator, side_keys[0], request, context, None)
+    den = _build_simple(denominator, side_keys[1], request, context, None)
+    if num.dimension_columns != den.dimension_columns or num.groupers != den.groupers:
+        raise QueryBuildError("The ratio sides split differently, so they can't be divided.")
+    names = [
+        numerator.title or side_keys[0],
+        denominator.title or side_keys[1],
+    ]
+    proof = [
+        f"Divides {names[0]} by {names[1]} at the same splits; each side is "
+        "added up on its own before dividing, so nothing counts twice.",
+        "Zero denominators are null, not zero.",
+        *num.proof,
+        *den.proof,
+    ]
+    divide = "CAST(num.value AS NUMERIC) / NULLIF(den.value, 0)"
+    if recipe.unit == "percent":
+        divide += " * 100"
+        proof.append("Shown as points out of 100.")
+    if not num.dimension_columns:
+        sql = f"SELECT CAST(({num.sql}) AS NUMERIC) / NULLIF(({den.sql}), 0)"
+        if recipe.unit == "percent":
+            sql += " * 100"
+        return BuiltQuery(
+            sql=f"{sql} AS value",
+            recipe_key=recipe_key,
+            columns=["value"],
+            dimension_columns=[],
+            is_ratio=True,
+            overlapping_dimension=None,
+            proof=proof,
+        )
+    # Plain equality: Postgres only runs FULL JOIN on merge- or
+    # hash-joinable conditions. A null group key stays unmatched, so its
+    # ratio is null, never zero-filled or silently dropped.
+    pairs = " AND ".join(f"num.{column} = den.{column}" for column in num.dimension_columns)
+    aligned = ", ".join(
+        f"COALESCE(num.{column}, den.{column}) AS {column}" for column in num.dimension_columns
+    )
+    sql = (
+        f"SELECT {aligned}, {divide} AS value "
+        f"FROM ({num.sql}) AS num FULL OUTER JOIN ({den.sql}) AS den ON {pairs}"
+    )
+    if request.top_n is not None:
+        sql = _ranked(sql, num.dimension_columns, request.top_n)
+    else:
+        sql += f" ORDER BY {', '.join(num.dimension_columns)}"
     return BuiltQuery(
         sql=sql,
         recipe_key=recipe_key,
-        columns=[*dimension_columns, "value"],
-        dimension_columns=dimension_columns,
-        is_ratio=False,
+        columns=[*num.dimension_columns, "value"],
+        dimension_columns=num.dimension_columns,
+        is_ratio=True,
         overlapping_dimension=None,
-        proof=builder.proof,
+        proof=proof,
     )

@@ -125,6 +125,24 @@ class Recipe(BaseModel):
         return self
 
 
+class DimensionProof(BaseModel):
+    """Code-owned proof that a split needs deduplication (P09.2b; filled P09.3b).
+
+    One verified base-table/key and dimension-expression pair, with the
+    ordered tested table path between them. A sample-only check never
+    proves uniqueness: `exact` must be true to authorize overlap.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    base_table: str = ""
+    base_key_columns: list[str] = []
+    dimension_expression: str = ""
+    link_keys: list[str] = []
+    checked_at: str = ""
+    exact: bool = False
+
+
 class DimensionDetails(BaseModel):
     """A dimension entry: a real column (or time grain) recipes may split by."""
 

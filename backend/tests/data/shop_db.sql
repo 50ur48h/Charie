@@ -102,3 +102,29 @@ INSERT INTO shop.ingredient_usage (id, order_item_id, ingredient, grams) VALUES
     (1, 1, 'flour', 200),
     (2, 1, 'cheese', 100),
     (3, 2, 'cheese', 150);
+
+-- Sessions with a duplicated channel bridge (P09.2b): session 1 is tagged
+-- 'web' twice. Deduped spend is web 30 (sessions 1, 2) and mail 40
+-- (sessions 1, 3); naive joins count session 1 twice for web (40).
+CREATE TABLE shop.sessions (
+    id integer PRIMARY KEY,
+    occurred_at timestamptz NOT NULL,
+    amount numeric(10, 2) NOT NULL
+);
+
+CREATE TABLE shop.session_channels (
+    session_id integer NOT NULL REFERENCES shop.sessions (id),
+    channel text NOT NULL
+);
+
+INSERT INTO shop.sessions (id, occurred_at, amount) VALUES
+    (1, TIMESTAMPTZ '2025-11-05 12:00:00 America/Chicago', 10.00),
+    (2, TIMESTAMPTZ '2025-11-06 12:00:00 America/Chicago', 20.00),
+    (3, TIMESTAMPTZ '2025-11-07 12:00:00 America/Chicago', 30.00);
+
+INSERT INTO shop.session_channels (session_id, channel) VALUES
+    (1, 'web'),
+    (1, 'web'),
+    (1, 'mail'),
+    (2, 'web'),
+    (3, 'mail');

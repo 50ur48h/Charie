@@ -217,6 +217,59 @@ CASES = [
         True,
         None,
     ),
+    (
+        "ratio_sides_ok",
+        "SELECT COALESCE(num.status, den.status) AS status, "
+        "CAST(num.value AS NUMERIC) / NULLIF(den.value, 0) AS value "
+        "FROM (SELECT status, COUNT(*) AS value FROM orders "
+        "WHERE orders.status = 'completed' GROUP BY status) AS num FULL OUTER JOIN "
+        "(SELECT status, SUM(qty) AS value FROM order_items GROUP BY status) AS den "
+        "ON num.status = den.status",
+        True,
+        None,
+    ),
+    (
+        "overlap_shape_ok",
+        "SELECT status, SUM(m) AS value FROM (SELECT DISTINCT id, status, total AS m "
+        "FROM orders WHERE orders.status = 'completed') AS overlap GROUP BY status",
+        True,
+        None,
+    ),
+    (
+        "outer_sum_over_join_blocked",
+        "SELECT SUM(num.value) AS value "
+        "FROM (SELECT status, COUNT(*) AS value FROM orders "
+        "WHERE orders.status = 'completed' GROUP BY status) AS num JOIN "
+        "(SELECT status, COUNT(*) AS value FROM restaurants GROUP BY status) AS den "
+        "ON num.status = den.status",
+        False,
+        "double_counting",
+    ),
+    (
+        "ungrouped_derived_sum_blocked",
+        "SELECT SUM(x.total) AS value FROM (SELECT total FROM order_items) AS x",
+        False,
+        "double_counting",
+    ),
+    (
+        "nongrouped_join_blocked",
+        "SELECT COALESCE(num.status, den.status) AS status, "
+        "CAST(num.value AS NUMERIC) / NULLIF(den.value, 0) AS value "
+        "FROM (SELECT status, COUNT(*) AS value FROM orders "
+        "WHERE orders.status = 'completed' GROUP BY status) AS num FULL OUTER JOIN "
+        "(SELECT status, SUM(qty) AS value FROM order_items GROUP BY status) AS den "
+        "ON num.value = den.value",
+        False,
+        "double_counting",
+    ),
+    (
+        "derived_non_equality_blocked",
+        "SELECT s.total FROM (SELECT order_id, SUM(qty) AS total FROM order_items "
+        "GROUP BY order_id) AS s JOIN orders AS o ON o.id = s.order_id AND s.total > 0 "
+        "WHERE o.status = 'completed'",
+        False,
+        "double_counting",
+    ),
 ]
 
 

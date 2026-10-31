@@ -8,7 +8,6 @@ from charie.shared.knowledge.query_builder import (
     DateRange,
     QueryBuildError,
     QueryRequest,
-    TopN,
     build_query,
 )
 from charie.shared.knowledge.recipe import Recipe
@@ -91,23 +90,6 @@ def test_period_for_each_time_type() -> None:
 
 
 def test_unsupported_requests_are_refused_for_now() -> None:
-    ratio = Recipe(
-        kind="ratio",
-        numerator="net_sales",
-        denominator="order_count",
-        unit="money",
-        currency="USD",
-        steps_in_words=["Divide the two totals.", "Null when nothing was sold."],
-    )
-    with pytest.raises(QueryBuildError, match="Ratio numbers aren't supported yet"):
-        build_query("r", {"r": ratio}, _request(), _context())
-    with pytest.raises(QueryBuildError, match="Top N isn't supported yet"):
-        build_query(
-            "net_sales",
-            RECIPES,
-            _request(top_n=TopN(n=5), dimensions=["dimension.status"]),
-            _context(),
-        )
     joined = Recipe(
         kind="simple",
         table="shop.orders",
