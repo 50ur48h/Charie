@@ -31,6 +31,7 @@ const SETTINGS = {
   spend_warn_percent: 80,
   time_zone: null,
   strict_mode: false,
+  self_test_question_count: 50,
   setup_done: true,
 };
 

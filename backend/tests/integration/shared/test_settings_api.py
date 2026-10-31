@@ -15,6 +15,7 @@ EXPECTED_KEYS = {
     "spend_warn_percent",
     "time_zone",
     "strict_mode",
+    "self_test_question_count",
     "setup_done",
 }
 
@@ -59,6 +60,21 @@ def test_patch_is_all_or_nothing(chat_client):
         ("show_reading", "yes", "`show_reading` must be true or false."),
         ("memory_on", 1, "`memory_on` must be true or false."),
         ("strict_mode", "no", "`strict_mode` must be true or false."),
+        (
+            "self_test_question_count",
+            0,
+            "Practice questions must be a whole number from 1 to 200.",
+        ),
+        (
+            "self_test_question_count",
+            201,
+            "Practice questions must be a whole number from 1 to 200.",
+        ),
+        (
+            "self_test_question_count",
+            "many",
+            "Practice questions must be a whole number from 1 to 200.",
+        ),
         ("spend_limit_usd", 0, "The monthly limit must be between $0.01 and $100,000."),
         ("spend_limit_usd", 100001, "The monthly limit must be between $0.01 and $100,000."),
         (

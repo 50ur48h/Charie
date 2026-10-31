@@ -26,6 +26,7 @@ def _version_shape(version: KbVersion, session: Session) -> dict:
         select(func.count()).select_from(KbChange).where(KbChange.version_id == version.id)
     )
     summary = version.summary if isinstance(version.summary, dict) else {}
+    readiness = version.readiness if isinstance(version.readiness, dict) else None
     return {
         "id": version.id,
         "number": version.number,
@@ -37,6 +38,7 @@ def _version_shape(version: KbVersion, session: Session) -> dict:
             "removed": summary.get("removed", 0),
             "note": summary.get("note", ""),
         },
+        "readiness": readiness,
     }
 
 

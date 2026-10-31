@@ -17,7 +17,7 @@ setup_router = APIRouter()
 class SetupState(BaseModel):
     setup_done: bool
     step: int
-    readiness: None = None
+    readiness: dict | None = None
 
 
 def connected_source(session: Session) -> bool:
@@ -54,6 +54,16 @@ def has_waiting_questions(session: Session) -> bool:
     )
 
 
+def draft_readiness(session: Session) -> dict | None:
+    """The draft version's readiness report, if the self-test wrote one."""
+    from charie.shared.knowledge.versions import get_draft
+
+    draft = get_draft(session)
+    if draft is None or not isinstance(draft.readiness, dict):
+        return None
+    return draft.readiness
+
+
 def setup_step(session: Session) -> int:
     """The first setup step that isn't complete (P04.2's rule)."""
     if not connected_source(session):
@@ -73,5 +83,5 @@ def get_setup(session: Session = Depends(get_session)) -> dict[str, object]:
     return {
         "setup_done": bool(get_setting(session, "setup_done")),
         "step": setup_step(session),
-        "readiness": None,  # P09.9 fills this from the draft's readiness.
+        "readiness": draft_readiness(session),
     }
