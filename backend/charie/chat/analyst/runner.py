@@ -12,9 +12,7 @@ from charie.shared.tables.chat import Message
 RUNNING: dict[int, RunState] = {}
 
 
-async def run_now(
-    message_id: int, state: RunState | None = None, private: bool = False
-) -> None:
+async def run_now(message_id: int, state: RunState | None = None, private: bool = False) -> None:
     """Run one question to the end. A crash marks it failed, then raises."""
     from charie.chat.analyst.stream import FEEDS
 
