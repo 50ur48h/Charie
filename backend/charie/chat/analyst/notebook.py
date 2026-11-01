@@ -112,14 +112,14 @@ class NotebookItem(BaseModel):
     proof: dict = Field(default={}, description="Where the value came from.")
 
 
-def _format_number(value: NumberValue) -> str:
-    """The short prompt format for one number value."""
+def _format_number(value: NumberValue, style: str = "short") -> str:
+    """The prompt format for one number value, in the owner's number style."""
     if value.style == "change":
-        return format_change(value.value, value.unit, value.currency or "USD")
+        return format_change(value.value, value.unit, value.currency or "USD", style)
     if value.unit == "money":
-        return format_money(value.value, value.currency or "USD")
+        return format_money(value.value, value.currency or "USD", style)
     if value.unit == "count":
-        return format_count(value.value)
+        return format_count(value.value, style)
     if value.unit == "percent":
         return format_percent(value.value)
     return format_ratio(value.value)
@@ -364,3 +364,52 @@ class Notebook:
             else:
                 lines.append(self._short_finding(item))
         return "\n".join(lines)
+
+    def labelled_view(self) -> str:
+        """The short view with card labels in brackets, for labelled answers."""
+        labelled = {item.label for item in self.items() if item.label}
+        labelled |= {item.label for item in self.items(status="replaced") if item.label}
+        out = []
+        for line in self.short_view().splitlines():
+            for label in labelled:
+                if line.startswith(f"{label} = "):
+                    line = "[" + label + "]" + line[len(label) :]
+                    break
+            out.append(line)
+        return "\n".join(out)
+
+    @staticmethod
+    def fill_value(item: NotebookItem, style: str = "short") -> str | None:
+        """The inline text for one cited card; None when it stays a label.
+
+        Numbers, periods and quotes fill in; tables stay `[t1]` so the
+        screen can show the table itself.
+        """
+        if item.kind == "number":
+            return _format_number(NumberValue.model_validate(item.value), style)
+        if item.kind == "period":
+            return PeriodValue.model_validate(item.value).text
+        if item.kind == "quote":
+            quote = QuoteValue.model_validate(item.value)
+            where = quote.document
+            if quote.location:
+                where += ", " + quote.location
+            text = "\u201c" + quote.text + "\u201d"
+            return text + " (" + where + ")" if where else text
+        return None
+
+
+def by_label(session: Session, message_id: int, chat_id: int, label: str) -> NotebookItem | None:
+    """One card by label, or None when it is not there."""
+    try:
+        return Notebook.load(session, message_id, chat_id).get(label)
+    except NotebookError:
+        return None
+
+
+def check(session: Session, message_id: int, chat_id: int, label: str) -> NotebookItem | None:
+    """The card the writer may use: there, current, and never a finding."""
+    item = by_label(session, message_id, chat_id, label)
+    if item is None or item.status != "ok" or item.kind == "finding":
+        return None
+    return item

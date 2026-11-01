@@ -1,8 +1,7 @@
-"""The answer flow: rounds of starter and planned tasks, then a placeholder.
+"""The answer flow: rounds of starter and planned tasks, then the writer.
 
-Understand once, run up to 4 rounds at the same time, then a placeholder
-answer with the notebook's short view. P10.10 replaces the placeholder
-with the real writer.
+Understand once, run up to 4 rounds at the same time, then the writer
+turns the checked notebook into 09 blocks with exact copies.
 """
 
 import time
@@ -13,19 +12,23 @@ from sqlalchemy import select
 from charie.chat.analyst.context import AnalystContext
 from charie.chat.analyst.loop import run_rounds
 from charie.chat.analyst.notebook import Notebook
+from charie.chat.analyst.render import render_answer
 from charie.chat.analyst.stream import FEEDS, finish_feed
+from charie.chat.analyst.write import write_answer
+from charie.shared.ai.errors import AiError
 from charie.shared.db import session_scope
 from charie.shared.tables.chat import Message, ThinkingEvent
+from charie.shared.tables.knowledge import KbVersion
 
 #: One note sentence before the short view; the real writer replaces it.
 TEMP_NOTE = "Placeholder answer. Here's what I found:"
 
 
-def _emit_temp_events(ctx: AnalystContext, tasks: list, sentences: list[dict]) -> None:
-    """The saved answer through the live stream: summary, block, text, done.
+def _emit_temp_events(ctx: AnalystContext, tasks: list, blocks: list[dict]) -> None:
+    """The saved answer through the live stream: summary, blocks, text, done.
 
-    The wire shape matches the real rounds (P10.2): one empty text block
-    first, then one text event with all its text.
+    The wire shape matches the real rounds (P10.2): text blocks arrive
+    empty, then fill with text events; other blocks arrive whole.
     """
     feed = FEEDS.get(ctx.message_id)
     if feed is None or feed.closed:
@@ -40,23 +43,31 @@ def _emit_temp_events(ctx: AnalystContext, tasks: list, sentences: list[dict]) -
             "documents": 0,
         },
     )
-    feed.add("block", {"index": 0, "block": {"type": "text", "paragraphs": []}})
-    feed.add(
-        "text",
-        {
-            "index": 0,
-            "delta": "\n".join(sentence["text"] for sentence in sentences),
-        },
-    )
+    for index, block in enumerate(blocks):
+        if block.get("type") == "text":
+            feed.add("block", {"index": index, "block": {"type": "text", "paragraphs": []}})
+            feed.add(
+                "text",
+                {
+                    "index": index,
+                    "delta": "\n".join(
+                        sentence["text"]
+                        for paragraph in block.get("paragraphs", [])
+                        for sentence in paragraph.get("sentences", [])
+                    ),
+                },
+            )
+        else:
+            feed.add("block", {"index": index, "block": block})
 
 
 async def answer_question(ctx: AnalystContext) -> None:
-    """Understand once, run the rounds, then the temp answer."""
+    """Understand once, run the rounds, then write the answer."""
     tasks = await run_rounds(ctx)
     if ctx.state.finish_requested.is_set():
         _mark_stopped(ctx)
         return
-    _save_temp_answer(ctx, tasks)
+    _save_answer(ctx, tasks)
 
 
 def _mark_stopped(ctx: AnalystContext) -> None:
@@ -83,6 +94,26 @@ def _mark_stopped(ctx: AnalystContext) -> None:
     finish_feed(ctx.message_id, status="stopped")
 
 
+def _save_answer(ctx: AnalystContext, tasks: list) -> None:
+    """Write, render and save; the notebook view is the fallback."""
+    with session_scope() as session:
+        message = session.get(Message, ctx.message_id)
+        if message is not None:
+            message.status = "writing"
+            session.commit()
+    seq = ctx.log.start("step", "Writing the answer")
+    try:
+        rendered = render_answer(write_answer(ctx), ctx)
+    except AiError:
+        rendered = None
+    if rendered is None:
+        ctx.log.finish(seq, status="done", title="Wrote the answer from the notebook.")
+        _save_temp_answer(ctx, tasks)
+        return
+    ctx.log.finish(seq, status="done", title="Wrote the answer.")
+    _save_blocks(ctx, tasks, *rendered)
+
+
 def _save_temp_answer(ctx: AnalystContext, tasks: list) -> None:
     """One note sentence plus the notebook's short view, as real answers.
 
@@ -93,15 +124,37 @@ def _save_temp_answer(ctx: AnalystContext, tasks: list) -> None:
     with session_scope() as session:
         book = Notebook.load(session, ctx.message_id, ctx.chat_id)
         short = book.short_view()
-    sentences = [
-        {"kind": "note", "text": TEMP_NOTE, "proofs": []},
-        {"kind": "note", "text": short, "proofs": []},
+    blocks = [
+        {
+            "type": "text",
+            "paragraphs": [
+                {
+                    "sentences": [
+                        {"kind": "note", "text": TEMP_NOTE},
+                        {"kind": "note", "text": short},
+                    ]
+                }
+            ],
+        }
     ]
+    ctx.log.add("note", TEMP_NOTE, "Here's what I found.")
+    _save_blocks(ctx, tasks, blocks, [])
+
+
+def _kb_number(ctx: AnalystContext) -> int:
+    """The version's number for the saved answer (the id when unknown)."""
+    with session_scope() as session:
+        number = session.scalar(select(KbVersion.number).where(KbVersion.id == ctx.kb_version_id))
+    return number if number is not None else ctx.kb_version_id
+
+
+def _save_blocks(ctx: AnalystContext, tasks: list, blocks: list[dict], shown: list[str]) -> None:
+    """Save the answer blocks and settle the message and stream."""
     answer = {
         "message_id": ctx.message_id,
-        "kb_version": ctx.kb_version_id,
+        "kb_version": _kb_number(ctx),
         "data_through": ctx.data_through.isoformat() if ctx.data_through is not None else None,
-        "blocks": [{"kind": "text", "sentences": sentences}],
+        "blocks": blocks,
     }
     with session_scope() as session:
         message = session.get(Message, ctx.message_id)
@@ -111,6 +164,7 @@ def _save_temp_answer(ctx: AnalystContext, tasks: list) -> None:
         message.status = "done"
         message.finished_at = datetime.now(UTC)
         session.commit()
-    ctx.log.add("note", TEMP_NOTE, "Here's what I found.")
-    _emit_temp_events(ctx, tasks, sentences)
+        if shown:
+            Notebook.load(session, ctx.message_id, ctx.chat_id).mark_shown(shown)
+    _emit_temp_events(ctx, tasks, blocks)
     finish_feed(ctx.message_id, status="done")

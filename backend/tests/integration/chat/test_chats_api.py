@@ -167,11 +167,12 @@ def test_ask_creates_two_messages(chat_client, db_session, monkeypatch) -> None:
         "Understood the question",
         "Round 1 done: no new tasks, so no new answers.",
         "Checking whether the rounds so far answer the question.",
+        "Wrote the answer from the notebook.",
         "Placeholder answer. Here's what I found:",
     ]
     assert (
         "Placeholder answer. Here's what I found:"
-        in assistant["answer"]["blocks"][0]["sentences"][0]["text"]
+        in assistant["answer"]["blocks"][0]["paragraphs"][0]["sentences"][0]["text"]
     )
 
 

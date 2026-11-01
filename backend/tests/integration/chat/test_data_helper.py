@@ -625,8 +625,8 @@ async def test_temp_answer_runs_tasks(db_session, shop_version, monkeypatch) -> 
     assert book.items()[2].value["value"] == "5"
     saved = db_session.get(Message, ctx.message_id)
     assert saved.status == "done"
-    assert saved.answer["blocks"][0]["sentences"][0]["text"] == TEMP_NOTE
-    assert "n1 = 5" in saved.answer["blocks"][0]["sentences"][1]["text"]
+    assert saved.answer["blocks"][0]["paragraphs"][0]["sentences"][0]["text"] == TEMP_NOTE
+    assert "n1 = 5" in saved.answer["blocks"][0]["paragraphs"][0]["sentences"][1]["text"]
     titles = [line.title for line in _lines(db_session, ctx.message_id)]
     assert titles[0] == "Understood the question"
     assert any(title.startswith("Getting completed orders for ") for title in titles)
