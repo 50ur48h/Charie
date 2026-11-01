@@ -64,9 +64,9 @@ def _bodies(db_session, message_id):
     ).all()
 
 
-def test_understood_line_words(db_session, kb_version, monkeypatch) -> None:
+def test_understood_line_words(db_session, kb_mini, monkeypatch) -> None:
     """A good reply writes the understood line with the real dates."""
-    ctx = _ctx_for(db_session, kb_version, "Delivered orders in December 2025")
+    ctx = _ctx_for(db_session, kb_mini, "Delivered orders in December 2025")
     fake_understanding(monkeypatch, _reply())
     understand(ctx)
     assert ctx.problems == []
@@ -79,11 +79,11 @@ def test_understood_line_words(db_session, kb_version, monkeypatch) -> None:
     assert bodies[0].startswith("I read this as **delivered orders** for 1–31 Dec 2025.")
 
 
-def test_retry_then_fallback_reading(db_session, kb_version, monkeypatch) -> None:
+def test_retry_then_fallback_reading(db_session, kb_mini, monkeypatch) -> None:
     """Digits in the reading retry once, then the fallback reading wins."""
     from charie.shared.tables.chat import ThinkingEvent
 
-    ctx = _ctx_for(db_session, kb_version, "Delivered orders in December 2025")
+    ctx = _ctx_for(db_session, kb_mini, "Delivered orders in December 2025")
     bad = _reply(reading="I read this as 42 delivered orders for [p1].")
     fake = fake_understanding(monkeypatch, bad, bad)
     understand(ctx)
@@ -97,9 +97,9 @@ def test_retry_then_fallback_reading(db_session, kb_version, monkeypatch) -> Non
     assert titles[0] == "Understood the question"
 
 
-def test_dropped_filter_adds_note_line(db_session, kb_version, monkeypatch) -> None:
+def test_dropped_filter_adds_note_line(db_session, kb_mini, monkeypatch) -> None:
     """An unknown filter value is dropped with its exact note."""
-    ctx = _ctx_for(db_session, kb_version, "Delivered orders in December 2025")
+    ctx = _ctx_for(db_session, kb_mini, "Delivered orders in December 2025")
     bad = _reply(filters=[{"dimension_key": "dimension.restaurant_id", "values": ["Uptown"]}])
     fake_understanding(monkeypatch, bad, bad)
     understand(ctx)
@@ -108,7 +108,7 @@ def test_dropped_filter_adds_note_line(db_session, kb_version, monkeypatch) -> N
     assert ctx.understanding.filters == []
 
 
-def test_first_call_not_already_running(db_session, kb_version, monkeypatch) -> None:
+def test_first_call_not_already_running(db_session, kb_mini, monkeypatch) -> None:
     """The first AI call of a question never claims to be already running."""
     seen = []
     original_run = AiClient.run
@@ -118,7 +118,7 @@ def test_first_call_not_already_running(db_session, kb_version, monkeypatch) -> 
         return original_run(self, job, inputs, form, **kwargs)
 
     monkeypatch.setattr(AiClient, "run", _capture)
-    ctx = _ctx_for(db_session, kb_version, "Delivered orders in December 2025")
+    ctx = _ctx_for(db_session, kb_mini, "Delivered orders in December 2025")
     fake_understanding(monkeypatch, _reply())
     understand(ctx)
     assert seen != []
