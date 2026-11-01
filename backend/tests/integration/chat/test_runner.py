@@ -83,7 +83,9 @@ def test_placeholder_answer_saved(db, db_session, monkeypatch) -> None:
     assert titles == ["Understood the question", "Placeholder answer. Here's what I found:"]
 
 
-def test_finish_now_skips_remaining_lines(db, db_session, monkeypatch) -> None:
+def test_finish_now_marks_stopped_and_allows_next_question(db, db_session, monkeypatch) -> None:
+    from charie.chat import chat_store
+
     fake_understanding(monkeypatch)
     assistant = _thinking_assistant(db_session)
     real_add = answer_module.add_period_items
@@ -97,12 +99,20 @@ def test_finish_now_skips_remaining_lines(db, db_session, monkeypatch) -> None:
     asyncio.run(run_now(assistant.id))
     db_session.expire_all()
     saved = db_session.get(Message, assistant.id)
-    assert saved.status == "thinking"
+    assert saved.status == "stopped"
+    assert saved.finished_at is not None
     assert saved.answer is None
-    lines = db_session.scalars(
-        select(ThinkingEvent).where(ThinkingEvent.message_id == assistant.id)
+    running = db_session.scalars(
+        select(ThinkingEvent).where(
+            ThinkingEvent.message_id == assistant.id,
+            ThinkingEvent.status == "running",
+        )
     ).all()
-    assert len(lines) < 3
+    assert running == []
+    user2, assistant2 = chat_store.ask_question(
+        db_session, saved.chat_id, "And now?", "thinking", None
+    )
+    assert assistant2.status == "thinking"
 
 
 @pytest.mark.asyncio

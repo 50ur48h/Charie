@@ -9,6 +9,8 @@ import asyncio
 import time
 from datetime import UTC, datetime
 
+from sqlalchemy import select
+
 from charie.chat.analyst.context import AnalystContext
 from charie.chat.analyst.helpers.data import add_period_items, run_recipe_task
 from charie.chat.analyst.helpers.tasks import starter_tasks
@@ -17,7 +19,7 @@ from charie.chat.analyst.notebook import Notebook
 from charie.chat.analyst.stream import FEEDS, finish_feed
 from charie.chat.analyst.understand import understand
 from charie.shared.db import session_scope
-from charie.shared.tables.chat import Message
+from charie.shared.tables.chat import Message, ThinkingEvent
 
 #: One note sentence before the short view; the real writer replaces it.
 TEMP_NOTE = "Placeholder answer. Here's what I found:"
@@ -56,6 +58,7 @@ async def answer_question(ctx: AnalystContext) -> None:
     """Understand, fetch every starter task at once, then the temp answer."""
     understand(ctx)
     if ctx.state.finish_requested.is_set():
+        _mark_stopped(ctx)
         return
     add_period_items(ctx)
     with session_scope() as session:
@@ -70,8 +73,33 @@ async def answer_question(ctx: AnalystContext) -> None:
 
         await asyncio.gather(*(_one(task) for task in tasks))
     if ctx.state.finish_requested.is_set():
+        _mark_stopped(ctx)
         return
     _save_temp_answer(ctx, tasks)
+
+
+def _mark_stopped(ctx: AnalystContext) -> None:
+    """Finish now: settle running lines and stop the message.
+
+    Without this the message stays "thinking", every later question is
+    refused, and the stream never sends its terminal event.
+    """
+    with session_scope() as session:
+        seqs = session.scalars(
+            select(ThinkingEvent.seq).where(
+                ThinkingEvent.message_id == ctx.message_id,
+                ThinkingEvent.status == "running",
+            )
+        ).all()
+    for seq in seqs:
+        ctx.log.finish(seq, status="done")
+    with session_scope() as session:
+        message = session.get(Message, ctx.message_id)
+        if message is not None and message.status == "thinking":
+            message.status = "stopped"
+            message.finished_at = datetime.now(UTC)
+            session.commit()
+    finish_feed(ctx.message_id, status="stopped")
 
 
 def _save_temp_answer(ctx: AnalystContext, tasks: list) -> None:
