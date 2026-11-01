@@ -47,13 +47,14 @@ async function signIn(): Promise<void> {
 }
 
 describe("mock handlers", () => {
-  test("GET /api/chats gives the 8 sample chats, newest first", async () => {
+  test("GET /api/chats gives the 9 sample chats, newest first", async () => {
     await signIn();
     const response = await fetch(`${APP}/api/chats`);
     expect(response.status).toBe(200);
     const chats = (await response.json()) as ChatSummary[];
-    expect(chats).toHaveLength(8);
+    expect(chats).toHaveLength(9);
     expect(chats.map((chat) => chat.title)).toEqual([
+      "December delivery review",
       "How are we doing this month?",
       "Top dishes by profit",
       "Why did delivery drop in Austin?",
