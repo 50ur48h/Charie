@@ -19,6 +19,8 @@ PROMPT_TESTS = {
     "write_term_recipe": "tests/integration/learner/test_recipes.py",
     "propose_defaults": "tests/integration/learner/test_defaults.py",
     "write_owner_questions": "tests/integration/learner/test_make_questions.py",
+    "write_practice_questions": "tests/integration/learner/test_self_test.py",
+    "write_sql": "tests/unit/knowledge/test_sql_writer.py",
 }
 
 

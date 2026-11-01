@@ -88,6 +88,27 @@ test("publish makes version 15 live", async ({ page }) => {
   await expect(page.getByRole("option", { name: /Refunds come out of sales/ })).toBeVisible();
 });
 
+test("real_review_publish_version reviews actual entries then publishes", async ({ page }) => {
+  await openLearner(page, "/knowledge", "still");
+  await page.getByRole("button", { name: "Review changes" }).click();
+  const dialog = page.getByRole("dialog", { name: "Changes in version 15" });
+  // The changed lunch entry shows the real before and after meanings.
+  await expect(dialog.getByText("Orders placed between 11 am and 3 pm.")).toBeVisible();
+  await expect(dialog.getByText("Orders placed between 11 am and 2:30 pm.")).toBeVisible();
+  // An added entry carries its real after side and no before side.
+  await expect(
+    dialog.getByText("Refunds come out of sales; they are not separate income."),
+  ).toBeVisible();
+  await expect(dialog.getByText("Not in this version")).toHaveCount(4);
+  // Publish straight from the review dialog, through the confirm step.
+  await dialog.getByRole("button", { name: "Publish version 15" }).click();
+  await expect(page.getByText("Publish version 15?")).toBeVisible();
+  await page.getByRole("button", { name: "Publish version 15", exact: true }).last().click();
+  await expect(page.getByText("Version 15 is live.")).toBeVisible();
+  await expect(page.getByText("Draft version 15 has")).toBeHidden();
+  await expect(page.getByText("Version 15", { exact: true })).toBeVisible();
+});
+
 test("dismiss a to-check item", async ({ page }) => {
   await openLearner(page, "/knowledge", "still");
   await expect(page.getByText("Net sales should leave out refunds.")).toBeVisible();

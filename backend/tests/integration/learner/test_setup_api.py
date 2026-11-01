@@ -1,5 +1,6 @@
 """The setup guide state on the real API."""
 
+from charie.shared.knowledge import versions
 from charie.shared.tables.learning import LearningRun
 from charie.shared.tables.questions import OwnerQuestion
 from charie.shared.tables.sources import DataSource
@@ -63,3 +64,20 @@ def test_waiting_question_is_step_4(learner_client, db_session) -> None:
 def test_readiness_is_null(learner_client) -> None:
     log_in(learner_client)
     assert _get(learner_client)["readiness"] is None
+
+
+def test_readiness_served_from_draft(learner_client, db_session) -> None:
+    log_in(learner_client)
+    draft = versions.get_or_create_draft(db_session, "first_learning")
+    report = {
+        "numbers_checked": 2,
+        "numbers_total": 2,
+        "numbers_waiting": 0,
+        "practice_right": 1,
+        "practice_total": 1,
+        "weak_area": None,
+        "weak_area_why": "Charie did well everywhere.",
+    }
+    draft.readiness = report
+    db_session.commit()
+    assert _get(learner_client)["readiness"] == report

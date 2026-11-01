@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from charie.shared.knowledge.details import Source, check_details
+from charie.shared.knowledge.versions import is_big_change
 from charie.shared.tables.knowledge import KbChange, KbEntry, KbVersion
 
 # Architecture 05 section 3's kind table, in order, then title.
@@ -103,7 +104,10 @@ def _write_change(
     after: dict[str, Any] | None,
     reason: str,
 ) -> None:
-    """One `kb_changes` row; `is_big` waits for P09.9."""
+    """One `kb_changes` row, classified for review by the P09.9 policy."""
+    after_kind = after.get("kind") if isinstance(after, dict) else None
+    before_kind = before.get("kind") if isinstance(before, dict) else None
+    big = is_big_change(after_kind or before_kind or "", change, before, after)
     session.add(
         KbChange(
             version_id=version_id,
@@ -112,7 +116,7 @@ def _write_change(
             before=before,
             after=after,
             reason=reason,
-            is_big=False,
+            is_big=big,
         )
     )
 

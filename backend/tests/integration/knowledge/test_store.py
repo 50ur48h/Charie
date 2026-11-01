@@ -77,7 +77,8 @@ def test_add_change_remove_write_the_change_log(db) -> None:
         version_id = versions.get_draft(session).id
         rows = _changes(session, version_id)
         assert [row.change for row in rows] == ["added", "changed", "removed"]
-        assert all(row.is_big is False for row in rows)
+        # P09.9: recipe adds, recipe changes and removals all wait for review.
+        assert all(row.is_big is True for row in rows)
         assert rows[0].before is None
         assert rows[0].after["title"] == "Net sales"
         assert rows[1].before["meaning"] == "Sales without delivery fees."

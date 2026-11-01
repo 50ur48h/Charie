@@ -53,11 +53,33 @@ class StatusOut(BaseModel):
     questions_waiting: int = 0
 
 
+def published_knowledge(session: Session) -> dict[str, object] | None:
+    """The Knowledge card from the live published version, if any."""
+    from charie.shared.knowledge.versions import get_published
+    from charie.shared.tables.knowledge import KbEntry
+    from charie.shared.tables.sources import Document
+
+    published = get_published(session)
+    if published is None:
+        return None
+    entries = session.scalar(
+        select(func.count()).select_from(KbEntry).where(KbEntry.version_id == published.id)
+    )
+    documents = session.scalar(
+        select(func.count()).select_from(Document).where(Document.status != "removed")
+    )
+    return {
+        "version": published.number,
+        "entries": entries or 0,
+        "documents": documents or 0,
+        "published_at": published.published_at.isoformat() if published.published_at else None,
+    }
+
+
 def build_status(session: Session, now: datetime | None = None) -> dict[str, object]:
     """The status both apps share; placeholders name the phase that fills them."""
     at = now or datetime.now(UTC)
-    # Knowledge counts: P09.9 or P12.1 fills these from the published version.
-    knowledge: dict[str, object] = {
+    knowledge: dict[str, object] = published_knowledge(session) or {
         "version": None,
         "entries": 0,
         "documents": 0,

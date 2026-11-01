@@ -43,6 +43,7 @@ PUBLIC_KEYS = (
     "spend_warn_percent",
     "time_zone",
     "strict_mode",
+    "self_test_question_count",
     "setup_done",
 )
 
@@ -99,6 +100,9 @@ def check_value(key: str, value: Any) -> None:
     elif key == "thinking_minutes":
         if not isinstance(value, int) or isinstance(value, bool) or not 2 <= value <= 15:
             raise bad_setting("Thinking time must be a whole number of minutes from 2 to 15.")
+    elif key == "self_test_question_count":
+        if not isinstance(value, int) or isinstance(value, bool) or not 1 <= value <= 200:
+            raise bad_setting("Practice questions must be a whole number from 1 to 200.")
     elif key in ("show_reading", "memory_on", "strict_mode"):
         if not isinstance(value, bool):
             raise bad_setting(f"`{key}` must be true or false.")

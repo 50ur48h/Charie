@@ -16,6 +16,7 @@ export interface Settings {
   spend_warn_percent: number;
   time_zone: string | null;
   strict_mode: boolean;
+  self_test_question_count: number;
   setup_done: boolean;
 }
 

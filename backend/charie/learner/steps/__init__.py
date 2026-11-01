@@ -11,5 +11,6 @@ from charie.learner.steps import (
     owner_questions,  # noqa: F401 (registers the step)
     profile,  # noqa: F401 (registers the step)
     recipes,  # noqa: F401 (recipe checks for step 8)
+    self_test,  # noqa: F401 (registers the step)
     structure,  # noqa: F401 (registers the step)
 )

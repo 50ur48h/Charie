@@ -329,6 +329,7 @@ describe("mock handlers", () => {
       spend_limit_usd: 150,
       spend_warn_percent: 80,
       time_zone: null,
+      self_test_question_count: 50,
     });
     const body = (await (await fetch(`${APP}/api/settings`)).json()) as Record<string, unknown>;
     expect("password_hash" in body).toBe(false);
@@ -342,6 +343,8 @@ describe("mock handlers", () => {
       [{ number_format: "long" }, "Number format must be short or full."],
       [{ thinking_minutes: 16 }, "Thinking time must be a whole number of minutes from 2 to 15."],
       [{ thinking_minutes: 2.5 }, "Thinking time must be a whole number of minutes from 2 to 15."],
+      [{ self_test_question_count: 0 }, "Practice questions must be a whole number from 1 to 200."],
+      [{ self_test_question_count: 201 }, "Practice questions must be a whole number from 1 to 200."],
       [{ show_reading: "yes" }, "`show_reading` must be true or false."],
       [{ memory_on: 1 }, "`memory_on` must be true or false."],
       [{ spend_limit_usd: 0 }, "The monthly limit must be between $0.01 and $100,000."],

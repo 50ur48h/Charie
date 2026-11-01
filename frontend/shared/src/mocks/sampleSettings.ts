@@ -17,6 +17,7 @@ const DEFAULTS: Settings = {
   spend_warn_percent: 80,
   time_zone: null,
   strict_mode: false,
+  self_test_question_count: 50,
   setup_done: true,
 };
 
@@ -66,6 +67,10 @@ function check(key: string, value: unknown): string | null {
       return Number.isInteger(value) && (value as number) >= 2 && (value as number) <= 15
         ? null
         : "Thinking time must be a whole number of minutes from 2 to 15.";
+    case "self_test_question_count":
+      return Number.isInteger(value) && (value as number) >= 1 && (value as number) <= 200
+        ? null
+        : "Practice questions must be a whole number from 1 to 200.";
     case "show_reading":
     case "memory_on":
     case "strict_mode":
