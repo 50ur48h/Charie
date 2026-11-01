@@ -5,10 +5,12 @@ turns the checked notebook into 09 blocks with exact copies.
 """
 
 import time
+from dataclasses import asdict
 from datetime import UTC, datetime
 
 from sqlalchemy import select
 
+from charie.chat.analyst.checks import check_inputs, run_checks
 from charie.chat.analyst.context import AnalystContext
 from charie.chat.analyst.loop import run_rounds
 from charie.chat.analyst.notebook import Notebook
@@ -103,15 +105,39 @@ def _save_answer(ctx: AnalystContext, tasks: list) -> None:
             session.commit()
     seq = ctx.log.start("step", "Writing the answer")
     try:
-        rendered = render_answer(write_answer(ctx), ctx)
+        draft = write_answer(ctx)
+        rendered = render_answer(draft, ctx)
     except AiError:
+        draft = None
         rendered = None
     if rendered is None:
         ctx.log.finish(seq, status="done", title="Wrote the answer from the notebook.")
         _save_temp_answer(ctx, tasks)
         return
     ctx.log.finish(seq, status="done", title="Wrote the answer.")
+    _run_checks(ctx, draft, rendered[0])
     _save_blocks(ctx, tasks, *rendered)
+
+
+def _run_checks(ctx: AnalystContext, draft, blocks: list[dict]) -> None:
+    """Check every number, label and claim; a failure still shows the answer.
+
+    The review loop (P10.12) retries failures; until then the answer is
+    shown with a failed check line.
+    """
+    seq = ctx.log.start("check", "Checking every number, label and claim")
+    failures = run_checks(draft, blocks, check_inputs(ctx))
+    if not failures:
+        ctx.log.finish(seq, status="done", title="Checks passed")
+        return
+    count = len(failures)
+    ctx.log.finish(
+        seq,
+        status="failed",
+        title=f"Checks found {count} problem" + ("" if count == 1 else "s"),
+        body="\n".join(failure.message for failure in failures),
+        details={"failures": [asdict(failure) for failure in failures]},
+    )
 
 
 def _save_temp_answer(ctx: AnalystContext, tasks: list) -> None:
