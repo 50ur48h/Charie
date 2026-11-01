@@ -11,6 +11,12 @@ from datetime import UTC, datetime
 
 from sqlalchemy import func, select
 
+from charie.chat.analyst.chat_context import (
+    FinishedAnswer,
+    load_context,
+    save_context,
+    update_context,
+)
 from charie.chat.analyst.checks import check_body, check_inputs, run_checks
 from charie.chat.analyst.context import AnalystContext
 from charie.chat.analyst.loop import run_extra_round, run_rounds
@@ -146,6 +152,7 @@ async def write_checked_answer(ctx: AnalystContext, tasks: list) -> tuple | None
         if rendered is None:
             return None
         blocks, shown = rendered
+        ctx.draft = draft
         review = await asyncio.to_thread(review_answer, ctx, blocks)
         if ctx.state.finish_requested.is_set():
             return _stopped_fallback(ctx)
@@ -339,5 +346,61 @@ def _save_blocks(
         saved_cost = float(message.cost_usd or 0)
         if shown:
             Notebook.load(session, ctx.message_id, ctx.chat_id).mark_shown(shown)
+        if status == "done":
+            try:
+                _save_chat_context(session, ctx, message.id, blocks, shown)
+            except Exception as err:
+                ctx.log.add("note", "The chat memory did not save.", str(err))
     stream_answer(ctx.message_id, blocks, summary)
     finish_feed(ctx.message_id, status=status, cost_usd=saved_cost)
+
+
+def _save_chat_context(
+    session, ctx: AnalystContext, message_id: int, blocks: list, shown: list[str]
+) -> None:
+    """Fold this done answer into the chat memory, in the same transaction."""
+    book = Notebook.load(session, ctx.message_id, ctx.chat_id)
+    understanding = ctx.understanding
+    style = (ctx.settings or {}).get("number_format", "short")
+    data_through = ctx.data_through
+    if hasattr(data_through, "isoformat"):
+        data_through = data_through.isoformat()
+    draft = getattr(ctx, "draft", None)
+    resolved = getattr(ctx.periods, "periods", None)
+    if resolved is None:
+        resolved = ctx.periods or []
+    finished = FinishedAnswer(
+        message_id=message_id,
+        question=ctx.question,
+        kind=getattr(understanding, "kind", "") or "",
+        asks=[ask.model_dump(mode="json") for ask in getattr(understanding, "asks", []) or []],
+        filters=[
+            filt.model_dump(mode="json") for filt in getattr(understanding, "filters", []) or []
+        ],
+        periods=[
+            {
+                "label": period.label,
+                "expression": period.expression.model_dump(mode="json")
+                if hasattr(period.expression, "model_dump")
+                else str(period.expression),
+                "start": period.start.isoformat()
+                if hasattr(period.start, "isoformat")
+                else str(period.start),
+                "end": period.end.isoformat()
+                if hasattr(period.end, "isoformat")
+                else str(period.end),
+                "text": period.text,
+            }
+            for period in resolved
+        ],
+        used_labels=list(shown),
+        items=[item.model_dump(mode="json") for item in book.items()],
+        draft=draft.model_dump(mode="json")
+        if draft is not None and hasattr(draft, "model_dump")
+        else {"blocks": []},
+        blocks=list(blocks),
+        data_through=str(data_through or ""),
+        kb_version=ctx.kb_version_id,
+        style=style,
+    )
+    save_context(session, ctx.chat_id, update_context(load_context(session, ctx.chat_id), finished))
