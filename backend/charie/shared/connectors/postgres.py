@@ -162,7 +162,9 @@ class PostgresConnector:
         report = check_sql(sql, catalog, max_rows=max_rows, explain=check)
         if not report.ok:
             raise QueryBlocked(report.reasons)
-        return self.run_query(report.sql, max_rows=max_rows)
+        result = self.run_query(report.sql, max_rows=max_rows)
+        result.tables = list(report.tables)
+        return result
 
     def run_query(self, query: str, timeout_s: int = 60, max_rows: int = 50_000) -> QueryResult:
         """Run one SELECT read-only, timed and capped; then roll back."""

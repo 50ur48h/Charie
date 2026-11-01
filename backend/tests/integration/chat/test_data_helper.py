@@ -516,7 +516,7 @@ def test_blocked_recipe_query_is_a_bug(db_session, shop_version, monkeypatch) ->
     runs = db_session.scalars(select(QueryRun)).all()
     assert len(runs) == 1
     assert (runs[0].status, runs[0].way, runs[0].recipe_key) == ("blocked", "recipe", "orders")
-    assert runs[0].check_report == {"ok": False, "reasons": ["nope"]}
+    assert runs[0].check_report == {"ok": False, "reasons": ["nope"], "tables": []}
 
 
 def test_timeout_adds_finding(db_session, shop_version, monkeypatch) -> None:
@@ -551,11 +551,81 @@ def test_query_runs_saved_with_details(db_session, shop_version) -> None:
     assert run.recipe_key == "order_value"
     assert run.way == "recipe"
     assert "shop.orders" in run.sql_text
-    assert run.check_report == {"ok": True, "reasons": []}
+    assert run.check_report == {"ok": True, "reasons": [], "tables": ["shop.orders"]}
     assert run.status == "ok"
     assert run.row_count == 1
     assert run.duration_ms >= 0
     assert run.error is None
+
+
+def test_order_table_triggers_required_note(db_session, shop_version) -> None:
+    """The saved query report carries the checker tables into check 7."""
+    from charie.chat.analyst.checks import check_inputs, run_checks
+    from charie.chat.analyst.write import AnswerDraft, DraftBlock, DraftSentence
+
+    db_session.add(
+        KbEntry(
+            version_id=shop_version,
+            key="rule.estimates",
+            kind="rule",
+            title="Estimates",
+            meaning="Estimate answers need the note.",
+            details={
+                "rule_type": "required_note",
+                "applies_to_tables": ["shop.orders"],
+                "note_text": "These values are estimates",
+            },
+            confidence="checked",
+            sources=[],
+        )
+    )
+    db_session.commit()
+    ctx = _ctx(db_session, shop_version)
+    run_recipe_task(_task("orders", periods=("p2",)), ctx)
+    runs = db_session.scalars(select(QueryRun)).all()
+    assert len(runs) == 1
+    assert "shop.orders" in runs[0].check_report["tables"]
+    inputs = check_inputs(ctx)
+    draft = AnswerDraft(
+        blocks=[
+            DraftBlock(
+                type="text",
+                sentences=[
+                    DraftSentence(
+                        kind="fact",
+                        text="Orders were [n1].",
+                        proof=["n1"],
+                        starts_paragraph=True,
+                    )
+                ],
+            )
+        ]
+    )
+    plain = [
+        {
+            "type": "text",
+            "paragraphs": [{"sentences": [{"kind": "fact", "text": "Orders were 6."}]}],
+        }
+    ]
+    seven = [failure for failure in run_checks(draft, plain, inputs) if failure.check == 7]
+    assert len(seven) == 1
+    assert "These values are estimates" in seven[0].message
+    noted = [
+        {
+            "type": "text",
+            "paragraphs": [
+                {
+                    "sentences": [
+                        {
+                            "kind": "fact",
+                            "text": "Orders were 6. These values are estimates.",
+                        }
+                    ]
+                }
+            ],
+        }
+    ]
+    assert [failure for failure in run_checks(draft, noted, inputs) if failure.check == 7] == []
 
 
 def test_thinking_line_words(db_session, shop_version) -> None:

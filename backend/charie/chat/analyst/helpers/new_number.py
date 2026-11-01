@@ -196,13 +196,18 @@ def _run_period(session, ctx, task, loaded, book, period):
     brief = new_number_brief(session, ctx.kb_version_id, loaded, task, period)
     connector = data_module.customer_connector(session)
     durations: list[int] = []
+    tables: list[str] = []
 
     def run(sql: str):
         started = time.monotonic()
         try:
-            return connector.run_checked(sql, loaded.catalog)
+            result = connector.run_checked(sql, loaded.catalog)
         finally:
             durations.append(int((time.monotonic() - started) * 1000))
+        for table in result.tables:
+            if table not in tables:
+                tables.append(table)
+        return result
 
     written_a = write_checked_sql(brief, run, way="A", message_id=ctx.message_id)
     written_b = write_checked_sql(brief, run, way="B", message_id=ctx.message_id)
@@ -217,6 +222,7 @@ def _run_period(session, ctx, task, loaded, book, period):
         durations[0] if durations else 0,
         None,
         way="A",
+        tables=tables,
     )
     run_b = data_module._save_run(
         session,
@@ -229,6 +235,7 @@ def _run_period(session, ctx, task, loaded, book, period):
         durations[1] if len(durations) > 1 else 0,
         None,
         way="B",
+        tables=tables,
     )
     _validate(written_a)
     _validate(written_b)

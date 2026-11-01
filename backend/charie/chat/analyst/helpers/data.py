@@ -298,6 +298,7 @@ def _save_run(
     error: str | None,
     reasons: list | None = None,
     way: str = "recipe",
+    tables: list[str] | None = None,
 ) -> int:
     """One `query_runs` row; returns its id for the proof."""
     row = QueryRun(
@@ -306,7 +307,7 @@ def _save_run(
         recipe_key=task.metric_key,
         way=way,
         sql_text=sql,
-        check_report={"ok": ok, "reasons": reasons or []},
+        check_report={"ok": ok, "reasons": reasons or [], "tables": list(tables or [])},
         status=status,
         row_count=row_count,
         duration_ms=duration_ms,
@@ -438,6 +439,7 @@ def _run_period(session, ctx, task: Task, loaded: _Loaded, recipe: Recipe, perio
         result.row_count,
         result.duration_ms,
         None,
+        tables=result.tables,
     )
     table = ResultTable(result.columns, [[_cell(value) for value in row] for row in result.rows])
     return built, result, table, run_id
