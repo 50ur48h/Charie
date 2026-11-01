@@ -224,3 +224,36 @@ def test_top_questions_follow_owner_month(chat_client, db_session) -> None:
     assert [row["message_id"] for row in november] != []
     assert november[0]["question"] == "Late question?"
     assert _get(chat_client, "2026-10")["top_questions"] == []
+
+
+def test_top_questions_skip_private_chats(chat_client, db_session, monkeypatch) -> None:
+    """Hidden test runs never surface on Usage; their spend still counts."""
+    monkeypatch.setenv("AI_REPLAY", "replay")
+    log_in(chat_client)
+    shown = Chat(title="Shown", private=False)
+    hidden = Chat(title="Hidden", private=True)
+    db_session.add_all([shown, hidden])
+    db_session.flush()
+    for chat, text, cost in (
+        (shown, "What is revenue?", "0.0040"),
+        (hidden, "Hidden question?", "0.0090"),
+    ):
+        db_session.add(Message(chat_id=chat.id, role="user", text_=text, started_at=NOV))
+        db_session.add(
+            Message(
+                chat_id=chat.id,
+                role="assistant",
+                text_="A.",
+                seconds=5,
+                steps=2,
+                cost_usd=Decimal(cost),
+                started_at=NOV,
+            )
+        )
+    _call(db_session, "write_answer", "chat", "0.0040", NOV)
+    _call(db_session, "write_answer", "chat", "0.0090", NOV)
+    summary = _get(chat_client, "2026-11")
+    # The hidden chat outspends the shown one and still stays out.
+    assert [row["chat_id"] for row in summary["top_questions"]] == [shown.id]
+    assert summary["top_questions"][0]["question"] == "What is revenue?"
+    assert summary["spent_usd"] == 0.013
