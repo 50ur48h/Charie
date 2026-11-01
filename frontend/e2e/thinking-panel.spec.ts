@@ -21,7 +21,7 @@ test("a running answer finishes through Finish now", async ({ page }) => {
   await expect(page.getByText("Thinking…").first()).toBeVisible();
   await expect(page.getByRole("button", { name: /Adding up profit by dish/ })).toBeVisible();
   await page.getByRole("button", { name: "Finish now" }).click();
-  await expect(page.getByText("Stopped.")).toBeVisible();
+  await expect(page.getByText("I stopped before finishing. Ask again to get an answer.")).toBeVisible();
   // The panel leaves its running state: no spinner, no live announcement,
   // and no invented summary statistics.
   await expect(page.getByText("Thinking…")).toBeHidden();
