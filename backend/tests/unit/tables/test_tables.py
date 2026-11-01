@@ -156,7 +156,7 @@ EXPECTED_TABLES = {
         "created_at",
         "finished_at",
     },
-    "chats": {"id", "title", "context", "created_at", "updated_at"},
+    "chats": {"id", "title", "private", "context", "created_at", "updated_at"},
     "messages": {
         "id",
         "chat_id",

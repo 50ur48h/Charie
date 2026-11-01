@@ -248,7 +248,8 @@ def test_fresh_needs_a_yes(capsys) -> None:
     assert "Fresh runs need a yes." in capsys.readouterr().out
 
 
-def test_real_answers_not_ready() -> None:
+def test_real_answers_not_ready(db) -> None:
+    """The wired adapter still refuses when nothing is learned: `db` is empty."""
     question = load_questions(FIXTURES / "mini.yaml", "public")[0]
     with pytest.raises(NotReadyError):
         charie_answer(question, False)

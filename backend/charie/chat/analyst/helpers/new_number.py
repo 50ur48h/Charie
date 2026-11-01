@@ -523,7 +523,12 @@ def _save_new_movers(
 
 
 def _maybe_add_todo(session, task: Task, ctx, description: str, first) -> None:
-    """Offer an agreed number to the learner, once per description."""
+    """Offer an agreed number to the learner, once per description.
+
+    Private runs (the hidden test set) never write learner todos.
+    """
+    if getattr(ctx, "private", False):
+        return
     written_a, written_b, _, _ = first
     known = session.scalar(
         select(LearnerTodo.id).where(

@@ -15,7 +15,7 @@ from charie.shared.ai.spending import as_utc, month_spent, month_window, spendin
 from charie.shared.db import get_session
 from charie.shared.errors import ApiError
 from charie.shared.settings import get_setting
-from charie.shared.tables.chat import Message
+from charie.shared.tables.chat import Chat, Message
 from charie.shared.tables.usage import AiCall
 
 usage_router = APIRouter()
@@ -175,11 +175,14 @@ def build_usage(
         if cost > 0
     ]
 
+    # Private chats never surface here; their spend still counts above.
     assistant_rows = (
         session.scalars(
             select(Message)
+            .join(Chat, Message.chat_id == Chat.id)
             .where(
                 Message.role == "assistant",
+                Chat.private.is_(False),
                 Message.started_at >= start,
                 Message.started_at < end,
                 Message.cost_usd > 0,
