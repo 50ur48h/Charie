@@ -73,10 +73,26 @@ def _new_number_why(period_count: int) -> str:
     return f"Work out a new number two ways for {words}."
 
 
+def _documents_why() -> str:
+    """The panel line for a documents task; the search itself may name numbers."""
+    return "Look through the documents."
+
+
 def starter_tasks(understanding: Understanding, titles: dict[str, str]) -> list[Task]:
-    """One task per ask over every period, at most 4: recipes by key, new numbers in words."""
+    """Documents first, then one task per ask; at most 4 in all."""
     labels = [f"p{num}" for num in range(1, len(understanding.periods) + 1)]
     tasks: list[Task] = []
+    for topic in understanding.document_topics:
+        if len(tasks) >= MAX_TASKS:
+            break
+        tasks.append(
+            Task(
+                kind="documents",
+                why=_documents_why(),
+                search=topic,
+                filters=list(understanding.filters),
+            )
+        )
     for ask in understanding.asks:
         if len(tasks) >= MAX_TASKS:
             break

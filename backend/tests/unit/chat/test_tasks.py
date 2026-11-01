@@ -43,6 +43,16 @@ def test_starter_tasks_makes_new_number_tasks() -> None:
     assert not any(char.isdigit() for char in tasks[0].why)
 
 
+def test_starter_tasks_makes_document_tasks_first() -> None:
+    """Document topics come first and share the 4-task cap."""
+    understanding = _understanding(asks=0, periods=1)
+    understanding.document_topics = ["net sales", "checkout code", "prices", "profit", "extra"]
+    understanding.asks = [Ask(metric_key="metric_0")]
+    tasks = starter_tasks(understanding, _titles())
+    assert [task.kind for task in tasks] == ["documents"] * 4
+    assert tasks[0].search == "net sales"
+
+
 def test_starter_tasks_mixes_recipes_and_new_numbers() -> None:
     """Recipe and new-number asks share the 4-task cap in order."""
     understanding = _understanding(asks=0, periods=2)
