@@ -4,6 +4,8 @@ A private run saves nothing shared: no learner to-dos, no memories, and no
 visible chat. A crashed private run leaves no chat row behind, either.
 """
 
+from decimal import Decimal
+
 from sqlalchemy import select
 
 from charie.chat import chat_store
@@ -12,7 +14,7 @@ from charie.chat.analyst import review as review_module
 from charie.chat.analyst import understand as understand_module
 from charie.chat.analyst import write as write_module
 from charie.shared.ai.client import AiClient
-from charie.shared.ai.cost_log import MemoryCostLog
+from charie.shared.ai.cost_log import DbCostLog, MemoryCostLog
 from charie.shared.ai.fake import FakeAi
 from charie.shared.connectors.postgres import PostgresConnector
 from charie.shared.errors import ApiError
@@ -36,14 +38,14 @@ DEC_B = (
 )
 
 
-def _patch(monkeypatch, module, job, replies):
+def _patch(monkeypatch, module, job, replies, log=None):
     fake = FakeAi()
     for reply in replies:
         fake.reply(job, reply)
     monkeypatch.setattr(
         module,
         "get_ai",
-        lambda: AiClient(provider=fake, cost_log=MemoryCostLog(), sleep=lambda s: None),
+        lambda: AiClient(provider=fake, cost_log=log or MemoryCostLog(), sleep=lambda s: None),
     )
     return fake
 
@@ -170,3 +172,46 @@ def test_cleanup_on_error(db_session, shop_db, test_db_url, monkeypatch) -> None
     except ApiError:
         missing = True
     assert missing
+
+
+def test_failure_keeps_costs(db_session, shop_db, test_db_url, monkeypatch) -> None:
+    """A crashed private run reports its real spend before the chat is dropped."""
+    monkeypatch.setenv("AI_REPLAY", "replay")
+    set_setting(db_session, "time_zone", "America/Chicago")
+    db_session.commit()
+    shop._seeded_version(db_session)
+    monkeypatch.setattr(
+        data_module,
+        "customer_connector",
+        lambda session: PostgresConnector.from_url(test_db_url),
+    )
+    log = DbCostLog()
+    _patch(
+        monkeypatch,
+        understand_module,
+        "understand_question",
+        [
+            _understanding_reply(
+                kind="new_kind",
+                reading="I read this as new orders for [p1].",
+                periods=[{"kind": "month", "number": 12}],
+                asks=[{"new_metric": "How many shop orders are there?"}],
+            )
+        ],
+        log,
+    )
+    broken = FakeAi()
+    broken.fail("write_sql", RuntimeError("The driver died mid-query."))
+    monkeypatch.setattr(
+        sql_writer,
+        "get_ai",
+        lambda: AiClient(provider=broken, cost_log=log, sleep=lambda s: None),
+    )
+
+    answer = charie_answer(_question(), private=True)
+
+    assert answer.status == "error"
+    # The understand call ran before the crash: real spend, failed turn.
+    assert answer.cost_usd > Decimal("0")
+    assert answer.earlier_turns_cost_usd == Decimal("0")
+    assert db_session.scalars(select(Chat)).all() == []

@@ -4,7 +4,7 @@ import asyncio
 from datetime import UTC, datetime
 from decimal import Decimal
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 
 from charie.chat.analyst.runner import run_now
 from charie.chat.chat_store import (
@@ -220,9 +220,19 @@ def charie_answer(question: Question, private: bool) -> TestAnswer:
     except NotReadyError:
         raise
     except Exception as error:
+        final_cost, earlier_cost = Decimal("0"), Decimal("0")
         with session_scope() as session:
             if chat_id is not None:
                 _attribute_costs(session, chat_id)
+                # The crashed turn is the newest assistant message: no
+                # later turn ran, so its spend is the final turn's.
+                failed_id = session.scalar(
+                    select(func.max(Message.id)).where(
+                        Message.chat_id == chat_id, Message.role == "assistant"
+                    )
+                )
+                if failed_id is not None:
+                    final_cost, earlier_cost = _turn_costs(session, chat_id, failed_id)
         if private and chat_id is not None:
             _drop_chat(chat_id)
         return TestAnswer(
@@ -231,8 +241,8 @@ def charie_answer(question: Question, private: bool) -> TestAnswer:
             error=str(error),
             numbers=[],
             asked_choice=False,
-            cost_usd=Decimal("0"),
-            earlier_turns_cost_usd=Decimal("0"),
+            cost_usd=final_cost,
+            earlier_turns_cost_usd=earlier_cost,
             seconds=(datetime.now(UTC) - started).total_seconds(),
             chat_url="",
         )
