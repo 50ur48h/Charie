@@ -19,7 +19,13 @@ from charie.chat.analyst.chat_context import (
     save_context,
     update_context,
 )
-from charie.chat.analyst.checks import check_body, check_inputs, run_checks
+from charie.chat.analyst.checks import (
+    check_body,
+    check_inputs,
+    correction_note_text,
+    find_changed_numbers,
+    run_checks,
+)
 from charie.chat.analyst.context import AnalystContext
 from charie.chat.analyst.loop import run_extra_round, run_rounds
 from charie.chat.analyst.notebook import Notebook, QuoteValue
@@ -181,6 +187,35 @@ def _stopped_fallback(ctx: AnalystContext) -> tuple:
     return *fallback_blocks(ctx, []), True, True
 
 
+def _add_correction_notes(ctx, blocks, shown, inputs):
+    """Code-written corrections for changed numbers with a known reason."""
+    used = [
+        item for item in inputs.items or [] if item.label in (shown or []) and item.kind == "number"
+    ]
+    changed = find_changed_numbers(
+        used, inputs.earlier_numbers, inputs.data_through, inputs.kb_version_id
+    )
+    if not changed:
+        return blocks, inputs
+    notes = []
+    for item in changed:
+        if item.reason == "unknown":
+            continue
+        notes.append(
+            {
+                "type": "callout",
+                "tone": "note",
+                "text": correction_note_text(
+                    item, inputs.values.get(item.label, item.new_raw), inputs.data_through
+                ),
+            }
+        )
+    if notes:
+        blocks = list(blocks) + notes
+    inputs.corrected = [item.label for item in changed if item.reason != "unknown"]
+    return blocks, inputs
+
+
 async def write_checked_answer(ctx: AnalystContext, tasks: list) -> tuple | None:
     """Write, review, check, and fix twice; None when the writer fails.
 
@@ -211,6 +246,7 @@ async def write_checked_answer(ctx: AnalystContext, tasks: list) -> tuple | None
             return _stopped_fallback(ctx)
         _review_line(ctx, review)
         inputs = check_inputs(ctx)
+        blocks, inputs = _add_correction_notes(ctx, blocks, shown, inputs)
         failures = run_checks(draft, blocks, inputs)
         _check_line(ctx, failures, review, inputs)
         if ctx.state.finish_requested.is_set():
