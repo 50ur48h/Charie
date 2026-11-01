@@ -235,6 +235,40 @@ def test_two_meanings_need_2_known_metrics() -> None:
     assert any("nope" in problem for problem in problems)
 
 
+def test_about_refs_belong_to_about_answers() -> None:
+    """Said refs name one earlier message and label, like 812:n1."""
+    reply = _good_reply()
+    reply.kind = "about_answer"
+    reply.about = ["812:n1"]
+    assert check_understanding(reply, _kb()) == []
+    reply.about = ["n1"]
+    problems = check_understanding(reply, _kb())
+    assert any("812:n1" in problem for problem in problems)
+    reply = _good_reply()
+    reply.about = ["812:n1"]
+    problems = check_understanding(reply, _kb())
+    assert any("only for about_answer" in problem for problem in problems)
+
+
+def test_missing_names_the_thing_without_digits() -> None:
+    """not_in_data names the missing thing in a few words, no digits."""
+    reply = _good_reply()
+    reply.kind = "not_in_data"
+    reply.missing = "market share"
+    reply.document_topics = ["market share"]
+    assert check_understanding(reply, _kb()) == []
+    reply.missing = ""
+    problems = check_understanding(reply, _kb())
+    assert any("needs the missing thing" in problem for problem in problems)
+    reply.missing = "market share 2025"
+    problems = check_understanding(reply, _kb())
+    assert any("must not type numbers" in problem for problem in problems)
+    reply = _good_reply()
+    reply.missing = "market share"
+    problems = check_understanding(reply, _kb())
+    assert any("only for not_in_data" in problem for problem in problems)
+
+
 def test_a_ref_placeholder_needs_its_list_ref() -> None:
     reply = _good_reply()
     reply.reading = "I read this as {ref1} for [p1]."

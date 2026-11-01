@@ -22,6 +22,7 @@ async def run_now(message_id: int, state: RunState | None = None, private: bool 
         return
     ctx.state = state or RunState()
     ctx.remember = ctx.state.remember
+    ctx.name_chat = ctx.state.name_chat
     RUNNING[message_id] = ctx.state
     try:
         await answer_question(ctx)
@@ -82,11 +83,11 @@ def _extract_after_done(message_id: int, state: RunState) -> None:
             session.rollback()
 
 
-def start(message_id: int, remember: bool = True) -> asyncio.Task:
+def start(message_id: int, remember: bool = True, name_chat: bool = True) -> asyncio.Task:
     """Run the question in the background; errors are logged, not raised."""
     from charie.chat.analyst.stream import FEEDS, MessageFeed
 
-    state = RunState(remember=remember)
+    state = RunState(remember=remember, name_chat=name_chat)
     RUNNING[message_id] = state
     FEEDS[message_id] = MessageFeed()
 

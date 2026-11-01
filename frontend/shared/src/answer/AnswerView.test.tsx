@@ -13,6 +13,36 @@ function answerWith(blocks: AnswerBlock[]): Answer {
 }
 
 describe("AnswerView", () => {
+  test("text_plus_method starts open; anything else starts closed", () => {
+    const method: AnswerBlock = {
+      type: "method",
+      definitions: ["Sales mean delivered orders."],
+      steps: ["Added up December."],
+      queries: [],
+      sources: [],
+    };
+    const text: AnswerBlock = {
+      type: "text",
+      paragraphs: [{ sentences: [{ kind: "note", text: "Here is how." }] }],
+    };
+    const { unmount } = render(
+      <AnswerView answer={answerWith([text, method])} onFollowUp={() => undefined} />,
+    );
+    expect(
+      screen.getByRole("button", { name: /What this means/ }).getAttribute("aria-expanded"),
+    ).toBe("true");
+    unmount();
+    render(
+      <AnswerView
+        answer={answerWith([text, method, { type: "follow_ups", items: ["Why?"] }])}
+        onFollowUp={() => undefined}
+      />,
+    );
+    expect(
+      screen.getByRole("button", { name: /What this means/ }).getAttribute("aria-expanded"),
+    ).toBe("false");
+  });
+
   test("ordered_repeated_blocks keep their order and all render", () => {
     render(
       <AnswerView

@@ -12,6 +12,7 @@ from datetime import UTC, datetime
 from sqlalchemy import func, select
 
 from charie.chat import chat_store
+from charie.chat.analyst.about import answer_about, answer_not_in_data
 from charie.chat.analyst.chat_context import (
     FinishedAnswer,
     PendingChoice,
@@ -36,7 +37,7 @@ from charie.chat.analyst.write import write_answer
 from charie.shared.ai.errors import AiError
 from charie.shared.ai.spending import as_utc
 from charie.shared.db import session_scope
-from charie.shared.tables.chat import Message, QueryRun, ThinkingEvent
+from charie.shared.tables.chat import Chat, Message, QueryRun, ThinkingEvent
 from charie.shared.tables.knowledge import KbVersion
 from charie.shared.tables.usage import AiCall
 
@@ -101,6 +102,12 @@ async def answer_question(ctx: AnalystContext) -> None:
     if ctx.state.finish_requested.is_set():
         _deliver_stopped(ctx)
         return
+    if ctx.stop_reason == "about_answer":
+        answer_about(ctx)
+        return
+    if ctx.stop_reason == "not_in_data":
+        await answer_not_in_data(ctx, tasks)
+        return
     await _save_answer(ctx, tasks)
 
 
@@ -143,7 +150,7 @@ def _deliver_stopped(ctx: AnalystContext) -> None:
     _save_blocks(ctx, blocks, shown, status="stopped")
 
 
-async def _save_answer(ctx: AnalystContext, tasks: list) -> None:
+async def _save_answer(ctx: AnalystContext, tasks: list, instruction: str | None = None) -> None:
     """Write, render and save; the notebook view is the fallback."""
     with session_scope() as session:
         message = session.get(Message, ctx.message_id)
@@ -152,7 +159,7 @@ async def _save_answer(ctx: AnalystContext, tasks: list) -> None:
             session.commit()
     seq = ctx.log.start("step", "Writing the answer")
     try:
-        result = await write_checked_answer(ctx, tasks)
+        result = await write_checked_answer(ctx, tasks, instruction)
     except AiError:
         result = None
     if result is None:
@@ -216,7 +223,9 @@ def _add_correction_notes(ctx, blocks, shown, inputs):
     return blocks, inputs
 
 
-async def write_checked_answer(ctx: AnalystContext, tasks: list) -> tuple | None:
+async def write_checked_answer(
+    ctx: AnalystContext, tasks: list, instruction: str | None = None
+) -> tuple | None:
     """Write, review, check, and fix twice; None when the writer fails.
 
     The two AI calls run in threads, so Finish stays responsive while
@@ -228,7 +237,7 @@ async def write_checked_answer(ctx: AnalystContext, tasks: list) -> tuple | None
     """
     ran = list(tasks)
     rounds = _round_count(ctx)
-    fixes: list[str] = []
+    fixes: list[str] = [instruction] if instruction else []
     fixes_left = 2
     while True:
         if ctx.state.finish_requested.is_set():
@@ -264,9 +273,10 @@ async def write_checked_answer(ctx: AnalystContext, tasks: list) -> tuple | None
             current = await run_extra_round(ctx, ran, rounds + 1, review.missing_data or "")
             ran.extend(current)
             rounds += 1
-            fixes = []
+            fixes = [instruction] if instruction else []
         else:
-            fixes = [f"{fix.problem}: {fix.how_to_fix}" for fix in review.fixes]
+            fixes = [instruction] if instruction else []
+            fixes.extend(f"{fix.problem}: {fix.how_to_fix}" for fix in review.fixes)
             fixes.extend(failure.message for failure in failures)
         ctx.log.finish(fix_seq, status="done")
 
@@ -390,16 +400,23 @@ def _save_blocks(
     blocks: list[dict],
     shown: list[str],
     status: str = "done",
+    keep_context: bool = True,
+    kb_version: int | None = None,
+    data_through=None,
 ) -> None:
     """Save the answer, its real totals and terminal status, then stream.
 
     The save lands before any stream event: reload and streamed
     completion always show the same answer and totals.
     """
+    if data_through is None:
+        data_through = ctx.data_through
+    if hasattr(data_through, "isoformat"):
+        data_through = data_through.isoformat()
     answer = {
         "message_id": ctx.message_id,
-        "kb_version": _kb_number(ctx),
-        "data_through": ctx.data_through.isoformat() if ctx.data_through is not None else None,
+        "kb_version": kb_version if kb_version is not None else _kb_number(ctx),
+        "data_through": data_through,
         "blocks": blocks,
     }
     with session_scope() as session:
@@ -440,10 +457,20 @@ def _save_blocks(
         if shown:
             Notebook.load(session, ctx.message_id, ctx.chat_id).mark_shown(shown)
         if status == "done":
-            try:
-                _save_chat_context(session, ctx, message.id, blocks, shown)
-            except Exception as err:
-                ctx.log.add("note", "The chat memory did not save.", str(err))
+            if keep_context:
+                try:
+                    _save_chat_context(session, ctx, message.id, blocks, shown)
+                except Exception as err:
+                    ctx.log.add("note", "The chat memory did not save.", str(err))
+            if getattr(ctx, "name_chat", False):
+                try:
+                    from charie.chat.titles import name_chat_if_new
+
+                    chat = session.get(Chat, ctx.chat_id)
+                    if chat is not None:
+                        name_chat_if_new(session, chat, message)
+                except Exception as err:
+                    ctx.log.add("note", "The chat title did not save.", str(err))
     stream_answer(ctx.message_id, blocks, summary)
     finish_feed(ctx.message_id, status=status, cost_usd=saved_cost)
 

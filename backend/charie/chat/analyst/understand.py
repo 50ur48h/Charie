@@ -5,6 +5,7 @@ question, plus an "I read this as…" sentence. Code checks the reply,
 works out the dates and writes the first real line.
 """
 
+import re
 from datetime import UTC, datetime
 from typing import Literal
 from zoneinfo import ZoneInfo
@@ -115,6 +116,12 @@ class Understanding(BaseModel):
     )
     meanings: list[Meaning] = Field(
         default=[], description="Exactly 2 meanings, only for two_meanings."
+    )
+    about: list[str] = Field(
+        default=[], description="Said refs like 812:n1, empty for the whole last answer."
+    )
+    missing: str = Field(
+        default="", description="The thing not in the data, in a few words, no digits."
     )
     inherit: list[Literal["asks", "filters", "periods"]] = Field(
         default=[], description="Parts the question takes from the chat's focus."
@@ -229,6 +236,35 @@ def _check_choice(u: Understanding, problems: list[str], allowed: list[str]) -> 
         problems.append(f"The quick question must not type numbers: {', '.join(stray)}.")
 
 
+ABOUT_RE = re.compile(r"^\d+:[ntpq]\d+$")
+
+
+def _check_about(u: Understanding, problems: list[str]) -> None:
+    """About refs name one earlier message and label, like 812:n1."""
+    if u.kind != "about_answer":
+        if u.about:
+            problems.append("About refs are only for about_answer.")
+        return
+    for ref in u.about:
+        if not ABOUT_RE.match(ref or ""):
+            problems.append("About refs look like 812:n1: the earlier message and label.")
+            break
+
+
+def _check_missing(u: Understanding, problems: list[str], allowed: list[str]) -> None:
+    """The missing thing is a few words with no digits."""
+    if u.kind != "not_in_data":
+        if u.missing:
+            problems.append("The missing thing is only for not_in_data.")
+        return
+    if not u.missing.strip():
+        problems.append("not_in_data needs the missing thing in a few words.")
+        return
+    stray = stray_digits(u.missing or "", allowed)
+    if stray:
+        problems.append(f"The missing thing must not type numbers: {', '.join(stray)}.")
+
+
 def _check_meanings(u: Understanding, kb: KbView, problems: list[str]) -> None:
     """Two meanings are exactly 2 known metrics of this version."""
     if u.kind != "two_meanings":
@@ -309,6 +345,8 @@ def check_understanding(u: Understanding, kb: KbView, choice_answered: bool = Fa
     )
     _check_choice(u, problems, allowed_words)
     _check_meanings(u, kb, problems)
+    _check_about(u, problems)
+    _check_missing(u, problems, allowed_words)
     stray = stray_digits(reading, allowed_words)
     if stray:
         problems.append(f"The reading must not type numbers: {', '.join(stray)}.")
@@ -329,6 +367,8 @@ def _blank_understanding() -> Understanding:
         filters=[],
         defaults_used=[],
         document_topics=[],
+        about=[],
+        missing="",
         inherit=[],
         list_refs=[],
         period_shift=None,

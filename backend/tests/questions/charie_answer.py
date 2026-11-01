@@ -120,7 +120,7 @@ async def _ask_turn(chat_id: int, text: str, private: bool, choice: str | None =
         if err.code == "not_ready":
             raise NotReadyError(err.message) from err
         raise
-    await run_now(message_id, RunState(remember=False), private=private)
+    await run_now(message_id, RunState(remember=False, name_chat=False), private=private)
     return message_id
 
 

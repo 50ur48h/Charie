@@ -207,7 +207,7 @@ def test_public_dry_run_scores_best_total() -> None:
         total_seconds=0.0,
         private=False,
     )
-    assert sum(row.points for row in report.results) == len(questions) == 28
+    assert sum(row.points for row in report.results) == len(questions) == 30
 
 
 def test_hidden_output_shows_only_ids_and_scores(capsys) -> None:

@@ -13,7 +13,7 @@ from charie.chat.analyst.enough import run_check_enough
 from charie.chat.analyst.helpers.data import add_period_items, run_recipe_task
 from charie.chat.analyst.helpers.documents import run_document_task
 from charie.chat.analyst.helpers.new_number import run_new_number_task
-from charie.chat.analyst.helpers.tasks import Task, starter_tasks
+from charie.chat.analyst.helpers.tasks import Task, documents_why, starter_tasks
 from charie.chat.analyst.kb_view import KbView
 from charie.chat.analyst.notebook import FindingValue, Notebook
 from charie.chat.analyst.plan import plan_round
@@ -36,6 +36,12 @@ async def run_rounds(ctx) -> list[Task]:
     if ctx.unresolved_follow_up:
         _remember_stop(ctx, "unresolved", "")
         return []
+    kind = ctx.understanding.kind if ctx.understanding is not None else ""
+    if kind == "about_answer":
+        _remember_stop(ctx, "about_answer", "")
+        return []
+    if kind == "not_in_data":
+        return await _run_single_document(ctx)
     if ctx.state.finish_requested.is_set():
         _remember_stop(ctx, "finished", "")
         return []
@@ -88,6 +94,19 @@ def _is_choice_request(ctx) -> bool:
         and understanding.kind == "vague_no_default"
         and understanding.choice is not None
     )
+
+
+async def _run_single_document(ctx) -> list[Task]:
+    """One documents task for a not-in-data question; no rounds follow."""
+    topics = list(ctx.understanding.document_topics or [])
+    if not topics:
+        topics = [ctx.understanding.missing or ctx.question]
+    current = [Task(kind="documents", why=documents_why(), search=topics[0])]
+    seq = _start_round(ctx, current, 1)
+    await _run_tasks(current, ctx, 1)
+    _finish_round(ctx, seq, current, 1, "")
+    _remember_stop(ctx, "not_in_data", "")
+    return current
 
 
 def _remember_stop(ctx, reason: str, missing: str) -> None:

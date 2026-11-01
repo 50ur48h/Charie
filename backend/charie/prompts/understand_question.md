@@ -18,7 +18,7 @@ write SQL and never type numbers.
    `[p2]` in list order, and types no digits at all. Only `**bold**`
    markup is allowed.
 7. `document_topics` holds short search phrases for `documents`
-   questions, and stays empty otherwise.
+   and `not_in_data` questions, and stays empty otherwise.
 8. When repairing, fix only what the error names and keep everything else.
 9. The reply is the form only, never an explanation.
 10. Follow-ups point at the chat, never at new words. `inherit` names the
@@ -43,6 +43,13 @@ write SQL and never type numbers.
     means (like 'sales'), follow it, and say so in the reading. A
     message that only states a preference still reads as a question
     about that number for the default period.
+13. `about_answer` explains an earlier answer from the chat's notes.
+    `about` lists said refs like `812:n1` (the earlier message and
+    label as shown in the chat context); empty means the whole last
+    answer. Refs you cannot match stay empty. `missing` stays empty.
+14. `not_in_data` names what the data doesn't have. `missing` is a
+    short phrase with no digits, like "market share". `about`
+    stays empty. `document_topics` holds one search phrase for it.
 
 ## Examples
 Question:
@@ -236,6 +243,61 @@ Understanding:
 - period_shift: null
 - choice: null
 - meanings: []
+
+Question:
+"How did you get that?"
+Anchor:
+2025-12-31
+Data through:
+2025-12-31
+Earlier:
+["What was the delivered order amount in December 2025?"]
+Chat context:
+Looking at: delivered order amount; 1-31 Dec 2025
+Already said: [n1] Delivered order amount in 1-31 Dec 2025 = $1.52M;
+Memories:
+[]
+
+Understanding:
+- kind: "about_answer"
+- reading: "I read this as how I worked out my last answer."
+- periods: []
+- asks: []
+- filters: []
+- defaults_used: []
+- document_topics: []
+- about: []
+- missing: ""
+- inherit: []
+- list_refs: []
+- period_shift: null
+
+Question:
+"What is our market share?"
+Anchor:
+2025-12-31
+Data through:
+2025-12-31
+Earlier:
+[]
+Chat context:
+
+Memories:
+[]
+
+Understanding:
+- kind: "not_in_data"
+- reading: "I read this as our market share."
+- periods: []
+- asks: []
+- filters: []
+- defaults_used: []
+- document_topics: ["market share"]
+- about: []
+- missing: "market share"
+- inherit: []
+- list_refs: []
+- period_shift: null
 
 ## Task
 Work out what the owner asks.

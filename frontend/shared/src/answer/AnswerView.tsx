@@ -12,6 +12,14 @@ import { TableBlock } from "./TableBlock";
 import { TextBlock } from "./TextBlock";
 import { TreeBlock } from "./TreeBlock";
 
+// An about answer is one text block plus the method: the method starts
+// open so the working-out shows without an extra click.
+function methodStartsOpen(blocks: AnswerBlock[]): boolean {
+  if (blocks.length !== 2) return false;
+  const kinds = new Set(blocks.map((block) => block.type));
+  return kinds.size === 2 && kinds.has("text") && kinds.has("method");
+}
+
 export function AnswerView({
   answer,
   onFollowUp,
@@ -21,6 +29,7 @@ export function AnswerView({
   onFollowUp: (text: string) => void;
   showReading?: boolean;
 }) {
+  const startOpen = methodStartsOpen(answer.blocks);
   return (
     <div>
       {answer.blocks.map((block, index) => (
@@ -29,6 +38,7 @@ export function AnswerView({
           block={block}
           onFollowUp={onFollowUp}
           showReading={showReading}
+          startOpen={startOpen}
         />
       ))}
     </div>
@@ -39,10 +49,12 @@ function AnswerBlockView({
   block,
   onFollowUp,
   showReading,
+  startOpen,
 }: {
   block: AnswerBlock;
   onFollowUp: (text: string) => void;
   showReading: boolean;
+  startOpen: boolean;
 }) {
   const kind: string = block.type;
   switch (block.type) {
@@ -65,7 +77,7 @@ function AnswerBlockView({
     case "tree":
       return <TreeBlock block={block} />;
     case "method":
-      return <MethodBlock block={block} />;
+      return <MethodBlock block={block} startOpen={startOpen} />;
     default:
       console.error(`Unsupported answer block: ${kind}`);
       return <p className="text-[14px] text-muted">Unsupported block.</p>;

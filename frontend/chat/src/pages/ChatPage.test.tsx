@@ -108,6 +108,7 @@ function renderAt(path: string) {
       <RouterProvider router={router} />
     </QueryClientProvider>,
   );
+  return { client };
 }
 
 describe("ChatPage", () => {
@@ -143,6 +144,15 @@ describe("ChatPage", () => {
     // frozen running state can never spin the stream open again.
     await new Promise((resolve) => setTimeout(resolve, 500));
     expect(messageStreams()).toHaveLength(1);
+  });
+
+  test("a done answer refetches the chat list for a new title", async () => {
+    stubFetch(true);
+    const { client } = renderAt("/chat/3");
+    const refetch = vi.spyOn(client, "refetchQueries");
+    await vi.waitFor(() => {
+      expect(refetch).toHaveBeenCalledWith({ queryKey: ["chats"] });
+    });
   });
 
   test("an unknown chat says it is gone", async () => {

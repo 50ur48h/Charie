@@ -328,6 +328,44 @@
   answer_key_sql: SELECT ROUND(SUM(o.total_amount - o.tax_amount - o.delivery_fee)::numeric, 4) FROM public.orders o WHERE o.created_at >= DATE '2025-09-01' AND o.created_at < DATE '2025-10-01'
   checked_by: Muse Code, 2026-10-30
   why_fair: Three months before December 2025 is September 2025.
+- id: follow_up-005
+  kind: follow_up
+  smoke: false
+  chat:
+    - What was the delivered order amount in December 2025?
+  question: How did you get that?
+  expect:
+    numbers:
+      - name: delivered order amount
+        value: '1516260.9000'
+        tolerance: 1
+    must_say:
+      - Total amount
+      - delivered orders
+    must_not_say: []
+    should_ask: false
+  answer_key_sql: SELECT ROUND(SUM(o.total_amount)::numeric, 4) FROM public.orders o WHERE o.created_at >= DATE '2025-12-01' AND o.created_at < DATE '2026-01-01'
+  checked_by: Muse Code, 2026-11-01
+  why_fair: The about answer shows the same checked month sum; its method names the meaning in the published knowledge.
+- id: follow_up-006
+  kind: follow_up
+  smoke: false
+  chat:
+    - How many delivered orders did we have in November 2025?
+  question: How did you count those orders?
+  expect:
+    numbers:
+      - name: delivered orders
+        value: 23661
+        tolerance: 2
+    must_say:
+      - delivered orders
+      - outlet
+    must_not_say: []
+    should_ask: false
+  answer_key_sql: SELECT COUNT(*) FROM public.orders o WHERE o.created_at >= DATE '2025-11-01' AND o.created_at < DATE '2025-12-01'
+  checked_by: Muse Code, 2026-11-01
+  why_fair: The about answer shows the same checked count; its method names the meaning in the published knowledge.
 - id: why-001
   kind: why
   smoke: true

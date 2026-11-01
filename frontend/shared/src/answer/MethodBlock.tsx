@@ -36,8 +36,9 @@ function CopyButton({ text, label }: { text: string; label: string }) {
   );
 }
 
-function Disclosure({ title, children }: { title: string; children: React.ReactNode }) {
-  const [open, setOpen] = useState(false);
+function Disclosure({ title, children, startOpen = false }:
+  { title: string; children: React.ReactNode; startOpen?: boolean }) {
+  const [open, setOpen] = useState(startOpen);
   return (
     <div className="border-b border-border-soft py-2 last:border-b-0">
       <button
@@ -114,26 +115,27 @@ function PrintEvidence({ block }: { block: MethodBlockType }) {
   );
 }
 
-export function MethodBlock({ block }: { block: MethodBlockType }) {
+export function MethodBlock({ block, startOpen = false }:
+  { block: MethodBlockType; startOpen?: boolean }) {
   return (
     <div className="method-block mb-4 rounded-card border border-border bg-surface px-[18px] py-3 shadow-card">
       <h3 className="m-0 font-serif text-[16px] font-semibold">How I worked this out</h3>
       <div className="method-screen print:hidden">
-      <Disclosure title={`What this means (${block.definitions.length})`}>
+      <Disclosure title={`What this means (${block.definitions.length})`} startOpen={startOpen}>
         <ul className="m-0 list-disc space-y-1 pl-5 text-[14px] leading-relaxed text-text-2">
           {block.definitions.map((definition) => (
             <li key={definition}>{definition}</li>
           ))}
         </ul>
       </Disclosure>
-      <Disclosure title={`Steps (${block.steps.length})`}>
+      <Disclosure title={`Steps (${block.steps.length})`} startOpen={startOpen}>
         <ol className="m-0 list-decimal space-y-1 pl-5 text-[14px] leading-relaxed text-text-2">
           {block.steps.map((step) => (
             <li key={step}>{step}</li>
           ))}
         </ol>
       </Disclosure>
-      <Disclosure title={`Data used (${block.queries.length})`}>
+      <Disclosure title={`Data used (${block.queries.length})`} startOpen={startOpen}>
         <div className="space-y-3">
           {block.queries.map((query) => (
             <div key={query.purpose}>
@@ -148,7 +150,7 @@ export function MethodBlock({ block }: { block: MethodBlockType }) {
           ))}
         </div>
       </Disclosure>
-      <Disclosure title={`Sources (${block.sources.length})`}>
+      <Disclosure title={`Sources (${block.sources.length})`} startOpen={startOpen}>
         <div className="space-y-3">
           {block.sources.map((source) => (
             <div key={`${source.document}${source.location}`}>

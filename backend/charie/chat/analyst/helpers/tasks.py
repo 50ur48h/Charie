@@ -73,8 +73,8 @@ def _new_number_why(period_count: int) -> str:
     return f"Work out a new number two ways for {words}."
 
 
-def _documents_why() -> str:
-    """The panel line for a documents task; the search itself may name numbers."""
+def documents_why() -> str:
+    """The panel line for one documents task; the search itself may name numbers."""
     return "Look through the documents."
 
 
@@ -88,7 +88,7 @@ def starter_tasks(understanding: Understanding, titles: dict[str, str]) -> list[
         tasks.append(
             Task(
                 kind="documents",
-                why=_documents_why(),
+                why=documents_why(),
                 search=topic,
                 filters=list(understanding.filters),
             )
