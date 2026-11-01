@@ -36,9 +36,25 @@ from charie.shared.tables.usage import AiCall
 TEMP_NOTE = "Placeholder answer. Here's what I found:"
 
 
+#: The not-sure reply when a follow-up points at nothing shown.
+NOT_SURE_TEXT = (
+    "I'm not sure what you're pointing to in this chat. Please name it, and I'll answer right away."
+)
+
+
+def _deliver_not_sure(ctx: AnalystContext) -> None:
+    """One note callout as the whole answer; no rounds ran."""
+    ctx.log.add("note", "Asked what to point at instead.")
+    blocks = [{"type": "callout", "tone": "note", "text": NOT_SURE_TEXT}]
+    _save_blocks(ctx, blocks, [])
+
+
 async def answer_question(ctx: AnalystContext) -> None:
     """Understand once, run the rounds, then write the answer."""
     tasks = await run_rounds(ctx)
+    if ctx.unresolved_follow_up:
+        _deliver_not_sure(ctx)
+        return
     if ctx.state.finish_requested.is_set():
         _deliver_stopped(ctx)
         return

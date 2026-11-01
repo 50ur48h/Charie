@@ -21,6 +21,15 @@ from charie.chat.analyst.dates import (
 )
 from charie.chat.analyst.kb_view import KbView, load_date_context
 from charie.chat.analyst.labels import fill_labels, labels_in, mixed_tokens, stray_digits
+from charie.chat.analyst.references import (
+    REF_RE,
+    ListRef,
+    PeriodShift,
+    Resolved,
+    Unresolved,
+    ref_numbers,
+    resolve_references,
+)
 from charie.shared.ai.client import get_ai
 from charie.shared.ai.errors import AiError, AiFormError
 from charie.shared.db import session_scope
@@ -79,6 +88,13 @@ class Understanding(BaseModel):
     document_topics: list[str] = Field(
         default=[], description="Short search phrases for document questions."
     )
+    inherit: list[Literal["asks", "filters", "periods"]] = Field(
+        default=[], description="Parts the question takes from the chat's focus."
+    )
+    list_refs: list[ListRef] = Field(default=[], description="Pointers at shown lists, at most 3.")
+    period_shift: PeriodShift | None = Field(
+        default=None, description="Move the chat's last periods, or null."
+    )
 
 
 def knowledge_summary(kb: KbView) -> str:
@@ -117,6 +133,9 @@ def understand_input(ctx, kb: KbView) -> dict:
         ).all()
         earlier = [row.text_ for row in rows if row.text_ != ctx.question][:5]
         earlier.reverse()
+        from charie.chat.analyst.chat_context import context_for_prompt, load_context
+
+        chat_context = context_for_prompt(load_context(session, ctx.chat_id))
     today = datetime.now(ZoneInfo(zone_name)).date()
     through = kb.data_through
     anchor = min(today, through) if through is not None else today
@@ -125,6 +144,7 @@ def understand_input(ctx, kb: KbView) -> dict:
         "anchor": anchor.isoformat(),
         "data_through": through.isoformat() if through is not None else "no data yet",
         "earlier": earlier,
+        "chat_context": chat_context,
         "memories": [],
         "repair": "",
     }
@@ -200,6 +220,15 @@ def check_understanding(u: Understanding, kb: KbView) -> list[str]:
         word = used.removeprefix("default.")
         if word not in known_words:
             problems.append(f"Unknown default {used!r}. Use one of the defaults in the summary.")
+    if len(u.list_refs) > 3:
+        problems.append("list_refs holds at most 3 pointers at shown lists.")
+    if u.period_shift is not None and u.period_shift.n == 0:
+        problems.append("The period shift must move by at least 1 unit.")
+    for num in ref_numbers(u.reading):
+        if num > len(u.list_refs):
+            problems.append(f"The reading names {{ref{num}}} but list_refs has no entry {num}.")
+            break
+    reading = REF_RE.sub(" ", u.reading)
     allowed_labels = {f"p{num}" for num in range(1, len(u.periods) + 1)}
     for label in labels_in(u.reading):
         if label not in allowed_labels:
@@ -208,7 +237,7 @@ def check_understanding(u: Understanding, kb: KbView) -> list[str]:
     allowed_words = mixed_tokens(
         list(kb.titles().values()) + kb.name_spellings() + list(known_words)
     )
-    stray = stray_digits(u.reading, allowed_words)
+    stray = stray_digits(reading, allowed_words)
     if stray:
         problems.append(f"The reading must not type numbers: {', '.join(stray)}.")
     try:
@@ -228,6 +257,9 @@ def _blank_understanding() -> Understanding:
         filters=[],
         defaults_used=[],
         document_topics=[],
+        inherit=[],
+        list_refs=[],
+        period_shift=None,
     )
 
 
@@ -280,12 +312,13 @@ def apply_fallbacks(
     u.defaults_used = [
         used for used in u.defaults_used if used.removeprefix("default.") in kb.defaults()
     ]
+    bare = REF_RE.sub(" ", u.reading)
     allowed_labels = {f"p{num}" for num in range(1, len(u.periods) + 1)}
     reading_ok = all(label in allowed_labels for label in labels_in(u.reading))
     allowed_words = mixed_tokens(
         list(kb.titles().values()) + kb.name_spellings() + list(kb.defaults())
     )
-    if not reading_ok or stray_digits(u.reading, allowed_words):
+    if not reading_ok or stray_digits(bare, allowed_words):
         names = _metric_titles(u, kb) or ["what you asked"]
         u.reading = f"I read this as {', '.join(names)} for [p1]."
         if len(u.periods) > 1:
@@ -340,6 +373,17 @@ def _line_details(u: Understanding, periods: PeriodSet) -> dict:
     }
 
 
+def _resolve_follow_up(ctx, u):
+    """Work out chat pointers by code; None when the question has none."""
+    if not u.inherit and not u.list_refs and u.period_shift is None:
+        return None
+    from charie.chat.analyst.chat_context import load_context
+
+    with session_scope() as session:
+        context = load_context(session, ctx.chat_id)
+    return resolve_references(u, context)
+
+
 def understand(ctx) -> None:
     """Run the first AI step and write its line; fallbacks cover failures."""
     with session_scope() as session:
@@ -381,6 +425,22 @@ def understand(ctx) -> None:
         u = _blank_understanding()
         problems = [str(err)]
     notes = apply_fallbacks(u, kb, date_ctx, problems)
+    resolution = _resolve_follow_up(ctx, u)
+    if isinstance(resolution, Unresolved):
+        ctx.unresolved_follow_up = resolution.words
+        ctx.log.add(
+            "decision",
+            "Couldn't match the follow-up",
+            f'I couldn\'t match "{resolution.words}" to anything shown earlier in this chat.',
+        )
+        ctx.understanding = u
+        ctx.periods = PeriodSet()
+        ctx.problems = list(problems)
+        return
+    if isinstance(resolution, Resolved):
+        u = resolution.understanding
+        if resolution.lines:
+            ctx.log.add("decision", "Understood the follow-up", "\n".join(resolution.lines))
     periods = resolve_periods(u.periods, date_ctx)
     ctx.understanding = u
     ctx.periods = periods

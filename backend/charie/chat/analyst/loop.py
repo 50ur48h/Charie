@@ -27,6 +27,9 @@ MAX_ROUNDS = 4
 async def run_rounds(ctx) -> list[Task]:
     """Understand once, run up to 4 rounds; returns every task run, in order."""
     understand(ctx)
+    if ctx.unresolved_follow_up:
+        _remember_stop(ctx, "unresolved", "")
+        return []
     if ctx.state.finish_requested.is_set():
         _remember_stop(ctx, "finished", "")
         return []

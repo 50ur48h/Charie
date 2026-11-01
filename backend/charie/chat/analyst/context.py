@@ -32,6 +32,7 @@ class AnalystContext:
     understanding: Any = None
     periods: Any = None
     problems: list = field(default_factory=list)
+    unresolved_follow_up: str | None = None
     notebook: Any = None
     draft: Any = None
     stop_reason: str = ""

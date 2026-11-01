@@ -21,6 +21,16 @@ write SQL and never type numbers.
    questions, and stays empty otherwise.
 8. When repairing, fix only what the error names and keep everything else.
 9. The reply is the form only, never an explanation.
+10. Follow-ups point at the chat, never at new words. `inherit` names the
+    parts the question takes from the chat's focus: `asks`, `filters`,
+    `periods`. `list_refs` holds up to 3 pointers at shown lists: `words`
+    are your exact words, `position` is 1 for the first, 2 for the second,
+    -1 for the last, `dimension` is a dimension key or null. The reading
+    names a listed item only as `{ref1}`, `{ref2}` or `{ref3}`. Code puts
+    in the item's name in bold. `period_shift` moves the chat's last
+    periods: `unit` is `day`, `week`, `month`, `quarter` or `year`, `n`
+    is below 0 for "before". It stays null otherwise. "3 weeks ago"
+    counts from today, so it stays a normal period expression.
 
 ## Examples
 Question:
@@ -83,6 +93,57 @@ Understanding:
 - defaults_used: ["default.sales", "default.period"]
 - document_topics: []
 
+Question:
+"How did the second one do in 2024?"
+Anchor:
+2025-12-31
+Data through:
+2025-12-31
+Earlier:
+["Which 5 restaurants had the highest net sales in 2025?"]
+Chat context:
+Looking at: net_sales; by restaurant; 1 Jan 2025 – 31 Dec 2025
+List 1 (newest), "Net sales by restaurant" (restaurant): 1. Downtown Austin 2. Rice, Miller and Gutmann
+Memories:
+[]
+
+Understanding:
+- kind: "follow_up"
+- reading: "I read this as **net sales** for {ref1} for **[p1]**."
+- periods: [{"kind": "year", "year": 2024}]
+- asks: [{"metric_key": "net_sales", "new_metric": "", "split_by": [], "top_n": null}]
+- filters: []
+- defaults_used: []
+- document_topics: []
+- inherit: ["filters"]
+- list_refs: [{"words": "the second one", "position": 2, "dimension": "restaurant"}]
+- period_shift: null
+
+Question:
+"Same for last year?"
+Anchor:
+2025-12-31
+Data through:
+2025-12-31
+Earlier:
+["What were net sales in Q4 2025?"]
+Chat context:
+Looking at: net_sales; 1 Oct – 31 Dec 2025
+Memories:
+[]
+
+Understanding:
+- kind: "follow_up"
+- reading: "I read this as **net sales** for [p1]."
+- periods: []
+- asks: []
+- filters: []
+- defaults_used: []
+- document_topics: []
+- inherit: ["asks"]
+- list_refs: []
+- period_shift: {"words": "last year", "unit": "year", "n": -1}
+
 ## Task
 Work out what the owner asks.
 Question:
@@ -93,6 +154,8 @@ Data through:
 {{data_through}}
 Earlier:
 {{earlier}}
+Chat context:
+{{chat_context}}
 Memories:
 {{memories}}
 Repair:

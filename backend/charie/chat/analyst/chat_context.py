@@ -84,6 +84,60 @@ class FinishedAnswer(BaseModel):
     style: str = "short"
 
 
+def _focus_line(focus: Focus | None) -> str:
+    """What the last question asked, in the AI's own key words."""
+    if focus is None:
+        return ""
+    parts: list[str] = []
+    asks = [
+        str(ask.get("metric_key") or ask.get("new_metric") or "").replace("_", " ")
+        for ask in focus.asks
+    ]
+    asks = [ask for ask in asks if ask]
+    if asks:
+        parts.append("; ".join(asks))
+    splits = sorted({split for ask in focus.asks for split in ask.get("split_by", [])})
+    if splits:
+        parts.append("by " + ", ".join(str(split).replace("_", " ") for split in splits))
+    for filt in focus.filters:
+        values = ", ".join(str(value) for value in filt.get("values", []))
+        if values:
+            parts.append(values)
+    texts = [str(period.get("text", "")) for period in focus.periods]
+    parts.extend(text for text in texts if text)
+    if not parts:
+        return ""
+    return "Looking at: " + "; ".join(parts)
+
+
+def context_for_prompt(context: ChatContext) -> str:
+    """The chat memory as plain text for the understand prompt (P11.2).
+
+    Newest lists first; an empty context gives an empty view.
+    """
+    lines: list[str] = []
+    focus_line = _focus_line(context.focus)
+    if focus_line:
+        lines.append(focus_line)
+    for pos, shown in enumerate(reversed(context.lists[-3:]), start=1):
+        newest = " (newest)" if pos == 1 else ""
+        head = f'List {pos}{newest}, "{shown.title}"'
+        if shown.dimension:
+            head += f" ({shown.dimension})"
+        items = [f"{num}. {item}" for num, item in enumerate(shown.items[:20], start=1)]
+        lines.append(head + (": " + " ".join(items) if items else ""))
+    said = context.said[-20:]
+    if said:
+        shown_said = " ".join(f"[{fact.ref}] {fact.description} = {fact.text};" for fact in said)
+        lines.append("Already said: " + shown_said)
+    if context.open_reasons:
+        lines.append(
+            "Possible reasons still open: "
+            + "; ".join(reason.text for reason in context.open_reasons)
+        )
+    return "\n".join(lines)
+
+
 def fact_key_text(item: dict) -> str:
     """The item's evidence key, stable for comparing across chats."""
     key = (item.get("proof") or {}).get("fact_key", {})

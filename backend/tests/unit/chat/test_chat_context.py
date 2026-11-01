@@ -6,6 +6,11 @@ from pathlib import Path
 from charie.chat.analyst.chat_context import (
     ChatContext,
     FinishedAnswer,
+    Focus,
+    OpenReason,
+    SaidFact,
+    ShownList,
+    context_for_prompt,
     fact_key_text,
     load_context,
     save_context,
@@ -209,3 +214,61 @@ def test_save_and_reload_agree(db_session) -> None:
     db_session.commit()
     assert load_context(db_session, chat.id) == update_context(ChatContext(), _december())
     assert load_context(db_session, 10**9) == ChatContext()
+
+
+def test_empty_context_gives_an_empty_view() -> None:
+    """No memory means no prompt text."""
+    assert context_for_prompt(ChatContext()) == ""
+
+
+def test_context_view_numbers_the_newest_list_first() -> None:
+    """The prompt sees the newest list as List 1, with focus, facts, reasons."""
+    context = ChatContext(
+        focus=Focus(
+            message_id=7,
+            question="Net sales?",
+            kind="clear",
+            asks=[{"metric_key": "net_sales", "new_metric": "", "split_by": [], "top_n": None}],
+            filters=[],
+            periods=[
+                {
+                    "label": "p1",
+                    "expression": {},
+                    "start": "2025-12-01",
+                    "end": "2025-12-31",
+                    "text": "1–31 Dec 2025",
+                }
+            ],
+        ),
+        lists=[
+            ShownList(message_id=7, title="Older list", dimension="cuisine", items=["Italian"]),
+            ShownList(
+                message_id=8,
+                title="Sales by restaurant",
+                dimension="restaurant",
+                items=["Downtown Austin", "Rice, Miller and Gutmann"],
+            ),
+        ],
+        said=[
+            SaidFact(
+                ref="n1",
+                key="{}",
+                description="Net sales",
+                text="$1.3M",
+                value="1300000",
+                unit="money",
+                currency="USD",
+                data_through="2025-12-31",
+                kb_version=2,
+            )
+        ],
+        open_reasons=[OpenReason(message_id=8, text="The south branch closed.", labels=[])],
+    )
+    view = context_for_prompt(context)
+    assert "Looking at: net sales; 1–31 Dec 2025" in view
+    first = view.index('List 1 (newest), "Sales by restaurant"')
+    second = view.index('List 2, "Older list"')
+    assert first < second
+    assert "1. Downtown Austin 2. Rice, Miller and Gutmann" in view
+    assert "Already said: [n1] Net sales = $1.3M;" in view
+    assert "Possible reasons still open: The south branch closed." in view

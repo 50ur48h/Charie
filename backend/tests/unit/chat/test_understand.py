@@ -5,6 +5,7 @@ from datetime import date
 from charie.chat.analyst import understand as understand_module
 from charie.chat.analyst.dates import PeriodExpression
 from charie.chat.analyst.kb_view import KbView
+from charie.chat.analyst.references import ListRef, PeriodShift
 from charie.chat.analyst.understand import (
     Ask,
     Filter,
@@ -67,6 +68,7 @@ def test_input_puts_stable_parts_first() -> None:
         "anchor": "2025-12-31",
         "data_through": "2025-12-31",
         "earlier": [],
+        "chat_context": "",
         "memories": [],
         "repair": "",
     }
@@ -87,6 +89,9 @@ def test_understand_input_keys(monkeypatch) -> None:
         def scalars(self, stmt):
             return _Rows()
 
+        def get(self, model, key):
+            return None
+
         def __enter__(self):
             return self
 
@@ -104,6 +109,7 @@ def test_understand_input_keys(monkeypatch) -> None:
     assert inputs["question"] == "Net sales?"
     assert inputs["data_through"] == "2025-12-31"
     assert inputs["earlier"] == []
+    assert inputs["chat_context"] == ""
     assert inputs["memories"] == []
     assert inputs["repair"] == ""
 
@@ -163,4 +169,33 @@ def test_knowledge_summary_lists_everything() -> None:
 def test_mixed_token_in_reading_allowed_when_known() -> None:
     reply = _good_reply()
     reply.reading = "I read this as MEGA0926 sales for [p1]."
+    assert check_understanding(reply, _kb()) == []
+
+
+def test_list_refs_allow_at_most_3() -> None:
+    reply = _good_reply()
+    reply.reading = "I read this as {ref1} for [p1]."
+    reply.list_refs = [
+        ListRef(words="a", position=1, dimension=None),
+        ListRef(words="b", position=2, dimension=None),
+        ListRef(words="c", position=3, dimension=None),
+    ]
+    assert check_understanding(reply, _kb()) == []
+    reply.list_refs.append(ListRef(words="d", position=4, dimension=None))
+    assert check_understanding(reply, _kb()) != []
+
+
+def test_a_period_shift_needs_a_non_zero_n() -> None:
+    reply = _good_reply()
+    reply.period_shift = PeriodShift(words="last year", unit="year", n=-1)
+    assert check_understanding(reply, _kb()) == []
+    reply.period_shift = PeriodShift(words="same time", unit="year", n=0)
+    assert check_understanding(reply, _kb()) != []
+
+
+def test_a_ref_placeholder_needs_its_list_ref() -> None:
+    reply = _good_reply()
+    reply.reading = "I read this as {ref1} for [p1]."
+    assert check_understanding(reply, _kb()) != []
+    reply.list_refs = [ListRef(words="the second one", position=2, dimension=None)]
     assert check_understanding(reply, _kb()) == []
