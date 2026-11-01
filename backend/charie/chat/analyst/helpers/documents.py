@@ -13,7 +13,7 @@ from charie.shared.ai.client import get_ai
 from charie.shared.ai.errors import AiError
 from charie.shared.db import session_scope
 from charie.shared.search.search import search_sections
-from charie.shared.tables.sources import Document, DocumentSection
+from charie.shared.tables.sources import Document
 from charie.shared.text.quotes import quote_appears
 
 #: At most this many sections go to the AI, and this many quotes are kept.
@@ -81,28 +81,27 @@ def sections_text(hits: list) -> str:
     return SECTION_RULE + "\n" + "\n".join(_wrapped(hit) for hit in hits)
 
 
-def _section_lookup(session, by_id: dict, section_id: int):
-    """The shown hit, else the stored section when it exists."""
+def _drop(ctx, book, task, search: str, text: str) -> None:
+    """A rejected quote: the finding and the check line."""
+    book.add_finding(
+        search, FindingValue(type="dropped_quote", text=text, task=task_signature(task))
+    )
+    ctx.log.add("check", text)
+
+
+def _eligible(session, by_id: dict, section_id: int) -> tuple:
+    """The shown hit, when its document is still available.
+
+    Only the supplied search hits count: an id from anywhere else,
+    or from a removed or failed document, is rejected with the reason.
+    """
     hit = by_id.get(section_id)
-    if hit is not None:
-        return hit
-    row = session.get(DocumentSection, section_id)
-    if row is None:
-        return None
-    document = session.get(Document, row.document_id)
-    return type(
-        "StoredSection",
-        (),
-        {
-            "section_id": row.id,
-            "document_id": row.document_id,
-            "file_name": document.file_name if document else "",
-            "heading_path": row.heading_path,
-            "text": row.text_,
-            "page_from": row.page_from,
-            "page_to": row.page_to,
-        },
-    )()
+    if hit is None:
+        return None, "Dropped a quote from a section I didn't show."
+    document = session.get(Document, hit.document_id)
+    if document is None or document.status in ("removed", "failed"):
+        return None, (f"Dropped a quote from {hit.file_name}: the document is no longer available.")
+    return hit, ""
 
 
 def run_document_task(task: Task, ctx, round_no: int = 1) -> None:
@@ -157,15 +156,18 @@ def _save_picks(ctx, book, session, task, seq, search, hits, picks: QuotePicks) 
     for choice in picks.quotes:
         if len(kept) >= MAX_QUOTES:
             break
-        found = _section_lookup(session, by_id, choice.section_id)
-        if found is None or not quote_appears(choice.quote, found.text or ""):
-            document = found.file_name if found is not None else "the documents"
-            text = f"Dropped a quote I couldn't find word for word in {document}."
-            book.add_finding(
+        found, reason = _eligible(session, by_id, choice.section_id)
+        if found is None:
+            _drop(ctx, book, task, search, reason)
+            continue
+        if not quote_appears(choice.quote, found.text or ""):
+            _drop(
+                ctx,
+                book,
+                task,
                 search,
-                FindingValue(type="dropped_quote", text=text, task=task_signature(task)),
+                f"Dropped a quote I couldn't find word for word in {found.file_name}.",
             )
-            ctx.log.add("check", text)
             continue
         location = _location(found.page_from, found.page_to)
         book.add_quote(
