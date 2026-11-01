@@ -171,6 +171,8 @@ def understand_input(ctx, kb: KbView) -> dict:
         from charie.chat.analyst.chat_context import context_for_prompt, load_context
 
         chat_context = context_for_prompt(load_context(session, ctx.chat_id))
+        memory_on = get_setting(session, "memory_on")
+        memories = memories_for_prompt(session) if memory_on else []
     today = datetime.now(ZoneInfo(zone_name)).date()
     through = kb.data_through
     anchor = min(today, through) if through is not None else today
@@ -180,7 +182,7 @@ def understand_input(ctx, kb: KbView) -> dict:
         "data_through": through.isoformat() if through is not None else "no data yet",
         "earlier": earlier,
         "chat_context": chat_context,
-        "memories": memories_for_prompt(session) if get_setting(session, "memory_on") else [],
+        "memories": memories,
         "repair": "",
     }
 

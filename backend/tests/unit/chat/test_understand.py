@@ -87,20 +87,37 @@ def test_understand_input_keys(monkeypatch) -> None:
             return []
 
     class _Session:
+        """A session that refuses work after its scope closes."""
+
+        def __init__(self):
+            self.closed = False
+
         def scalars(self, stmt):
+            assert not self.closed, "used a closed session"
             return _Rows()
 
         def get(self, model, key):
+            assert not self.closed, "used a closed session"
             return None
 
         def __enter__(self):
             return self
 
         def __exit__(self, *args):
+            self.closed = True
             return False
 
+    def _get_setting(session, key):
+        assert not session.closed, "used a closed session"
+        return key == "memory_on"
+
+    def _memories(session):
+        assert not session.closed, "used a closed session"
+        return ["For me, sales means without delivery fees."]
+
     monkeypatch.setattr(understand_module, "session_scope", lambda: _Session())
-    monkeypatch.setattr(understand_module, "get_setting", lambda session, key: "")
+    monkeypatch.setattr(understand_module, "get_setting", _get_setting)
+    monkeypatch.setattr(understand_module, "memories_for_prompt", _memories)
 
     class _Ctx:
         chat_id = 1
@@ -111,7 +128,7 @@ def test_understand_input_keys(monkeypatch) -> None:
     assert inputs["data_through"] == "2025-12-31"
     assert inputs["earlier"] == []
     assert inputs["chat_context"] == ""
-    assert inputs["memories"] == []
+    assert inputs["memories"] == ["For me, sales means without delivery fees."]
     assert inputs["repair"] == ""
 
 
