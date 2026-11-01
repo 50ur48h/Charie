@@ -75,18 +75,22 @@ def _thinking_lines(session: Session, message_id: int) -> list[dict]:
     ]
 
 
-def create_chat(session: Session) -> Chat:
+def create_chat(session: Session, private: bool = False) -> Chat:
     """A new chat; the first question names it."""
-    chat = Chat(title="New chat")
+    chat = Chat(title="New chat", private=private)
     session.add(chat)
     session.flush()
     return chat
 
 
 def list_chats(session: Session) -> list[Chat]:
-    """Every chat, newest `updated_at` first."""
+    """Every visible chat, newest first (private ones never appear)."""
     return list(
-        session.scalars(select(Chat).order_by(Chat.updated_at.desc(), Chat.id.desc())).all()
+        session.scalars(
+            select(Chat)
+            .where(Chat.private.is_(False))
+            .order_by(Chat.updated_at.desc(), Chat.id.desc())
+        ).all()
     )
 
 
@@ -258,7 +262,7 @@ def ask_question(
     return user_message, assistant_message
 
 
-def build_context(message_id: int) -> AnalystContext | None:
+def build_context(message_id: int, private: bool = False) -> AnalystContext | None:
     """The runner's context for one assistant message, or None when gone."""
     with session_scope() as session:
         message = session.get(Message, message_id)
@@ -284,7 +288,7 @@ def build_context(message_id: int) -> AnalystContext | None:
             settings=settings,
             log=ThinkingLog(message.id),
             state=RunState(),
-            private=False,
+            private=private,
         )
 
 
