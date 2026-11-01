@@ -25,6 +25,7 @@ class SetupState(BaseModel):
     setup_done: bool
     step: int
     readiness: dict | None = None
+    usability: dict | None = None
 
 
 def connected_source(session: Session) -> bool:
@@ -85,12 +86,23 @@ def setup_step(session: Session) -> int:
     return 5
 
 
+def draft_usability(session: Session) -> dict | None:
+    """Usable numbers and exclusions for the draft, if there is one."""
+    from charie.shared.knowledge.versions import get_draft, usability
+
+    draft = get_draft(session)
+    if draft is None:
+        return None
+    return usability(session, draft.id)
+
+
 @setup_router.get("/api/setup", response_model=SetupState)
 def get_setup(session: Session = Depends(get_session)) -> dict[str, object]:
     return {
         "setup_done": bool(get_setting(session, "setup_done")),
         "step": setup_step(session),
         "readiness": draft_readiness(session),
+        "usability": draft_usability(session),
     }
 
 
@@ -106,6 +118,7 @@ def finish_setup(body: FinishBody, session: Session = Depends(get_session)) -> d
         VersionNotFound,
         get_draft,
         publish_version,
+        usability,
     )
 
     run = first_run(session)
@@ -134,4 +147,4 @@ def finish_setup(body: FinishBody, session: Session = Depends(get_session)) -> d
     except (VersionNotFound, RunActiveError) as err:
         raise ApiError(409, "busy", str(err)) from err
     set_setting(session, "setup_done", True)
-    return {"setup_done": True}
+    return {"setup_done": True, "scope": usability(session, draft.id)}

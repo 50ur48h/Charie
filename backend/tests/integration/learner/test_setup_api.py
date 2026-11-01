@@ -36,6 +36,7 @@ def test_fresh_database_is_step_1(learner_client) -> None:
         "setup_done": False,
         "step": 1,
         "readiness": None,
+        "usability": None,
     }
 
 

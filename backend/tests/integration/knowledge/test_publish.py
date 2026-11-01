@@ -244,7 +244,8 @@ def test_passing_first_run_reviews_publishes_and_finishes(
     assert seen.status_code == 200
     response = learner_client.post("/api/setup/finish", json={})
     assert response.status_code == 200
-    assert response.json() == {"setup_done": True}
+    assert response.json()["setup_done"] is True
+    assert response.json()["scope"]["usable"] == ["metric.net_sales"]
     assert db_session.get(KbVersion, version_id).status == "published"
     from charie.shared.settings import get_setting
 
