@@ -161,11 +161,13 @@ def test_run_now_marks_failed_and_raises(db, db_session, monkeypatch) -> None:
     assert note.body == "Something went wrong while answering. Please ask again."
 
 
-def test_startup_marks_running_messages_stopped(db, db_session) -> None:
+def test_startup_marks_running_messages_stopped(db, db_session, monkeypatch) -> None:
     from fastapi.testclient import TestClient
 
     from charie.chat.app import STOPPED_BODY, build_app
 
+    monkeypatch.setenv("CHARIE_PASSWORD", "test-password")
+    monkeypatch.setenv("CHARIE_SECRET_KEY", "test-secret-key-for-tests-only")
     assistant = _thinking_assistant(db_session)
     with TestClient(build_app()):
         pass
