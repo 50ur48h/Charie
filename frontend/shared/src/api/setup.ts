@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "./client";
-import type { SetupState } from "./learner-types";
+import type { SetupState, Usability } from "./learner-types";
 
 // GET /api/setup: the guide's state (step 1–5, readiness or null).
 export function useSetup() {
@@ -15,7 +15,8 @@ export function useSetup() {
 export function useFinishSetup() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: () => apiFetch<{ setup_done: true }>("/api/setup/finish", { method: "POST" }),
+    mutationFn: () =>
+      apiFetch<{ setup_done: true; scope: Usability }>("/api/setup/finish", { method: "POST" }),
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: ["learner-setup"] });
       void client.invalidateQueries({ queryKey: ["learner-documents"] });

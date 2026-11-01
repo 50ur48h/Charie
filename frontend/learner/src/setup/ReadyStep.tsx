@@ -5,6 +5,7 @@ import {
   toast,
   useFinishSetup,
   type Readiness,
+  type Usability,
 } from "@charie/shared";
 import { useChatUrl } from "../layout/useChatUrl";
 import { useNavigate } from "react-router";
@@ -12,7 +13,13 @@ import { useNavigate } from "react-router";
 // Step 5: the readiness report. Open Charie finishes setup and moves the
 // same tab to the chat app (browsers block a new tab after an await).
 // Without a report yet, the step points back at the Learning page.
-export function ReadyStep({ readiness }: { readiness: Readiness | null }) {
+export function ReadyStep({
+  readiness,
+  usability = null,
+}: {
+  readiness: Readiness | null;
+  usability?: Usability | null;
+}) {
   const navigate = useNavigate();
   const chatUrl = useChatUrl();
   const finish = useFinishSetup();
@@ -75,6 +82,26 @@ export function ReadyStep({ readiness }: { readiness: Readiness | null }) {
           foot={readiness.weak_area_why ?? "Charie did well everywhere."}
         />
       </div>
+      {usability !== null && (
+        <div className="mt-[22px] text-left">
+          <h3 className="font-serif text-[18px] font-semibold">Ready to use</h3>
+          <p className="mt-1 text-[14.5px] text-muted">
+            {usability.usable.length} of {usability.usable.length + usability.excluded.length}{" "}
+            business numbers are checked and ready. The rest stay out until they pass their
+            checks.
+          </p>
+          {usability.excluded.length > 0 && (
+            <ul className="mt-2 space-y-1.5 text-[14px]">
+              {usability.excluded.map((item) => (
+                <li key={item.key}>
+                  <span className="font-medium">{item.title}</span>
+                  <span className="text-muted"> — {item.reason}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
       {finish.isError && (
         <p role="alert" className="mt-4 flex items-start gap-2 text-[14px] font-medium text-bad-ink">
           <CircleAlert aria-hidden="true" className="mt-px flex-none [--icon:17px]" />

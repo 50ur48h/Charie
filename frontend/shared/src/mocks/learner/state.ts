@@ -223,7 +223,7 @@ export function setup(): SetupSlice {
 export function setupState(): SetupState {
   const slice = setup();
   if (slice.setupDone) {
-    return { setup_done: true, step: 5, readiness: slice.readiness };
+    return { setup_done: true, step: 5, readiness: slice.readiness, usability: null };
   }
   const sourceOk = slice.source?.status === "connected";
   const docs = learner().documents.filter((doc) => doc.status !== "removed");
@@ -236,5 +236,5 @@ export function setupState(): SetupState {
   else if (!hasFirstRun && docs.length === 0 && !notesSaved) step = 2;
   else if (!hasFirstRun || !firstDone) step = 3;
   else if (waiting > 0) step = 4;
-  return { setup_done: false, step, readiness: slice.readiness };
+  return { setup_done: false, step, readiness: slice.readiness, usability: null };
 }

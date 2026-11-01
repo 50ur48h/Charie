@@ -3,7 +3,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { ReadyStep } from "./ReadyStep";
-import type { Readiness } from "@charie/shared";
+import type { Readiness, Usability } from "@charie/shared";
 
 afterEach(() => {
   cleanup();
@@ -27,7 +27,7 @@ const REPORT: Readiness = {
   weak_area_why: "Few documents about it",
 };
 
-function renderStep(readiness: Readiness | null) {
+function renderStep(readiness: Readiness | null, usability: Usability | null = null) {
   vi.stubGlobal(
     "fetch",
     vi.fn().mockImplementation((url: string) =>
@@ -47,7 +47,10 @@ function renderStep(readiness: Readiness | null) {
     <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={["/setup?step=5"]}>
         <Routes>
-          <Route path="/setup" element={<ReadyStep readiness={readiness} />} />
+          <Route
+            path="/setup"
+            element={<ReadyStep readiness={readiness} usability={usability} />}
+          />
           <Route path="/learning" element={<p>Learning page</p>} />
         </Routes>
       </MemoryRouter>
@@ -63,6 +66,20 @@ describe("ReadyStep", () => {
     expect(screen.getByText("183 of 200")).toBeTruthy();
     expect(screen.getByText("Food waste")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Open Charie" })).toBeTruthy();
+  });
+
+  test("shows usable numbers and exclusions", async () => {
+    const usability: Usability = {
+      usable: ["metric.a", "metric.b"],
+      excluded: [{ key: "metric.c", title: "Closing stock", reason: "needs a snapshot rule" }],
+      usable_defaults: [],
+      excluded_defaults: [],
+    };
+    renderStep(REPORT, usability);
+    expect(await screen.findByText("Ready to use")).toBeTruthy();
+    expect(screen.getByText(/2 of 3/)).toBeTruthy();
+    expect(screen.getByText("Closing stock")).toBeTruthy();
+    expect(screen.getByText(/needs a snapshot rule/)).toBeTruthy();
   });
 
   test("shows Not ready yet without a report", async () => {

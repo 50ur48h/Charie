@@ -70,10 +70,26 @@ export interface Readiness {
   weak_area_why: string | null;
 }
 
+export interface ExcludedItem {
+  key: string;
+  title: string;
+  reason: string;
+}
+
+// GET /api/setup usability and POST /api/setup/finish scope: which numbers
+// are usable now, and which stay out with their reasons.
+export interface Usability {
+  usable: string[];
+  excluded: ExcludedItem[];
+  usable_defaults: string[];
+  excluded_defaults: ExcludedItem[];
+}
+
 export interface SetupState {
   setup_done: boolean;
   step: number;
   readiness: Readiness | null;
+  usability: Usability | null;
 }
 
 // GET /api/sources/database: the saved connection. The API never sends the
