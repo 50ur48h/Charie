@@ -39,7 +39,7 @@ def _stall_answer(monkeypatch):
 def _wait_done(client, chat_id) -> dict:
     for _ in range(100):
         opened = client.get(f"/api/chats/{chat_id}").json()
-        if opened["messages"][1]["status"] == "done":
+        if opened["messages"][1]["status"] in ("done", "failed", "stopped"):
             return opened
         time.sleep(0.05)
     return client.get(f"/api/chats/{chat_id}").json()
@@ -58,6 +58,13 @@ def test_create_and_list_chats(chat_client, db_session) -> None:
     assert first["title"] == "New chat"
     listed = chat_client.get("/api/chats").json()["chats"]
     assert [row["id"] for row in listed] == [second["id"], first["id"]]
+
+
+def test_create_chat_without_body_matches_frontend(chat_client, db_session) -> None:
+    log_in(chat_client)
+    response = chat_client.post("/api/chats")
+    assert response.status_code == 201, response.text
+    assert response.json()["title"] == "New chat"
 
 
 def test_rename_chat(chat_client, db_session) -> None:

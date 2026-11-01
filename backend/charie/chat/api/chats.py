@@ -41,11 +41,13 @@ def list_chats(session: Session = Depends(get_session)) -> dict:
 
 
 @chats_router.post("/api/chats", status_code=201)
-def create_chat(body: CreateChatBody, session: Session = Depends(get_session)) -> dict:
+def create_chat(
+    body: CreateChatBody | None = None, session: Session = Depends(get_session)
+) -> dict:
     """A new chat. A title can wait for the first question."""
     chat = chat_store.create_chat(session)
     session.commit()
-    if body.title is not None:
+    if body is not None and body.title is not None:
         chat_store.rename_chat(session, chat.id, body.title)
         session.commit()
     return _chat_shape(session, chat)
