@@ -151,12 +151,32 @@ describe("mock handlers", () => {
     await signIn();
     const created = (await (await post("/api/chats", {})).json()) as ChatSummary;
     const empty = await post(`/api/chats/${created.id}/messages`, { text: "  " });
-    expect(empty.status).toBe(400);
-    await expect(empty.json()).resolves.toMatchObject({ error: "empty_text" });
+    expect(empty.status).toBe(422);
+    await expect(empty.json()).resolves.toMatchObject({ error: "empty_question" });
+
+    const long = await post(`/api/chats/${created.id}/messages`, { text: "x".repeat(2001) });
+    expect(long.status).toBe(422);
+    await expect(long.json()).resolves.toMatchObject({ error: "question_too_long" });
+
+    const quick = await post(`/api/chats/${created.id}/messages`, {
+      text: "Net sales?",
+      mode: "quick",
+    });
+    expect(quick.status).toBe(422);
+    await expect(quick.json()).resolves.toMatchObject({ error: "quick_not_ready" });
 
     const missing = await fetch(`${APP}/api/chats/999`);
     expect(missing.status).toBe(404);
     await expect(missing.json()).resolves.toMatchObject({ error: "not_found" });
+  });
+
+  test("a second question while running is refused", async () => {
+    await signIn();
+    const created = (await (await post("/api/chats", {})).json()) as ChatSummary;
+    await post(`/api/chats/${created.id}/messages`, { text: "First?" });
+    const second = await post(`/api/chats/${created.id}/messages`, { text: "Second?" });
+    expect(second.status).toBe(409);
+    await expect(second.json()).resolves.toMatchObject({ error: "question_running" });
   });
 
   test("GET /api/status reports waiting questions and the data date", async () => {
@@ -193,9 +213,12 @@ describe("mock handlers", () => {
     });
     const missing = await post("/api/messages/999/finish", {});
     expect(missing.status).toBe(404);
+    const alreadyDone = await post("/api/messages/2/finish", {});
+    expect(alreadyDone.status).toBe(409);
+    await expect(alreadyDone.json()).resolves.toMatchObject({ error: "not_running" });
   });
 
-  test("PATCH /api/chats/:id renames, rejects blank titles and unknown chats", async () => {
+  test("PATCH /api/chats/:id renames, rejects bad titles and unknown chats", async () => {
     await signIn();
     const renamed = await fetch(`${APP}/api/chats/1`, {
       method: "PATCH",
@@ -211,8 +234,8 @@ describe("mock handlers", () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ title: "   " }),
     });
-    expect(blank.status).toBe(400);
-    await expect(blank.json()).resolves.toMatchObject({ error: "empty_title" });
+    expect(blank.status).toBe(422);
+    await expect(blank.json()).resolves.toMatchObject({ error: "bad_title" });
     const missing = await fetch(`${APP}/api/chats/999`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -227,7 +250,7 @@ describe("mock handlers", () => {
     await post(`/api/chats/${created.id}/messages`, { text: "Still thinking?", mode: "thinking" });
     const refused = await fetch(`${APP}/api/chats/${created.id}`, { method: "DELETE" });
     expect(refused.status).toBe(409);
-    await expect(refused.json()).resolves.toMatchObject({ error: "chat_running" });
+    await expect(refused.json()).resolves.toMatchObject({ error: "question_running" });
     const gone = await fetch(`${APP}/api/chats/${created.id}`);
     expect(gone.status).toBe(200);
     await post("/api/messages/1001/finish", {});

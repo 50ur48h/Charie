@@ -235,6 +235,7 @@ dependencies = [
     { name = "python-multipart" },
     { name = "sqlalchemy" },
     { name = "sqlglot" },
+    { name = "sse-starlette" },
     { name = "tenacity" },
     { name = "uvicorn" },
 ]
@@ -265,6 +266,7 @@ requires-dist = [
     { name = "python-multipart", specifier = ">=0.0.32" },
     { name = "sqlalchemy", specifier = ">=2.1.6" },
     { name = "sqlglot", specifier = ">=30.26.0" },
+    { name = "sse-starlette", specifier = ">=3.6.0" },
     { name = "tenacity", specifier = ">=9.2.1" },
     { name = "uvicorn", specifier = ">=0.54.0" },
 ]
@@ -1295,6 +1297,19 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/7e/82/1897217c9c59461ef756df685965ad329e6e556091d065b8df61b5112eee/sqlglot-30.26.0.tar.gz", hash = "sha256:aa7de4670aa393f3d92878749b2ebfe6fbd41435e1827df0a1b4edfb5407f930", size = 6169115, upload-time = "2026-10-29T20:42:24.148Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/8a/a2/85b0adf1db0126c7d7d7016eb7b4afc7cd04ec2eb2680e71c8505166c005/sqlglot-30.26.0-py3-none-any.whl", hash = "sha256:58fe0d44cc5ae2947a08d16c4e1affb8716e6ddb47154674e3b6180a2f2b315c", size = 800802, upload-time = "2026-10-29T20:42:22.246Z" },
+]
+
+[[package]]
+name = "sse-starlette"
+version = "3.6.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "anyio" },
+    { name = "starlette" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/71/7f/3b8ec4f27833f7b8c270a3ef960b6d435e1065439847bc0fcd1e58ae898b/sse_starlette-3.6.0.tar.gz", hash = "sha256:623151d6c20dc0eebf1b3379c27faae91fff883bac7ab6665f16f46440a88b3a", size = 41174, upload-time = "2026-10-25T20:31:59.372Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/cf/49/35053078cdfcf639237e8bee6dc6f34f1b3a3cc8d01800a1e213e1660ff6/sse_starlette-3.6.0-py3-none-any.whl", hash = "sha256:e4dfa4d237d2712cb2b4d4918eda9b457cd6b44bbecdc838af75de836565bafd", size = 17985, upload-time = "2026-10-25T20:31:58.134Z" },
 ]
 
 [[package]]

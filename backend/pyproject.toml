@@ -19,6 +19,7 @@ dependencies = [
     "python-multipart>=0.0.32",
     "sqlalchemy>=2.1.6",
     "sqlglot>=30.26.0",
+    "sse-starlette>=3.6.0",
     "tenacity>=9.2.1",
     "uvicorn>=0.54.0",
 ]

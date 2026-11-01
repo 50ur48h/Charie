@@ -52,9 +52,9 @@ test("a created chat survives a reload with its answer state", async ({ page }) 
   await expect(messages.getByText("Will you remember this?", { exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Will you remember this?" })).toBeVisible();
   await page.getByRole("button", { name: "Finish now" }).click();
-  await expect(messages.getByText("Stopped.")).toBeVisible();
+  await expect(messages.getByText("I stopped before finishing. Ask again to get an answer.")).toBeVisible();
   await page.reload();
-  await expect(messages.getByText("Stopped.")).toBeVisible();
+  await expect(messages.getByText("I stopped before finishing. Ask again to get an answer.")).toBeVisible();
   await expect(messages.getByText("Will you remember this?", { exact: true })).toBeVisible();
 });
 
@@ -88,7 +88,7 @@ test("a second Finish now during refresh sends once", async ({ page }) => {
   // so this second click lands exactly in the old refresh gap.
   await expect.poll(() => postCount(page, "finish")).toBe("1");
   await finish.dispatchEvent("click");
-  await expect(messages.getByText("Stopped.")).toBeVisible();
+  await expect(messages.getByText("I stopped before finishing. Ask again to get an answer.")).toBeVisible();
   expect(await postCount(page, "finish")).toBe("1");
 });
 
@@ -97,7 +97,7 @@ test("Finish now stops the running answer once", async ({ page }) => {
   const messages = page.getByTestId("messages");
   await expect(messages.getByText("Which dishes make us the most profit?", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Finish now" }).click();
-  await expect(messages.getByText("Stopped.")).toBeVisible();
+  await expect(messages.getByText("I stopped before finishing. Ask again to get an answer.")).toBeVisible();
   await expect(page.getByRole("button", { name: "Finish now" })).toBeHidden();
   await expect(messages.getByText("Which dishes make us the most profit?", { exact: true })).toBeVisible();
 });

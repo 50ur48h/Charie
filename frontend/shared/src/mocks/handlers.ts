@@ -16,6 +16,7 @@ import { readSavedTheme } from "../theme/theme";
 
 import {
   addMockMessage,
+  isMockChatRunning,
   countMockPosts,
   createMockChat,
   finishMockMessage,
@@ -709,22 +710,23 @@ http.get(KNOWLEDGE_URL, ({ request }) => {
     } catch {
       title = undefined;
     }
-    if (typeof title !== "string" || title.trim() === "") {
+    const trimmed = typeof title === "string" ? title.trim() : "";
+    if (trimmed.length < 1 || trimmed.length > 80) {
       return HttpResponse.json(
-        { error: "empty_title", message: "Give the chat a title." },
-        { status: 400 },
+        { error: "bad_title", message: "A chat title needs 1 to 80 characters." },
+        { status: 422 },
       );
     }
-    if (renameMockChat(Number(params.id), title.trim()) === "not_found") {
+    if (renameMockChat(Number(params.id), trimmed) === "not_found") {
       return HttpResponse.json(
-        { error: "not_found", message: "That chat is gone." },
+        { error: "not_found", message: "That chat doesn't exist any more." },
         { status: 404 },
       );
     }
     const chat = getMockChat(Number(params.id));
     return HttpResponse.json({
       id: chat?.id ?? Number(params.id),
-      title: title.trim(),
+      title: trimmed,
       created_at: chat?.created_at ?? new Date().toISOString(),
       updated_at: chat?.updated_at ?? new Date().toISOString(),
     });
@@ -735,13 +737,17 @@ http.get(KNOWLEDGE_URL, ({ request }) => {
     const outcome = deleteMockChat(Number(params.id));
     if (outcome === "not_found") {
       return HttpResponse.json(
-        { error: "not_found", message: "That chat is gone." },
+        { error: "not_found", message: "That chat doesn't exist any more." },
         { status: 404 },
       );
     }
     if (outcome === "running") {
       return HttpResponse.json(
-        { error: "chat_running", message: "That answer is still running. Wait for it to finish, then delete." },
+        {
+          error: "question_running",
+          message:
+            "Charie is still working on a question in this chat. Wait for it to finish, or click Finish now.",
+        },
         { status: 409 },
       );
     }
@@ -754,46 +760,77 @@ http.get(KNOWLEDGE_URL, ({ request }) => {
     const chat = getMockChat(Number(params.id));
     if (chat === undefined) {
       return HttpResponse.json(
-        { error: "not_found", message: "That chat is gone." },
+        { error: "not_found", message: "That chat doesn't exist any more." },
         { status: 404 },
       );
     }
     return HttpResponse.json(chat);
   }),
   http.post(CHAT_MESSAGES_URL, async ({ params, request }) => {
+    const blocked = needSession();
+    if (blocked) return blocked;
+    let record: { text?: unknown; mode?: unknown };
+    try {
+      record = (await request.json()) as { text?: unknown; mode?: unknown };
+    } catch {
+      record = {};
+    }
+    const text = typeof record.text === "string" ? record.text : "";
+    if (text.trim() === "") {
+      return HttpResponse.json(
+        { error: "empty_question", message: "Please type a question." },
+        { status: 422 },
+      );
+    }
+    if (text.length > 2000) {
+      return HttpResponse.json(
+        {
+          error: "question_too_long",
+          message: "Questions can be up to 2,000 characters.",
+        },
+        { status: 422 },
+      );
+    }
+    if (record.mode !== undefined && record.mode !== "thinking") {
+      return HttpResponse.json(
+        {
+          error: "quick_not_ready",
+          message: "Quick mode is coming. Please use thinking mode for now.",
+        },
+        { status: 422 },
+      );
+    }
+    const chatId = Number(params.id);
+    const chat = getMockChat(chatId);
+    if (chat === undefined) {
+      return HttpResponse.json(
+        { error: "not_found", message: "That chat doesn't exist any more." },
+        { status: 404 },
+      );
+    }
+    if (isMockChatRunning(chatId)) {
+      return HttpResponse.json(
+        {
+          error: "question_running",
+          message:
+            "Charie is still working on a question in this chat. Wait for it to finish, or click Finish now.",
+        },
+        { status: 409 },
+      );
+    }
     // At 100% the mock blocks new questions with the API shape.
     if (mockSpending(41.2).state === "paused") {
       return HttpResponse.json(
         {
           error: "spending_paused",
-          message: "Questions are paused: this month\u2019s credit is used up. Raise the limit to keep asking.",
+          message:
+            "New AI work is paused because this month's spending limit is reached. Raise the limit on the Usage page to continue.",
         },
         { status: 409 },
       );
     }
-    const blocked = needSession();
-    if (blocked) return blocked;
-    let text: unknown;
-    try {
-      text = ((await request.json()) as { text?: unknown }).text;
-    } catch {
-      text = undefined;
-    }
-    if (typeof text !== "string" || text.trim() === "") {
-      return HttpResponse.json(
-        { error: "empty_text", message: "Please write a question first." },
-        { status: 400 },
-      );
-    }
     countMockPosts("messages");
-    const sent = addMockMessage(Number(params.id), text.trim());
-    if (sent === undefined) {
-      return HttpResponse.json(
-        { error: "not_found", message: "That chat is gone." },
-        { status: 404 },
-      );
-    }
-    return HttpResponse.json(sent, { status: 201 });
+    return HttpResponse.json(addMockMessage(chatId, text.trim()), { status: 201 });
   }),
   http.get(STATUS_URL, () => {
     const blocked = needSession();
@@ -816,13 +853,20 @@ http.get(KNOWLEDGE_URL, ({ request }) => {
     const blocked = needSession();
     if (blocked) return blocked;
     countMockPosts("finish");
-    if (!finishMockMessage(Number(params.id))) {
+    const outcome = finishMockMessage(Number(params.id));
+    if (outcome === "not_found") {
       return HttpResponse.json(
-        { error: "not_found", message: "We couldn't find that message." },
+        { error: "not_found", message: "That message doesn't exist." },
         { status: 404 },
       );
     }
-    return HttpResponse.json({ ok: true });
+    if (outcome === "done") {
+      return HttpResponse.json(
+        { error: "not_running", message: "This question has already finished." },
+        { status: 409 },
+      );
+    }
+    return HttpResponse.json({ finished: true, message_id: Number(params.id) });
   }),
   http.get(MESSAGE_STREAM_URL, ({ params, request }) => {
     const blocked = needSession();
@@ -834,7 +878,7 @@ http.get(KNOWLEDGE_URL, ({ request }) => {
     );
     if (stream === null) {
       return HttpResponse.json(
-        { error: "not_found", message: "We couldn't find that message." },
+        { error: "not_found", message: "That message doesn't exist." },
         { status: 404 },
       );
     }

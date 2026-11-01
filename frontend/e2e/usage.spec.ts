@@ -56,6 +56,6 @@ test("paused_send_blocked stops new questions with a plain message", async ({ pa
   await page.reload();
   await page.getByRole("textbox", { name: "Ask a question" }).fill("Can I still ask?");
   await page.getByRole("button", { name: "Ask" }).click();
-  await expect(page.getByText("Questions are paused:")).toBeVisible();
+  await expect(page.getByText("New AI work is paused because this month's spending limit is reached. Raise the limit on the Usage page to continue.")).toBeVisible();
   await expect(page).toHaveURL(CHAT + "/");
 });

@@ -102,6 +102,7 @@ export { buildChartOption, chartSummary, CHART_HEIGHTS } from "./charts/chartBlo
 export { AnswerView } from "./answer/AnswerView";
 export { AnswerActions } from "./answer/AnswerActions";
 export { WrongAnswerDialog } from "./answer/WrongAnswerDialog";
+export { MessageStatus } from "./answer/MessageStatus";
 export { answerText, blockText } from "./answer/answerText";
 export { printAnswer, waitForPrintReady } from "./answer/print";
 export {

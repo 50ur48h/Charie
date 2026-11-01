@@ -112,6 +112,8 @@ describe("MessageList", () => {
       />,
     );
     expect(screen.getByText("I read this as trucks.", { exact: false })).toBeTruthy();
-    expect(screen.queryByText("Stopped.")).toBeNull();
+    expect(
+      screen.queryByText("I stopped before finishing. Ask again to get an answer."),
+    ).toBeNull();
   });
 });

@@ -29,14 +29,17 @@ def create_app(
     routers: tuple[APIRouter, ...] = (),
     public_routers: tuple[APIRouter, ...] = (),
     static_dir: Path | None = None,
+    lifespan=None,
 ) -> FastAPI:
     """One app: logging, the error shape, `/api/health`, then the screens.
 
     Every address needs login except `/api/health` and the public routers
     (only `/api/login`). Changes must come from our own screens as JSON.
+    `lifespan` runs start-up and shut-down work (the chat app marks
+    cut-off questions stopped when it starts).
     """
     setup_logging()
-    app = FastAPI()
+    app = FastAPI(lifespan=lifespan)
     install_error_handlers(app)
     app.add_middleware(SessionMiddleware, **session_middleware_kwargs())
     app.add_middleware(OriginAndJsonCheck)

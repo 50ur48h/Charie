@@ -108,7 +108,10 @@ export function useFinishMessage() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: (messageId: number) =>
-      apiFetch<{ ok: true }>(`/api/messages/${messageId}/finish`, { method: "POST" }),
+      apiFetch<{ finished: boolean; message_id: number }>(
+        `/api/messages/${messageId}/finish`,
+        { method: "POST" },
+      ),
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: ["chat"] });
     },
