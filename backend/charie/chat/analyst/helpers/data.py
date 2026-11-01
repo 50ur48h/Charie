@@ -331,20 +331,20 @@ def _exclude_reason(task: Task, loaded: _Loaded) -> str | None:
     return loaded.excluded.get(task.metric_key, "It was never checked.")
 
 
-def run_recipe_task(task: Task, ctx) -> None:
+def run_recipe_task(task: Task, ctx, round_no: int = 1) -> None:
     """Get one task's numbers the safe way; failures become findings.
 
     One question's tasks share a lock so notebook labels stay unique.
     Every failure also adds a `failed` finding.
     """
     with _lock(ctx.message_id):
-        _run_recipe_task(task, ctx)
+        _run_recipe_task(task, ctx, round_no)
 
 
-def _run_recipe_task(task: Task, ctx) -> None:
+def _run_recipe_task(task: Task, ctx, round_no: int = 1) -> None:
     """The task body, under the question's lock, in one database session."""
     with session_scope() as session:
-        book = Notebook(session, ctx.message_id, ctx.chat_id)
+        book = Notebook(session, ctx.message_id, ctx.chat_id, round=round_no)
         loaded = _Loaded(session, ctx.kb_version_id)
         for note in drop_excluded_defaults(ctx, loaded.usable_defaults):
             ctx.log.add("note", note)

@@ -144,15 +144,15 @@ def _format_total(total) -> str:
     return format_count(str(total))
 
 
-def run_new_number_task(task: Task, ctx) -> None:
+def run_new_number_task(task: Task, ctx, round_no: int = 1) -> None:
     """One new-number task, under the question's lock, in one session."""
     with _lock(ctx.message_id):
-        _run_new_number_task(task, ctx)
+        _run_new_number_task(task, ctx, round_no)
 
 
-def _run_new_number_task(task: Task, ctx) -> None:
+def _run_new_number_task(task: Task, ctx, round_no: int = 1) -> None:
     with session_scope() as session:
-        book = Notebook(session, ctx.message_id, ctx.chat_id)
+        book = Notebook(session, ctx.message_id, ctx.chat_id, round=round_no)
         loaded = data_module._Loaded(session, ctx.kb_version_id)
         try:
             periods = data_module._task_periods(task, ctx)

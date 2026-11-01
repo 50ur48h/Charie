@@ -105,15 +105,15 @@ def _section_lookup(session, by_id: dict, section_id: int):
     )()
 
 
-def run_document_task(task: Task, ctx) -> None:
+def run_document_task(task: Task, ctx, round_no: int = 1) -> None:
     """One documents task, under the question's lock, in one session."""
     with _lock(ctx.message_id):
-        _run_document_task(task, ctx)
+        _run_document_task(task, ctx, round_no)
 
 
-def _run_document_task(task: Task, ctx) -> None:
+def _run_document_task(task: Task, ctx, round_no: int = 1) -> None:
     with session_scope() as session:
-        book = Notebook(session, ctx.message_id, ctx.chat_id)
+        book = Notebook(session, ctx.message_id, ctx.chat_id, round=round_no)
         search = (task.search or "").strip()
         seq = ctx.log.start("document", f"Searching the documents for {search}", task.why)
         hits = search_sections(session, search, limit=TOP_SECTIONS, app="chat") if search else []

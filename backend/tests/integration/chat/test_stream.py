@@ -84,12 +84,15 @@ def test_stream_sends_thinking_summary_blocks_done(chat_client, db_session, monk
         "thinking",
         "thinking",
         "thinking",
+        "thinking",
+        "thinking",
+        "thinking",
         "summary",
         "block",
         "text",
         "done",
     ]
-    assert [event["id"] for event in events] == [str(n) for n in range(1, 8)]
+    assert [event["id"] for event in events] == [str(n) for n in range(1, 11)]
     assert events[-1]["data"]["status"] == "done"
 
 
@@ -113,9 +116,9 @@ def test_stream_reconnect_sends_only_missed_events(chat_client, db_session, monk
     rest = _parse_sse(
         chat_client.get(f"/api/messages/{assistant_id}/stream", headers={"Last-Event-ID": "2"}).text
     )
-    assert [event["id"] for event in rest] == [str(n) for n in range(3, 8)]
+    assert [event["id"] for event in rest] == [str(n) for n in range(3, 11)]
     assert rest[-1] == {
-        "id": "7",
+        "id": "10",
         "event": "done",
         "data": {"message_id": assistant_id, "status": "done", "cost_usd": 0},
     }
@@ -133,6 +136,8 @@ def test_stream_after_end_rebuilds_from_database(chat_client, db_session, monkey
     FEEDS.pop(assistant_id, None)
     events = _parse_sse(chat_client.get(f"/api/messages/{assistant_id}/stream").text)
     assert [event["event"] for event in events] == [
+        "thinking",
+        "thinking",
         "thinking",
         "thinking",
         "summary",

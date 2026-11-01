@@ -1,25 +1,19 @@
-"""The answer flow: the temporary analyst until the rounds land (P10.6).
+"""The answer flow: rounds of starter and planned tasks, then a placeholder.
 
-Understand, add the periods to the notebook, run the starter tasks at
-the same time, then a placeholder answer with the notebook's short
-view. P10.7–P10.13 replace most of this.
+Understand once, run up to 4 rounds at the same time, then a placeholder
+answer with the notebook's short view. P10.10 replaces the placeholder
+with the real writer.
 """
 
-import asyncio
 import time
 from datetime import UTC, datetime
 
 from sqlalchemy import select
 
 from charie.chat.analyst.context import AnalystContext
-from charie.chat.analyst.helpers.data import add_period_items, run_recipe_task
-from charie.chat.analyst.helpers.documents import run_document_task
-from charie.chat.analyst.helpers.new_number import run_new_number_task
-from charie.chat.analyst.helpers.tasks import starter_tasks
-from charie.chat.analyst.kb_view import KbView
+from charie.chat.analyst.loop import run_rounds
 from charie.chat.analyst.notebook import Notebook
 from charie.chat.analyst.stream import FEEDS, finish_feed
-from charie.chat.analyst.understand import understand
 from charie.shared.db import session_scope
 from charie.shared.tables.chat import Message, ThinkingEvent
 
@@ -57,28 +51,8 @@ def _emit_temp_events(ctx: AnalystContext, tasks: list, sentences: list[dict]) -
 
 
 async def answer_question(ctx: AnalystContext) -> None:
-    """Understand, fetch every starter task at once, then the temp answer."""
-    understand(ctx)
-    if ctx.state.finish_requested.is_set():
-        _mark_stopped(ctx)
-        return
-    add_period_items(ctx)
-    with session_scope() as session:
-        kb = KbView.load(session, ctx.kb_version_id)
-    tasks = starter_tasks(ctx.understanding, kb.titles())
-    if tasks:
-        gate = asyncio.Semaphore(4)
-
-        async def _one(task) -> None:
-            async with gate:
-                if task.kind == "new_number":
-                    await asyncio.to_thread(run_new_number_task, task, ctx)
-                elif task.kind == "documents":
-                    await asyncio.to_thread(run_document_task, task, ctx)
-                else:
-                    await asyncio.to_thread(run_recipe_task, task, ctx)
-
-        await asyncio.gather(*(_one(task) for task in tasks))
+    """Understand once, run the rounds, then the temp answer."""
+    tasks = await run_rounds(ctx)
     if ctx.state.finish_requested.is_set():
         _mark_stopped(ctx)
         return
