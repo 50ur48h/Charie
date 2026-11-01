@@ -13,6 +13,8 @@ from sqlalchemy import select
 
 from charie.chat.analyst.context import AnalystContext
 from charie.chat.analyst.helpers.data import add_period_items, run_recipe_task
+from charie.chat.analyst.helpers.documents import run_document_task
+from charie.chat.analyst.helpers.new_number import run_new_number_task
 from charie.chat.analyst.helpers.tasks import starter_tasks
 from charie.chat.analyst.kb_view import KbView
 from charie.chat.analyst.notebook import Notebook
@@ -71,6 +73,8 @@ async def answer_question(ctx: AnalystContext) -> None:
             async with gate:
                 if task.kind == "new_number":
                     await asyncio.to_thread(run_new_number_task, task, ctx)
+                elif task.kind == "documents":
+                    await asyncio.to_thread(run_document_task, task, ctx)
                 else:
                     await asyncio.to_thread(run_recipe_task, task, ctx)
 
