@@ -6,6 +6,7 @@ from decimal import Decimal
 
 from sqlalchemy import func, select, update
 
+from charie.chat.analyst.context import RunState
 from charie.chat.analyst.runner import run_now
 from charie.chat.chat_store import (
     ask_question,
@@ -119,7 +120,7 @@ async def _ask_turn(chat_id: int, text: str, private: bool, choice: str | None =
         if err.code == "not_ready":
             raise NotReadyError(err.message) from err
         raise
-    await run_now(message_id, private=private)
+    await run_now(message_id, RunState(remember=False), private=private)
     return message_id
 
 

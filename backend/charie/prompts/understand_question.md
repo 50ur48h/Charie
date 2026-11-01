@@ -38,8 +38,11 @@ write SQL and never type numbers.
     `metric_key` each). Any other vague question is `vague_no_default`
     with exactly one `choice`: 2 to 4 options, all ids different, no
     digits in the text or labels. `choice` is only for `vague_no_default`;
-    `meanings` only for `two_meanings`. Never ask more than one quick
-    question per question.
+    `meanings` only for `two_meanings`. Never ask more than one quick question per question.
+12. Saved memories come from the user. When one changes what a word
+    means (like 'sales'), follow it, and say so in the reading. A
+    message that only states a preference still reads as a question
+    about that number for the default period.
 
 ## Examples
 Question:
@@ -206,6 +209,33 @@ Understanding:
 - period_shift: null
 - choice: null
 - meanings: [{"label": "Net sales", "metric_key": "net_sales"}, {"label": "Gross sales", "metric_key": "gross_sales"}]
+
+Question:
+"For me, sales means without delivery fees."
+Anchor:
+2025-12-31
+Data through:
+2025-12-31
+Earlier:
+[]
+Chat context:
+
+Memories:
+[]
+
+Understanding:
+- kind: "vague_with_default"
+- reading: "I read this as sales with delivery fees taken out for [p1]."
+- periods: [{"kind": "month", "number": 12}]
+- asks: [{"metric_key": "net_sales", "new_metric": "", "split_by": [], "top_n": null}]
+- filters: []
+- defaults_used: ["default.sales"]
+- document_topics: []
+- inherit: []
+- list_refs: []
+- period_shift: null
+- choice: null
+- meanings: []
 
 ## Task
 Work out what the owner asks.

@@ -21,6 +21,7 @@ async def run_now(message_id: int, state: RunState | None = None, private: bool 
         FEEDS.pop(message_id, None)
         return
     ctx.state = state or RunState()
+    ctx.remember = ctx.state.remember
     RUNNING[message_id] = ctx.state
     try:
         await answer_question(ctx)
@@ -49,11 +50,43 @@ def _close_feed(message_id: int) -> None:
         finish_feed(message_id)
 
 
-def start(message_id: int) -> asyncio.Task:
+def _extract_after_done(message_id: int, state: RunState) -> None:
+    """Save lasting preferences after a done answer; never fails loudly."""
+    import logging
+
+    if not state.remember:
+        return
+    with session_scope() as session:
+        from sqlalchemy import select
+
+        assistant = session.get(Message, message_id)
+        if assistant is None or assistant.status != "done":
+            return
+        user = session.scalars(
+            select(Message)
+            .where(
+                Message.chat_id == assistant.chat_id,
+                Message.role == "user",
+                Message.status == "done",
+            )
+            .order_by(Message.id.desc())
+        ).first()
+        if user is None:
+            return
+        try:
+            from charie.chat.memory import extract_and_save_memories
+
+            extract_and_save_memories(session, user)
+        except Exception as err:
+            logging.getLogger(__name__).warning("memory extraction failed: %s", err)
+            session.rollback()
+
+
+def start(message_id: int, remember: bool = True) -> asyncio.Task:
     """Run the question in the background; errors are logged, not raised."""
     from charie.chat.analyst.stream import FEEDS, MessageFeed
 
-    state = RunState()
+    state = RunState(remember=remember)
     RUNNING[message_id] = state
     FEEDS[message_id] = MessageFeed()
 
@@ -62,6 +95,8 @@ def start(message_id: int) -> asyncio.Task:
             await run_now(message_id, state)
         except Exception:
             pass
+        else:
+            await asyncio.to_thread(_extract_after_done, message_id, state)
         finally:
             if RUNNING.get(message_id) is state:
                 RUNNING.pop(message_id, None)

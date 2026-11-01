@@ -30,6 +30,7 @@ from charie.chat.analyst.references import (
     ref_numbers,
     resolve_references,
 )
+from charie.chat.memory import memories_for_prompt
 from charie.shared.ai.client import get_ai
 from charie.shared.ai.errors import AiError, AiFormError
 from charie.shared.db import session_scope
@@ -172,7 +173,7 @@ def understand_input(ctx, kb: KbView) -> dict:
         "data_through": through.isoformat() if through is not None else "no data yet",
         "earlier": earlier,
         "chat_context": chat_context,
-        "memories": [],
+        "memories": memories_for_prompt(session) if get_setting(session, "memory_on") else [],
         "repair": "",
     }
 

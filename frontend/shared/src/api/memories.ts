@@ -1,9 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "./client";
 
-// One remembered preference (architecture 09 GET /api/memories). The real
-// list, delete and forget-everything arrive with P11.5; until then the fake
-// API serves the same shapes so the Settings screen works in mock mode.
+// One remembered preference (architecture 09 GET /api/memories). The
+// real addresses serve these shapes; the fake API mirrors them so the
+// Settings screen works in mock mode.
 export interface Memory {
   id: number;
   text: string;

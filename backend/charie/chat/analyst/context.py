@@ -14,6 +14,7 @@ class RunState:
 
     finish_requested: asyncio.Event = field(default_factory=asyncio.Event)
     started: float = field(default_factory=time.monotonic)
+    remember: bool = True
 
 
 @dataclass
@@ -35,6 +36,7 @@ class AnalystContext:
     unresolved_follow_up: str | None = None
     choice_failed: bool = False
     notebook: Any = None
+    remember: bool = True
     draft: Any = None
     stop_reason: str = ""
     still_open: list = field(default_factory=list)
