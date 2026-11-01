@@ -7,12 +7,24 @@
 import { useEffect, useRef, useState } from "react";
 import { LogoMark, Spinner } from "@charie/shared";
 import type { ChatMessage } from "@charie/shared";
-import { AnswerActions, AnswerView, MessageStatus, ThinkingPanel } from "@charie/shared";
+import {
+  AnswerActions,
+  AnswerView,
+  MessageStatus,
+  QuickChoice,
+  ThinkingPanel,
+} from "@charie/shared";
 import type { FeedState } from "@charie/shared";
 import { LiveAnswer } from "./LiveAnswer";
 import { ScrollToLatest } from "./ScrollToLatest";
 
 const NEAR_BOTTOM_PX = 80;
+
+function nextUserText(messages: ChatMessage[], index: number): string | null {
+  const next = messages[index + 1];
+  if (next !== undefined && next.role === "user") return next.text;
+  return null;
+}
 
 function AssistantStatus({ message }: { message: ChatMessage }) {
   if (message.status === "thinking" || message.status === "writing") {
@@ -35,11 +47,15 @@ function AssistantStatus({ message }: { message: ChatMessage }) {
 export function MessageList({
   messages,
   onFollowUp,
+  onChoose,
+  running,
   live,
   showReading = true,
 }: {
   messages: ChatMessage[];
   onFollowUp: (text: string) => void;
+  onChoose: (id: string, label: string) => void;
+  running: boolean;
   live?: { messageId: number; feed: FeedState } | null;
   showReading?: boolean;
 }) {
@@ -76,7 +92,7 @@ export function MessageList({
         className="h-full overflow-y-auto"
       >
         <div className="messages-wrap mx-auto max-w-[800px] px-7 pt-[18px] pb-10">
-          {messages.map((message) =>
+          {messages.map((message, index) =>
             message.role === "user" ? (
               <div key={message.id} className="mb-5 flex justify-end">
                 <div className="max-w-[80%] rounded-[20px] bg-bubble px-[18px] py-[10px] text-[15.5px]">
@@ -119,6 +135,20 @@ export function MessageList({
                       {(message.status === "done" || message.status === "stopped") &&
                         message.answer !== null && (
                         <AnswerView answer={message.answer} onFollowUp={onFollowUp} showReading={showReading} />
+                      )}
+                      {message.status === "needs_choice" && message.answer?.choice !== undefined && (
+                        <QuickChoice
+                          text={message.answer.choice.text}
+                          options={message.answer.choice.options}
+                          chosenLabel={nextUserText(messages, index)}
+                          disabled={index !== messages.length - 1 || running}
+                          onChoose={(id) => {
+                            const option = message.answer?.choice?.options.find(
+                              (item) => item.id === id,
+                            );
+                            if (option !== undefined) onChoose(id, option.label);
+                          }}
+                        />
                       )}
                       {message.status === "done" && message.answer !== null && (
                         <AnswerActions messageId={message.id} answer={message.answer} />

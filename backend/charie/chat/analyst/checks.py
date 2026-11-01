@@ -43,6 +43,7 @@ class CheckInputs:
 
     items: list = field(default_factory=list)
     kind: str = ""
+    meanings: list = field(default_factory=list)
     allowed_tokens: list[str] = field(default_factory=list)
     required_notes: list = field(default_factory=list)
     section_texts: list = field(default_factory=list)
@@ -351,15 +352,42 @@ def _check_10_reading(draft, blocks, inputs: CheckInputs) -> list[CheckFailure]:
     """A vague question must start with the reading block."""
     if inputs.kind not in VAGUE_KINDS:
         return []
+    failures: list[CheckFailure] = []
     first = blocks[0].get("type") if blocks else ""
-    if first == "reading":
+    if first != "reading":
+        failures.append(
+            CheckFailure(
+                check=10,
+                name="missing_reading",
+                message="Block 1: The question was vague, so the answer must start "
+                'with "I read this as…".',
+                where="Block 1",
+            )
+        )
+    failures.extend(_check_10_meanings(inputs))
+    return failures
+
+
+def _check_10_meanings(inputs: CheckInputs) -> list[CheckFailure]:
+    """Two meanings need a shown number for each meaning."""
+    if inputs.kind != "two_meanings" or not inputs.meanings:
         return []
+    have: set[str] = set()
+    for item in inputs.items or []:
+        proof = getattr(item, "proof", None) or {}
+        fact = proof.get("fact_key", {}) if isinstance(proof, dict) else {}
+        metric = fact.get("metric") if isinstance(fact, dict) else None
+        if getattr(item, "kind", "") == "number" and metric:
+            have.add(metric)
+    missing = [m for m in inputs.meanings if m.get("metric_key") not in have]
+    if not missing:
+        return []
+    labels = " and ".join(str(m.get("label", "each meaning")) for m in inputs.meanings)
     return [
         CheckFailure(
             check=10,
-            name="missing_reading",
-            message="Block 1: The question was vague, so the answer must start "
-            'with "I read this as…".',
+            name="meaning_without_number",
+            message=f"Show a number for both meanings: {labels}.",
             where="Block 1",
         )
     ]
@@ -796,9 +824,15 @@ def check_inputs(ctx) -> CheckInputs:
         elif item.kind == "table":
             for row in TableValue.model_validate(item.value).rows:
                 texts.extend("" if cell is None else str(cell) for cell in row)
+    understanding = ctx.understanding
+    raw_meanings = getattr(understanding, "meanings", None) or []
+    meanings = [
+        meaning if isinstance(meaning, dict) else meaning.model_dump() for meaning in raw_meanings
+    ]
     return CheckInputs(
         items=items,
-        kind=ctx.understanding.kind if ctx.understanding is not None else "",
+        kind=understanding.kind if understanding is not None else "",
+        meanings=meanings,
         allowed_tokens=mixed_tokens(texts),
         required_notes=required,
         section_texts=sections,

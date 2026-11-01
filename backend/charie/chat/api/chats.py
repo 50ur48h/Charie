@@ -22,7 +22,7 @@ class RenameBody(BaseModel):
 class AskBody(BaseModel):
     text: str
     mode: str = "thinking"
-    choice: dict | None = None
+    choice: str | None = None
 
 
 def _chat_shape(session: Session, chat) -> dict:

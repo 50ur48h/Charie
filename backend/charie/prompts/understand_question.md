@@ -31,6 +31,15 @@ write SQL and never type numbers.
     periods: `unit` is `day`, `week`, `month`, `quarter` or `year`, `n`
     is below 0 for "before". It stays null otherwise. "3 weeks ago"
     counts from today, so it stays a normal period expression.
+11. Vague words use their settled default (`vague_with_default`, named in
+    `defaults_used`) when the word's entry has a settled meaning. A vague
+    word with no settled meaning and exactly 2 fitting metrics is
+    `two_meanings`, with both in `meanings` (`label` in your words, one
+    `metric_key` each). Any other vague question is `vague_no_default`
+    with exactly one `choice`: 2 to 4 options, all ids different, no
+    digits in the text or labels. `choice` is only for `vague_no_default`;
+    `meanings` only for `two_meanings`. Never ask more than one quick
+    question per question.
 
 ## Examples
 Question:
@@ -143,6 +152,60 @@ Understanding:
 - inherit: ["asks"]
 - list_refs: []
 - period_shift: {"words": "last year", "unit": "year", "n": -1}
+
+Question:
+"Which are our best restaurants?"
+Anchor:
+2025-12-31
+Data through:
+2025-12-31
+Earlier:
+[]
+Chat context:
+Looking at: delivered orders; 1 Jan 2025 – 31 Dec 2025
+Memories:
+[]
+
+Understanding:
+- kind: "vague_no_default"
+- reading: "I read this as best restaurants for [p1]."
+- periods: [{"kind": "year", "year": 2025}]
+- asks: []
+- filters: []
+- defaults_used: []
+- document_topics: []
+- inherit: []
+- list_refs: []
+- period_shift: null
+- choice: {"text": "How should I rank them?", "options": [{"id": "by_net_sales", "label": "By net sales"}, {"id": "by_growth", "label": "By growth"}, {"id": "by_average_order", "label": "By average order"}]}
+- meanings: []
+
+Question:
+"How are sales doing?"
+Anchor:
+2025-12-31
+Data through:
+2025-12-31
+Earlier:
+[]
+Chat context:
+Looking at: delivered orders; 1 Jan 2025 – 31 Dec 2025
+Memories:
+[]
+
+Understanding:
+- kind: "two_meanings"
+- reading: "I read this as net sales and gross sales for [p1]."
+- periods: [{"kind": "year", "year": 2025}]
+- asks: [{"metric_key": "net_sales", "new_metric": "", "split_by": [], "top_n": null}, {"metric_key": "gross_sales", "new_metric": "", "split_by": [], "top_n": null}]
+- filters: []
+- defaults_used: []
+- document_topics: []
+- inherit: []
+- list_refs: []
+- period_shift: null
+- choice: null
+- meanings: [{"label": "Net sales", "metric_key": "net_sales"}, {"label": "Gross sales", "metric_key": "gross_sales"}]
 
 ## Task
 Work out what the owner asks.

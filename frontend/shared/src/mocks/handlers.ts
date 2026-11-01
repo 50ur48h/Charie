@@ -769,9 +769,9 @@ http.get(KNOWLEDGE_URL, ({ request }) => {
   http.post(CHAT_MESSAGES_URL, async ({ params, request }) => {
     const blocked = needSession();
     if (blocked) return blocked;
-    let record: { text?: unknown; mode?: unknown };
+    let record: { text?: unknown; mode?: unknown; choice?: unknown };
     try {
-      record = (await request.json()) as { text?: unknown; mode?: unknown };
+      record = (await request.json()) as { text?: unknown; mode?: unknown; choice?: unknown };
     } catch {
       record = {};
     }
@@ -807,6 +807,29 @@ http.get(KNOWLEDGE_URL, ({ request }) => {
         { error: "not_found", message: "That chat doesn't exist any more." },
         { status: 404 },
       );
+    }
+    if (record.choice !== undefined) {
+      if (typeof record.choice !== "string") {
+        return HttpResponse.json(
+          { error: "unknown_choice", message: "That choice isn't available. Pick one of the options." },
+          { status: 400 },
+        );
+      }
+      const picked = addMockMessage(chatId, text.trim(), record.choice);
+      if (picked === "choice_not_waiting") {
+        return HttpResponse.json(
+          { error: "choice_not_waiting", message: "That quick question was already answered. Please ask again." },
+          { status: 409 },
+        );
+      }
+      if (picked === "unknown_choice" || picked === undefined) {
+        return HttpResponse.json(
+          { error: "unknown_choice", message: "That choice isn't available. Pick one of the options." },
+          { status: 400 },
+        );
+      }
+      countMockPosts("messages");
+      return HttpResponse.json(picked, { status: 201 });
     }
     if (isMockChatRunning(chatId)) {
       return HttpResponse.json(

@@ -9,6 +9,7 @@ from charie.chat.analyst.references import ListRef, PeriodShift
 from charie.chat.analyst.understand import (
     Ask,
     Filter,
+    Meaning,
     Understanding,
     check_understanding,
     knowledge_summary,
@@ -191,6 +192,47 @@ def test_a_period_shift_needs_a_non_zero_n() -> None:
     assert check_understanding(reply, _kb()) == []
     reply.period_shift = PeriodShift(words="same time", unit="year", n=0)
     assert check_understanding(reply, _kb()) != []
+
+
+def _kb_with_meanings() -> KbView:
+    entries = {
+        "metric": {"net_sales": {"kind": "sum"}, "gross_sales": {"kind": "sum"}},
+        "dimension": {},
+        "default": {
+            "sales": {"word": "sales", "value": "net_sales", "metrics": ["net_sales"]},
+            "best": {"word": "best", "value": "", "metrics": ["net_sales", "gross_sales"]},
+        },
+        "name": {},
+    }
+    return KbView(entries, {}, date(2025, 12, 31), {})
+
+
+def test_a_with_default_reading_needs_a_settled_default() -> None:
+    reply = _good_reply()
+    reply.kind = "vague_with_default"
+    reply.defaults_used = ["default.sales"]
+    assert check_understanding(reply, _kb_with_meanings()) == []
+    reply.defaults_used = ["default.best"]
+    problems = check_understanding(reply, _kb_with_meanings())
+    assert any("best" in problem for problem in problems)
+
+
+def test_two_meanings_need_2_known_metrics() -> None:
+    reply = _good_reply()
+    reply.kind = "two_meanings"
+    reply.meanings = [
+        Meaning(label="Net sales", metric_key="net_sales"),
+        Meaning(label="Gross sales", metric_key="gross_sales"),
+    ]
+    assert check_understanding(reply, _kb_with_meanings()) == []
+    reply.meanings = reply.meanings[:1]
+    assert check_understanding(reply, _kb_with_meanings()) != []
+    reply.meanings = [
+        Meaning(label="Net sales", metric_key="net_sales"),
+        Meaning(label="Nope", metric_key="nope"),
+    ]
+    problems = check_understanding(reply, _kb_with_meanings())
+    assert any("nope" in problem for problem in problems)
 
 
 def test_a_ref_placeholder_needs_its_list_ref() -> None:

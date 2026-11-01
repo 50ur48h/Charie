@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from charie.chat.analyst.chat_context import load_context
 from charie.chat.analyst.context import AnalystContext, RunState
 from charie.chat.analyst.stream import FEEDS, ThinkingLog, finish_feed
 from charie.shared.ai.spending import month_spent, spending_state
@@ -205,16 +206,19 @@ def _check_spending(session: Session) -> None:
 
 
 def ask_question(
-    session: Session, chat_id: int, text: str, mode: str, choice: dict | None = None
+    session: Session, chat_id: int, text: str, mode: str, choice: str | None = None
 ) -> tuple[Message, Message]:
     """Save the user's question and its thinking assistant message.
 
     Checks run in the plan's order: text, mode, no running question,
-    spending, a published version. `choice` is accepted and ignored
-    until P11.3. Call under `chat_lock(chat_id)`.
+    spending, a waiting quick question for `choice`, a published
+    version. A choice is an option id of the waiting quick question;
+    the user message keeps the option's label. Call under
+    `chat_lock(chat_id)`.
     """
-    _ = choice
     question = text.strip()
+    if choice is not None:
+        question = _choice_label(session, chat_id, choice) or question
     if not question:
         raise ApiError(422, "empty_question", "Please type a question.")
     if len(text) > QUESTION_LIMIT:
@@ -260,6 +264,23 @@ def ask_question(
     chat.updated_at = now
     session.flush()
     return user_message, assistant_message
+
+
+def _choice_label(session: Session, chat_id: int, choice: str) -> str | None:
+    """The saved label of one waiting quick-question option, or None."""
+    pending = load_context(session, chat_id).pending_choice
+    if pending is None:
+        raise ApiError(
+            409,
+            "choice_not_waiting",
+            "That quick question was already answered. Please ask again.",
+        )
+    for option in pending.options:
+        if option.get("id") == choice:
+            return option.get("label") or None
+    raise ApiError(
+        400, "unknown_choice", "That choice isn't available. Please pick one of the options."
+    )
 
 
 def build_context(message_id: int, private: bool = False) -> AnalystContext | None:

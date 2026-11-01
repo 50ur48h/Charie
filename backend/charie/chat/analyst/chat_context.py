@@ -57,6 +57,15 @@ class OpenReason(BaseModel):
     labels: list[str] = Field(default=[])
 
 
+class PendingChoice(BaseModel):
+    """The waiting quick question: set on needs_choice, cleared next answer."""
+
+    message_id: int = 0
+    question: str = ""
+    text: str = ""
+    options: list[dict] = Field(default=[])
+
+
 class ChatContext(BaseModel):
     """The whole chat memory; every field has a default, so old chats load."""
 
@@ -64,6 +73,7 @@ class ChatContext(BaseModel):
     lists: list[ShownList] = Field(default=[])
     said: list[SaidFact] = Field(default=[])
     open_reasons: list[OpenReason] = Field(default=[])
+    pending_choice: PendingChoice | None = None
 
 
 class FinishedAnswer(BaseModel):
@@ -110,12 +120,23 @@ def _focus_line(focus: Focus | None) -> str:
     return "Looking at: " + "; ".join(parts)
 
 
+def _pending_line(pending: PendingChoice | None) -> str:
+    """The waiting quick question, so a typed reply reads through it."""
+    if pending is None:
+        return ""
+    labels = ", ".join(str(option.get("label", "")) for option in pending.options)
+    return f"Waiting quick question: {pending.text} Options: {labels}."
+
+
 def context_for_prompt(context: ChatContext) -> str:
     """The chat memory as plain text for the understand prompt (P11.2).
 
     Newest lists first; an empty context gives an empty view.
     """
     lines: list[str] = []
+    pending_line = _pending_line(context.pending_choice)
+    if pending_line:
+        lines.append(pending_line)
     focus_line = _focus_line(context.focus)
     if focus_line:
         lines.append(focus_line)
@@ -289,4 +310,10 @@ def update_context(context: ChatContext, finished: FinishedAnswer) -> ChatContex
                 )
             )
     open_reasons = reasons if reasons else list(context.open_reasons)
-    return ChatContext(focus=focus, lists=lists, said=said, open_reasons=open_reasons)
+    return ChatContext(
+        focus=focus,
+        lists=lists,
+        said=said,
+        open_reasons=open_reasons,
+        pending_choice=context.pending_choice,
+    )

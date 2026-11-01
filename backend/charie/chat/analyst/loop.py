@@ -27,6 +27,12 @@ MAX_ROUNDS = 4
 async def run_rounds(ctx) -> list[Task]:
     """Understand once, run up to 4 rounds; returns every task run, in order."""
     understand(ctx)
+    if ctx.choice_failed:
+        _remember_stop(ctx, "failed", "")
+        return []
+    if _is_choice_request(ctx):
+        _remember_stop(ctx, "needs_choice", "")
+        return []
     if ctx.unresolved_follow_up:
         _remember_stop(ctx, "unresolved", "")
         return []
@@ -72,6 +78,16 @@ async def run_extra_round(ctx, ran: list[Task], round_no: int, focus: str) -> li
     _finish_round(ctx, seq, current, round_no, missing)
     _remember_stop(ctx, "rounds_done", missing)
     return current
+
+
+def _is_choice_request(ctx) -> bool:
+    """A vague question with a valid quick question and no failure."""
+    understanding = ctx.understanding
+    return (
+        understanding is not None
+        and understanding.kind == "vague_no_default"
+        and understanding.choice is not None
+    )
 
 
 def _remember_stop(ctx, reason: str, missing: str) -> None:

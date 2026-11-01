@@ -164,6 +164,26 @@ export function ChatPage() {
     composerRef.current?.focus();
   }
 
+  async function choose(id: string, label: string): Promise<void> {
+    if (sendInflight.current) return;
+    sendInflight.current = true;
+    setSending(true);
+    try {
+      const sent = await sendMessage.mutateAsync({ chatId: chat.id, text: label, choice: id });
+      await client.refetchQueries({ queryKey: ["chat", chat.id] });
+      setScope({ chatId: chat.id, messageId: sent.assistant_message_id });
+    } catch (error) {
+      toast(
+        error instanceof ApiError
+          ? error.message
+          : "Something went wrong on our side. Please try again.",
+      );
+    } finally {
+      sendInflight.current = false;
+      setSending(false);
+    }
+  }
+
   async function finishNow(): Promise<void> {
     if (runningId === undefined || finishInflight.current) return;
     finishInflight.current = true;
@@ -193,6 +213,8 @@ export function ChatPage() {
       <MessageList
         messages={chat.messages}
         onFollowUp={followUp}
+        onChoose={(id, label) => void choose(id, label)}
+        running={busy}
         live={streamMessageId === null ? null : { messageId: streamMessageId, feed: liveFeed }}
         showReading={showReading}
       />

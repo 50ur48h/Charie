@@ -70,6 +70,27 @@ class Ask(BaseModel):
     top_n: int | None = Field(default=None, description="Keep only the top rows, or empty for all.")
 
 
+class ChoiceOption(BaseModel):
+    """One clickable answer to a quick question."""
+
+    id: str = Field(default="", description="Lowercase words joined by _, like by_net_sales.")
+    label: str = Field(default="", description="The option in the owner's words.")
+
+
+class QuickChoice(BaseModel):
+    """The one quick question, asked instead of guessing."""
+
+    text: str = Field(default="", description="The question in the owner's words.")
+    options: list[ChoiceOption] = Field(default=[], description="2 to 4 options.")
+
+
+class Meaning(BaseModel):
+    """One meaning of a two-meaning word: a label and its metric."""
+
+    label: str = Field(default="", description="The meaning in the owner's words.")
+    metric_key: str = Field(default="", description="A metric key of this version.")
+
+
 class Understanding(BaseModel):
     """The AI's reading of one question, checked by code below."""
 
@@ -87,6 +108,12 @@ class Understanding(BaseModel):
     )
     document_topics: list[str] = Field(
         default=[], description="Short search phrases for document questions."
+    )
+    choice: QuickChoice | None = Field(
+        default=None, description="The quick question, only for vague_no_default."
+    )
+    meanings: list[Meaning] = Field(
+        default=[], description="Exactly 2 meanings, only for two_meanings."
     )
     inherit: list[Literal["asks", "filters", "periods"]] = Field(
         default=[], description="Parts the question takes from the chat's focus."
@@ -182,7 +209,42 @@ def _name_match(kb: KbView, dimension_key: str, value: str) -> str | None:
     return None
 
 
-def check_understanding(u: Understanding, kb: KbView) -> list[str]:
+def _check_choice(u: Understanding, problems: list[str], allowed: list[str]) -> None:
+    """The quick question's shape: 2-4 distinct options, no digits."""
+    choice = u.choice
+    if choice is None:
+        return
+    if u.kind != "vague_no_default":
+        problems.append("The quick question is only for vague_no_default.")
+        return
+    if not 2 <= len(choice.options) <= 4:
+        problems.append("The quick question needs 2 to 4 options.")
+    ids = [option.id for option in choice.options]
+    if len(set(ids)) != len(ids):
+        problems.append("The quick question's option ids must all be different.")
+    words = " ".join([choice.text] + [option.label for option in choice.options])
+    stray = stray_digits(words, allowed)
+    if stray:
+        problems.append(f"The quick question must not type numbers: {', '.join(stray)}.")
+
+
+def _check_meanings(u: Understanding, kb: KbView, problems: list[str]) -> None:
+    """Two meanings are exactly 2 known metrics of this version."""
+    if u.kind != "two_meanings":
+        if u.meanings:
+            problems.append("Meanings are only for two_meanings.")
+        return
+    if len(u.meanings) != 2:
+        problems.append("two_meanings needs exactly 2 meanings.")
+        return
+    for meaning in u.meanings:
+        if meaning.metric_key not in kb.metrics():
+            problems.append(
+                f"Unknown meaning metric {meaning.metric_key!r}. Use a metric key from the summary."
+            )
+
+
+def check_understanding(u: Understanding, kb: KbView, choice_answered: bool = False) -> list[str]:
     """Every problem with the AI's reply, in words it can act on.
 
     Matching filter spellings are fixed in place; the reply keeps no
@@ -220,6 +282,13 @@ def check_understanding(u: Understanding, kb: KbView) -> list[str]:
         word = used.removeprefix("default.")
         if word not in known_words:
             problems.append(f"Unknown default {used!r}. Use one of the defaults in the summary.")
+            continue
+        if u.kind == "vague_with_default" and not kb.defaults()[word].value:
+            problems.append(
+                f'Default "{used}" has no settled meaning yet; ask a quick question instead.'
+            )
+    if choice_answered and u.choice is not None:
+        problems.append("The user already answered your quick question. Don't ask again.")
     if len(u.list_refs) > 3:
         problems.append("list_refs holds at most 3 pointers at shown lists.")
     if u.period_shift is not None and u.period_shift.n == 0:
@@ -237,6 +306,8 @@ def check_understanding(u: Understanding, kb: KbView) -> list[str]:
     allowed_words = mixed_tokens(
         list(kb.titles().values()) + kb.name_spellings() + list(known_words)
     )
+    _check_choice(u, problems, allowed_words)
+    _check_meanings(u, kb, problems)
     stray = stray_digits(reading, allowed_words)
     if stray:
         problems.append(f"The reading must not type numbers: {', '.join(stray)}.")
@@ -260,7 +331,29 @@ def _blank_understanding() -> Understanding:
         inherit=[],
         list_refs=[],
         period_shift=None,
+        choice=None,
+        meanings=[],
     )
+
+
+def _choice_answered(ctx) -> bool:
+    """Whether this question answers the chat's waiting quick question."""
+    from charie.chat.analyst.chat_context import load_context
+
+    with session_scope() as session:
+        pending = load_context(session, ctx.chat_id).pending_choice
+    return pending is not None
+
+
+def _add_meaning_asks(u: Understanding) -> None:
+    """Code adds an ask for each meaning, so both numbers get fetched."""
+    if u.kind != "two_meanings":
+        return
+    have = {ask.metric_key for ask in u.asks}
+    for meaning in u.meanings:
+        if meaning.metric_key and meaning.metric_key not in have:
+            u.asks.append(Ask(metric_key=meaning.metric_key))
+            have.add(meaning.metric_key)
 
 
 def _metric_titles(u: Understanding, kb: KbView) -> list[str]:
@@ -390,6 +483,7 @@ def understand(ctx) -> None:
         kb = KbView.load(session, ctx.kb_version_id)
         date_ctx = load_date_context(session, None, kb)
     inputs = understand_input(ctx, kb)
+    answered_choice = _choice_answered(ctx)
     summary = knowledge_summary(kb)
     ai = get_ai()
     seq = ctx.log.start("step", "Reading your question")
@@ -404,7 +498,7 @@ def understand(ctx) -> None:
             knowledge_version=ctx.kb_version_id,
             already_running=False,
         )
-        problems = check_understanding(first, kb)
+        problems = check_understanding(first, kb, answered_choice)
         if problems:
             second_inputs = dict(inputs, repair="; ".join(problems))
             second = ai.run(
@@ -417,14 +511,21 @@ def understand(ctx) -> None:
                 knowledge_version=ctx.kb_version_id,
                 already_running=False,
             )
-            problems = check_understanding(second, kb)
+            problems = check_understanding(second, kb, answered_choice)
             u = second
         else:
             u = first
     except (AiFormError, PeriodError, AiError) as err:
         u = _blank_understanding()
         problems = [str(err)]
+    _add_meaning_asks(u)
     notes = apply_fallbacks(u, kb, date_ctx, problems)
+    if answered_choice and u.choice is not None:
+        ctx.choice_failed = True
+        ctx.understanding = u
+        ctx.periods = PeriodSet()
+        ctx.problems = list(problems)
+        return
     resolution = _resolve_follow_up(ctx, u)
     if isinstance(resolution, Unresolved):
         ctx.unresolved_follow_up = resolution.words

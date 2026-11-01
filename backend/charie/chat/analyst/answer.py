@@ -11,8 +11,10 @@ from datetime import UTC, datetime
 
 from sqlalchemy import func, select
 
+from charie.chat import chat_store
 from charie.chat.analyst.chat_context import (
     FinishedAnswer,
+    PendingChoice,
     load_context,
     save_context,
     update_context,
@@ -23,7 +25,7 @@ from charie.chat.analyst.loop import run_extra_round, run_rounds
 from charie.chat.analyst.notebook import Notebook, QuoteValue
 from charie.chat.analyst.render import fallback_blocks, render_answer
 from charie.chat.analyst.review import review_answer
-from charie.chat.analyst.stream import finish_feed, stream_answer
+from charie.chat.analyst.stream import finish_feed, send_choice, stream_answer
 from charie.chat.analyst.write import write_answer
 from charie.shared.ai.errors import AiError
 from charie.shared.ai.spending import as_utc
@@ -49,9 +51,44 @@ def _deliver_not_sure(ctx: AnalystContext) -> None:
     _save_blocks(ctx, blocks, [])
 
 
+#: The failed second choice, in the owner's words.
+SETTLE_FAILED_TEXT = "I couldn't settle what you meant. Please ask again in your own words."
+
+
+def _deliver_choice(ctx: AnalystContext) -> None:
+    """One quick question as the whole answer: no rounds, status needs_choice."""
+    choice = ctx.understanding.choice
+    options = [{"id": option.id, "label": option.label} for option in choice.options]
+    saved = {"text": choice.text, "options": options}
+    ctx.log.add(
+        "decision",
+        "Asked you one quick question",
+        "This can be read a few ways, so I'd rather ask than guess.",
+    )
+    send_choice(ctx.message_id, saved)
+    _save_blocks(ctx, [], [], status="needs_choice")
+    with session_scope() as session:
+        message = session.get(Message, ctx.message_id)
+        if message is not None and isinstance(message.answer, dict):
+            message.answer = {**message.answer, "choice": saved}
+        pending = PendingChoice(
+            message_id=ctx.message_id, question=ctx.question, text=choice.text, options=options
+        )
+        pending_context = load_context(session, ctx.chat_id)
+        pending_context.pending_choice = pending
+        save_context(session, ctx.chat_id, pending_context)
+        session.commit()
+
+
 async def answer_question(ctx: AnalystContext) -> None:
     """Understand once, run the rounds, then write the answer."""
     tasks = await run_rounds(ctx)
+    if ctx.choice_failed:
+        chat_store.mark_failed(ctx.message_id, SETTLE_FAILED_TEXT)
+        return
+    if ctx.stop_reason == "needs_choice":
+        _deliver_choice(ctx)
+        return
     if ctx.unresolved_follow_up:
         _deliver_not_sure(ctx)
         return
@@ -330,6 +367,10 @@ def _save_blocks(
         "blocks": blocks,
     }
     with session_scope() as session:
+        cleared = load_context(session, ctx.chat_id)
+        if cleared.pending_choice is not None:
+            cleared.pending_choice = None
+            save_context(session, ctx.chat_id, cleared)
         message = session.get(Message, ctx.message_id)
         if message is None:
             return

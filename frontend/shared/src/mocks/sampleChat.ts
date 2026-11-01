@@ -266,6 +266,7 @@ const COUNT_FINISH_KEY = "charie-mock-count-finish";
 
 let nextChatId = 100;
 let nextMessageId = 1000;
+const pendingChoices = new Map<number, { messageId: number; options: { id: string; label: string }[] }>();
 let created = new Map<number, Chat>();
 let rehydrated = false;
 // Assistant messages with a genuinely running answer: created by POST and
@@ -501,7 +502,8 @@ export function finishMockMessage(messageId: number): "ok" | "done" | "not_found
       if (
         message.status === "done" ||
         message.status === "failed" ||
-        message.status === "stopped"
+        message.status === "stopped" ||
+        message.status === "needs_choice"
       ) {
         return "done";
       }
@@ -518,12 +520,45 @@ export function finishMockMessage(messageId: number): "ok" | "done" | "not_found
   return "not_found";
 }
 
+export interface PendingMockChoice {
+  messageId: number;
+  options: { id: string; label: string }[];
+}
+
+export function pendingMockChoice(chatId: number): PendingMockChoice | undefined {
+  rehydrate();
+  return pendingChoices.get(chatId);
+}
+
+export function setPendingMockChoice(
+  chatId: number,
+  choice: PendingMockChoice,
+): void {
+  pendingChoices.set(chatId, choice);
+  persist();
+}
+
+export function clearPendingMockChoice(chatId: number): void {
+  pendingChoices.delete(chatId);
+  persist();
+}
+
 export function addMockMessage(
   chatId: number,
   text: string,
-): { user_message_id: number; assistant_message_id: number } | undefined {
+  choice?: string,
+): { user_message_id: number; assistant_message_id: number } | "choice_not_waiting" | "unknown_choice" | undefined {
   const chat = storedChat(chatId);
   if (chat === undefined) return undefined;
+  let question = text;
+  if (choice !== undefined) {
+    const pending = pendingChoices.get(chatId);
+    if (pending === undefined) return "choice_not_waiting";
+    const picked = pending.options.find((option) => option.id === choice);
+    if (picked === undefined) return "unknown_choice";
+    question = picked.label;
+    pendingChoices.delete(chatId);
+  }
   if (chat.messages.length === 0) {
     const cut = text.slice(0, 60);
     chat.title =
@@ -536,7 +571,7 @@ export function addMockMessage(
   nextMessageId += 2;
   const now = new Date().toISOString();
   chat.messages.push(
-    { id: userId, role: "user", text, status: "done", started_at: now },
+    { id: userId, role: "user", text: question, status: "done", started_at: now },
     {
       id: assistantId,
       role: "assistant",
@@ -608,11 +643,12 @@ export function storeMockAnswer(
   answer: Answer,
   thinking: AssistantMessage["thinking"],
   summary: AssistantMessage["summary"],
+  status: AssistantMessage["status"] = "done",
 ): boolean {
   const ref = findMockAssistant(messageId);
   if (ref === undefined) return false;
   if (ref.message.status === "stopped") return false;
-  ref.message.status = "done";
+  ref.message.status = status;
   running.delete(messageId);
   ref.message.answer = answer;
   ref.message.thinking = thinking;
@@ -625,6 +661,7 @@ export function storeMockAnswer(
 export function resetMockChats(): void {
   nextChatId = 100;
   nextMessageId = 1000;
+  pendingChoices.clear();
   created = new Map();
   running = new Set();
   deleted = new Set();

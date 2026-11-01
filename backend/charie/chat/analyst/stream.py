@@ -134,6 +134,14 @@ def finish_feed(message_id: int, status: str | None = None, cost_usd: float = 0)
     _schedule_removal(message_id)
 
 
+def send_choice(message_id: int, choice: dict) -> None:
+    """The quick question through the live stream, replayed on reconnect."""
+    feed = FEEDS.get(message_id)
+    if feed is None or feed.closed:
+        return
+    feed.add("choice", choice)
+
+
 def _push_thinking(message_id: int, line: dict) -> None:
     """A saved thinking line also goes out live (P10.2)."""
     feed = FEEDS.get(message_id)
