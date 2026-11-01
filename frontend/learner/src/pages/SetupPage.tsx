@@ -77,7 +77,9 @@ export function SetupPage() {
           {open === 2 && <DocumentsStep onBack={() => go(1)} onNext={() => go(3)} />}
           {open === 3 && <LearnStep onBack={() => go(2)} onNext={() => go(4)} />}
           {open === 4 && <QuestionsStep onBack={() => go(3)} onNext={() => go(5)} />}
-          {open === 5 && <ReadyStep readiness={setup.data.readiness} />}
+          {open === 5 && (
+            <ReadyStep readiness={setup.data.readiness} usability={setup.data.usability} />
+          )}
         </Card>
       </div>
     </Page>

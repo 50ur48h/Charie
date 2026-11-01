@@ -128,12 +128,122 @@ def big_changes(session: Session, version_id: int) -> list:
     return [row for row in rows if _row_is_big(row)]
 
 
+def usability(session: Session, version_id: int) -> dict:
+    """Usable numbers and excluded ones with reasons, from stored checks.
+
+    A metric is usable when its own checks pass and, for ratios, every
+    metric it divides is usable too. Defaults follow their metrics the
+    same way. Failed or never-checked numbers stay out of analyst use,
+    preserved with their reasons; only the usable set may publish. The
+    automatic path (`finalize_run`) keeps its own stricter refusal.
+    """
+    from charie.shared.knowledge.store import list_entries
+
+    entries = {entry.key: entry for entry in list_entries(session, version_id)}
+    usable: list[str] = []
+    excluded: dict[str, str] = {}
+    usable_defaults: list[str] = []
+    excluded_defaults: dict[str, str] = {}
+
+    def failed_names(details: dict) -> list[str]:
+        return [
+            test.get("name", "check")
+            for test in details.get("tests") or []
+            if isinstance(test, dict) and test.get("passed") is False
+        ]
+
+    def ran_ok(details: dict) -> bool:
+        return any(
+            isinstance(test, dict) and test.get("name") == "runs" and test.get("passed")
+            for test in details.get("tests") or []
+        )
+
+    def self_test_reason(details: dict) -> str | None:
+        for test in details.get("tests") or []:
+            if not isinstance(test, dict):
+                continue
+            if test.get("name") == "self_test" and test.get("passed") is False:
+                return test.get("text") or None
+        return None
+
+    def metric_usable(key: str, seen: tuple[str, ...]) -> bool:
+        if key in usable:
+            return True
+        if key in excluded:
+            return False
+        entry = entries.get(key)
+        details = entry.details if entry is not None and isinstance(entry.details, dict) else {}
+        if entry is None or entry.kind != "metric":
+            excluded[key] = "Charie doesn't know this number."
+            return False
+        if key in seen:
+            excluded[key] = "The recipe divides itself."
+            return False
+        failed = failed_names(details)
+        if failed:
+            reason = "Fails " + ", ".join(failed) + "."
+            why = self_test_reason(details)
+            if why:
+                reason += " " + why
+            excluded[key] = reason
+            return False
+        if not ran_ok(details):
+            excluded[key] = "It was never checked."
+            return False
+        if details.get("kind") == "ratio":
+            for role in ("numerator", "denominator"):
+                dep = details.get(role) or ""
+                if not metric_usable(dep, (*seen, key)):
+                    excluded[key] = f"It divides {dep}, which is excluded."
+                    return False
+        usable.append(key)
+        return True
+
+    for key, entry in entries.items():
+        if entry.kind == "metric":
+            metric_usable(key, ())
+
+    for key, entry in entries.items():
+        if entry.kind != "default":
+            continue
+        details = entry.details if isinstance(entry.details, dict) else {}
+        refs = [ref for ref in (details.get("metrics") or []) if isinstance(ref, str)]
+        missing = next((ref for ref in refs if ref not in entries), "")
+        if missing:
+            excluded_defaults[key] = f"It needs {missing}, which Charie doesn't know."
+        else:
+            bad = next((ref for ref in refs if ref not in usable), "")
+            if bad:
+                excluded_defaults[key] = f"It needs {bad}, which is excluded."
+            else:
+                usable_defaults.append(key)
+
+    titles = {key: (entry.title or key) for key, entry in entries.items()}
+    return {
+        "usable": sorted(usable),
+        "excluded": [
+            {"key": key, "title": titles.get(key, key), "reason": excluded[key]}
+            for key in sorted(excluded)
+        ],
+        "usable_defaults": sorted(usable_defaults),
+        "excluded_defaults": [
+            {
+                "key": key,
+                "title": titles.get(key, key),
+                "reason": excluded_defaults[key],
+            }
+            for key in sorted(excluded_defaults)
+        ],
+    }
+
+
 def publish_version(session: Session, version_id: int):
     """Publish one draft: the live version becomes archived, atomically.
 
     Publishing is the owner's explicit review, so big changes may publish
-    once reviewed here. Failed or untested numbers never publish: they stay
-    out of analyst use until their checks pass. Publishing an
+    once reviewed here. Only the usable set publishes: failed or untested
+    numbers stay in the version with their reasons but out of analyst use.
+    A draft with nothing usable is refused. Publishing an
     already-published version is idempotent. Anything else that isn't a
     draft is refused. Version ids never change, so active chats stay
     pinned. The caller commits.
@@ -148,12 +258,16 @@ def publish_version(session: Session, version_id: int):
         return version
     if version.status != "draft":
         raise PublishError("Only a draft can be published.")
-    failed = _failed_metrics(session, version_id)
-    if failed:
-        raise FailedChecks(f"{len(failed)} number(s) fail their checks.")
-    untested = _untested_metrics(session, version_id)
-    if untested:
-        raise FailedChecks(f"{len(untested)} number(s) were never checked.")
+    from charie.shared.knowledge.store import list_entries
+
+    has_metrics = any(entry.kind == "metric" for entry in list_entries(session, version_id))
+    scope = usability(session, version_id)
+    if has_metrics and not scope["usable"]:
+        failed = _failed_metrics(session, version_id)
+        untested = _untested_metrics(session, version_id)
+        raise FailedChecks(
+            f"Nothing usable to publish: {len(failed)} fail, {len(untested)} untested."
+        )
     live = session.scalar(
         select(KbVersion)
         .where(KbVersion.status == "published", KbVersion.id != version.id)
@@ -356,4 +470,15 @@ def publish_version_number(number: int, session: Session = Depends(get_session))
         raise ApiError(409, "busy", str(err)) from err
     session.commit()
     session.refresh(published)
-    return {"version": _full_shape(published)}
+    return {"version": _full_shape(published), "scope": usability(session, published.id)}
+
+
+@versions_router.get("/api/versions/{number}/usability")
+def get_version_usability(number: int, session: Session = Depends(get_session)) -> dict:
+    """Usable numbers and excluded ones with reasons, from stored checks."""
+    from charie.shared.tables.knowledge import KbVersion
+
+    version = session.scalar(select(KbVersion).where(KbVersion.number == number))
+    if version is None:
+        raise ApiError(404, "not_found", "Charie couldn't find that version.")
+    return {"version": version.number, "status": version.status, **usability(session, version.id)}
