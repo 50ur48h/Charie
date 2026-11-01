@@ -3,6 +3,7 @@
 import asyncio
 import time
 from dataclasses import dataclass, field
+from typing import Any
 
 from charie.chat.analyst.stream import ThinkingLog
 
@@ -28,3 +29,6 @@ class AnalystContext:
     log: ThinkingLog
     state: RunState
     private: bool = False
+    understanding: Any = None
+    periods: Any = None
+    problems: list = field(default_factory=list)

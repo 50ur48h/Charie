@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Literal
 
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, Field, model_validator
 
 from charie.shared.calc.core import period_status
 from charie.shared.text.numbers import format_date, format_period
@@ -74,14 +74,14 @@ class PeriodExpression(BaseModel):
     Each kind needs its own fields; anything else is a `PeriodError`.
     """
 
-    kind: PeriodKind
-    unit: PeriodUnit | None = None
-    count: int | None = None
-    number: int | None = None
-    year: int | None = None
-    of_period: int | None = None
-    start: date | None = None
-    end: date | None = None
+    kind: PeriodKind = Field(description="The kind of period, from the fixed list.")
+    unit: PeriodUnit | None = Field(default=None, description="day, week, month, quarter or year.")
+    count: int | None = Field(default=None, description="How many units back or how many to take.")
+    number: int | None = Field(default=None, description="The month or quarter number.")
+    year: int | None = Field(default=None, description="The calendar or fiscal year.")
+    of_period: int | None = Field(default=None, description="Which earlier period to compare with.")
+    start: date | None = Field(default=None, description="Custom range start, YYYY-MM-DD.")
+    end: date | None = Field(default=None, description="Custom range end, YYYY-MM-DD.")
 
     @model_validator(mode="after")
     def _needs_its_fields(self) -> "PeriodExpression":

@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 
 from charie.chat.analyst.context import AnalystContext
 from charie.chat.analyst.stream import FEEDS, finish_feed
+from charie.chat.analyst.understand import understand
 from charie.shared.db import session_scope
 from charie.shared.tables.chat import Message
 
@@ -37,13 +38,15 @@ PLACEHOLDER_BODY = "This is a placeholder answer. The real analyst arrives in th
 
 
 async def answer_question(ctx: AnalystContext) -> None:
-    """Three placeholder lines, then the placeholder answer.
+    """Understand first, then two placeholder lines and a placeholder answer.
 
-    A Finish now click skips the rest. Later sub-phases swap this body
+    A Finish now click skips the rest. Later sub-phases swap the rest
     for the real analyst; the runner and the store stay the same.
     """
+    understand(ctx)
+    if ctx.state.finish_requested.is_set():
+        return
     steps = [
-        ("step", "Reading your question", ""),
         ("step", "Placeholder: the real analyst is being built", ""),
         ("check", "Placeholder check", ""),
     ]

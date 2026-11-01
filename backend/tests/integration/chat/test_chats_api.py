@@ -11,6 +11,7 @@ from charie.shared.tables.knowledge import KbVersion
 from charie.shared.tables.sources import DataSource
 from charie.shared.tables.usage import AiCall
 from tests.conftest import log_in
+from tests.integration.chat.conftest import fake_understanding
 
 
 def _publish(db_session) -> KbVersion:
@@ -74,6 +75,7 @@ def test_missing_chat_is_404(chat_client, db_session) -> None:
 
 
 def test_delete_chat_keeps_ai_calls(chat_client, db_session, monkeypatch) -> None:
+    fake_understanding(monkeypatch)
     monkeypatch.setattr(answer_module, "PLACEHOLDER_PAUSE", 0)
     log_in(chat_client)
     _publish(db_session)
@@ -98,7 +100,8 @@ def test_delete_chat_keeps_ai_calls(chat_client, db_session, monkeypatch) -> Non
     assert kept is not None and kept.message_id is None
 
 
-def test_delete_refused_while_running(chat_client, db_session) -> None:
+def test_delete_refused_while_running(chat_client, db_session, monkeypatch) -> None:
+    fake_understanding(monkeypatch)
     log_in(chat_client)
     _publish(db_session)
     chat_id = chat_client.post("/api/chats", json={}).json()["id"]
@@ -110,6 +113,7 @@ def test_delete_refused_while_running(chat_client, db_session) -> None:
 
 
 def test_ask_creates_two_messages(chat_client, db_session, monkeypatch) -> None:
+    fake_understanding(monkeypatch)
     monkeypatch.setattr(answer_module, "PLACEHOLDER_PAUSE", 0)
     log_in(chat_client)
     _publish(db_session)
@@ -123,7 +127,7 @@ def test_ask_creates_two_messages(chat_client, db_session, monkeypatch) -> None:
         time.sleep(0.05)
     assert assistant["status"] == "done", assistant
     assert [line["title"] for line in assistant["thinking"]] == [
-        "Reading your question",
+        "Understood the question",
         "Placeholder: the real analyst is being built",
         "Placeholder check",
     ]
@@ -131,6 +135,7 @@ def test_ask_creates_two_messages(chat_client, db_session, monkeypatch) -> None:
 
 
 def test_ask_sets_title_from_first_question(chat_client, db_session, monkeypatch) -> None:
+    fake_understanding(monkeypatch)
     monkeypatch.setattr(answer_module, "PLACEHOLDER_PAUSE", 0)
     log_in(chat_client)
     _publish(db_session)
@@ -141,7 +146,8 @@ def test_ask_sets_title_from_first_question(chat_client, db_session, monkeypatch
     assert opened["title"] == "How did net sales by cuisine compare for the fourth quarter…"
 
 
-def test_ask_refused_while_running(chat_client, db_session) -> None:
+def test_ask_refused_while_running(chat_client, db_session, monkeypatch) -> None:
+    fake_understanding(monkeypatch)
     log_in(chat_client)
     _publish(db_session)
     chat_id = chat_client.post("/api/chats", json={}).json()["id"]
@@ -199,6 +205,7 @@ def test_ask_rejects_quick_mode(chat_client, db_session) -> None:
 
 
 def test_ask_saves_data_through_from_source(chat_client, db_session, monkeypatch) -> None:
+    fake_understanding(monkeypatch)
     monkeypatch.setattr(answer_module, "PLACEHOLDER_PAUSE", 0)
     log_in(chat_client)
     _publish(db_session)

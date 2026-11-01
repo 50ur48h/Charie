@@ -84,12 +84,17 @@ class AiClient:
         learning_run_id: int | None = None,
         knowledge_summary: str | None = None,
         knowledge_version: int | None = None,
+        already_running: bool = False,
     ) -> BaseModel:
-        """Run one job: spending check, prompt, replay or call, repair, cost rows."""
+        """Run one job: spending check, prompt, replay or call, repair, cost rows.
+
+        A question's later calls pass `already_running=True`, so a running
+        question finishes even when the limit is reached.
+        """
         settings = get_job_settings(job)
         limit, warn = self._cost_log.limits()
         spent = self._cost_log.month_spent(datetime.now(UTC))
-        if spending_state(spent, limit, warn) == "paused":
+        if not already_running and spending_state(spent, limit, warn) == "paused":
             raise SpendingPaused()
         prompt = load_prompt(job, self._prompts_dir)
         messages = build_messages(prompt, inputs, knowledge_summary)

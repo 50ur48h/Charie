@@ -12,6 +12,7 @@ from charie.chat.analyst.stream import FEEDS, MessageFeed
 from charie.shared.tables.chat import Chat, Message
 from charie.shared.tables.knowledge import KbVersion
 from tests.conftest import log_in
+from tests.integration.chat.conftest import fake_understanding
 
 
 def _publish(db_session) -> None:
@@ -72,6 +73,7 @@ async def test_feed_follow_waits_for_new_events() -> None:
 
 
 def test_stream_sends_thinking_summary_blocks_done(chat_client, db_session, monkeypatch) -> None:
+    fake_understanding(monkeypatch)
     monkeypatch.setattr(answer_module, "PLACEHOLDER_PAUSE", 0)
     log_in(chat_client)
     _publish(db_session)
@@ -97,6 +99,7 @@ def test_stream_sends_thinking_summary_blocks_done(chat_client, db_session, monk
 
 
 def test_stream_reconnect_sends_only_missed_events(chat_client, db_session, monkeypatch) -> None:
+    fake_understanding(monkeypatch)
     monkeypatch.setattr(answer_module, "PLACEHOLDER_PAUSE", 0.2)
     log_in(chat_client)
     _publish(db_session)
@@ -125,6 +128,7 @@ def test_stream_reconnect_sends_only_missed_events(chat_client, db_session, monk
 
 
 def test_stream_after_end_rebuilds_from_database(chat_client, db_session, monkeypatch) -> None:
+    fake_understanding(monkeypatch)
     monkeypatch.setattr(answer_module, "PLACEHOLDER_PAUSE", 0)
     log_in(chat_client)
     _publish(db_session)
@@ -175,6 +179,7 @@ def test_stream_unknown_message_is_404(chat_client, db_session) -> None:
 
 
 def test_stream_user_message_is_404(chat_client, db_session, monkeypatch) -> None:
+    fake_understanding(monkeypatch)
     monkeypatch.setattr(answer_module, "PLACEHOLDER_PAUSE", 0)
     log_in(chat_client)
     _publish(db_session)

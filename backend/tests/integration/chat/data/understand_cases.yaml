@@ -1,0 +1,150 @@
+# The 15 understand cases (P10.4). Keys and names come from the snapshot.
+# `period_options` lists the acceptable period readings; `dates` the
+# expected resolved dates for the first option. Recording the AI replies
+# costs about $1-2; replaying them is free.
+
+- id: december_overview
+  question: How did we do in December 2025?
+  allowed_kinds: [vague_no_default, clear]
+  metrics: [metric.delivered_orders, metric.delivered_order_amount]
+  period_options:
+    - [month 2025-12]
+  dates: [[2025-12-01, 2025-12-31]]
+  filters: []
+
+- id: delivered_december
+  question: Delivered orders in December 2025
+  allowed_kinds: [clear]
+  metrics: [metric.delivered_orders]
+  period_options:
+    - [month 2025-12]
+  dates: [[2025-12-01, 2025-12-31]]
+  filters: []
+
+- id: this_month
+  question: How are we doing this month?
+  allowed_kinds: [vague_no_default, clear]
+  metrics: [metric.delivered_orders, metric.delivered_order_amount]
+  period_options:
+    - [this_month]
+  dates: [[2025-12-01, 2025-12-31]]
+  filters: []
+
+- id: orders_by_outlet_q4
+  question: Delivered orders by outlet for Q4 2025
+  allowed_kinds: [clear]
+  metrics: [metric.delivered_orders]
+  splits: [dimension.outlet]
+  period_options:
+    - [quarter 2025-Q4]
+  dates: [[2025-10-01, 2025-12-31]]
+  filters: []
+
+- id: orders_last_week
+  question: Delivered orders last week
+  allowed_kinds: [clear, vague_with_default]
+  metrics: [metric.delivered_orders]
+  period_options:
+    - [last_full_week]
+    - [last_7_days]
+  dates: [[2025-12-22, 2025-12-28]]
+  filters: []
+
+- id: fees_3_weeks_ago
+  question: Delivery fees 3 weeks ago
+  allowed_kinds: [clear]
+  metrics: [metric.delivery_fees]
+  period_options:
+    - [weeks_ago 3]
+  dates: [[2025-12-08, 2025-12-14]]
+  filters: []
+
+- id: year_vs_last_year
+  question: Delivered orders this year compared with last year
+  allowed_kinds: [clear]
+  metrics: [metric.delivered_orders]
+  period_options:
+    - [this_year, same_period_last_year p1]
+  dates: [[2025-01-01, 2025-12-31], [2024-01-01, 2024-12-31]]
+  filters: []
+
+- id: best_restaurants
+  question: Which are our best restaurants?
+  allowed_kinds: [new_kind, vague_no_default, clear]
+  metrics: [metric.delivered_orders]
+  splits: [dimension.restaurant_id]
+  top_n: 5
+  period_options:
+    - [latest_full_month]
+  dates: [[2025-11-01, 2025-11-30]]
+  filters: []
+
+- id: why_fees_fell
+  question: Why did delivery fees fall in March?
+  allowed_kinds: [why]
+  metrics: [metric.delivery_fees]
+  period_options:
+    - [month 2025-03]
+  dates: [[2025-03-01, 2025-03-31]]
+  filters: []
+
+- id: market_share
+  question: What's our market share?
+  allowed_kinds: [not_in_data]
+  metrics: []
+  period_options:
+    - []
+  dates: []
+  filters: []
+
+- id: coupon_orders
+  question: How many orders used 2 or more coupons in 2025?
+  allowed_kinds: [new_kind]
+  metrics: []
+  new_metric: true
+  period_options:
+    - [year 2025]
+  dates: [[2025-01-01, 2025-12-31]]
+  filters: []
+
+- id: finance_document
+  question: What does the finance document say about net sales?
+  allowed_kinds: [documents]
+  metrics: []
+  document_topics: true
+  period_options:
+    - []
+  dates: []
+  filters: []
+
+- id: top5_last_month
+  question: Top 5 restaurants by delivered orders last month
+  allowed_kinds: [clear]
+  metrics: [metric.delivered_orders]
+  splits: [dimension.restaurant_id]
+  top_n: 5
+  period_options:
+    - [last_full_month]
+  dates: [[2025-11-01, 2025-11-30]]
+  filters: []
+
+- id: restaurant_november
+  question: Delivered orders at Bahringer LLC in November 2025
+  allowed_kinds: [clear]
+  metrics: [metric.delivered_orders]
+  period_options:
+    - [month 2025-11]
+  dates: [[2025-11-01, 2025-11-30]]
+  filters:
+    - dimension: dimension.restaurant_id
+      values: [Bahringer LLC]
+
+- id: future_march
+  question: Delivered orders in March 2026
+  allowed_kinds: [clear]
+  metrics: [metric.delivered_orders]
+  period_options:
+    - [month 2026-03]
+  dates: [[2026-03-01, 2026-03-31]]
+  no_data: true
+  filters: []

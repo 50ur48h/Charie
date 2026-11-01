@@ -35,24 +35,50 @@ class KbView:
     """One version's entries, read once and grouped by kind."""
 
     def __init__(
-        self, entries: dict[str, dict], raw: dict[str, dict], data_through: date | None
+        self,
+        entries: dict[str, dict],
+        raw: dict[str, dict],
+        data_through: date | None,
+        texts: dict[str, dict[str, str]] | None = None,
     ) -> None:
         self._entries = entries
         self._raw = raw
         self._data_through = data_through
+        self._texts = texts or {}
 
     @classmethod
     def load(cls, session: Session, version_id: int) -> "KbView":
         """Read every entry of one version once (through `list_entries`)."""
         entries: dict[str, dict] = {}
         raw: dict[str, dict] = {}
+        texts: dict[str, dict[str, str]] = {}
         for entry in list_entries(session, version_id):
             details = entry.details if isinstance(entry.details, dict) else {}
             entries.setdefault(entry.kind, {})[entry.key] = details
             raw[entry.key] = details
+            texts[entry.key] = {"title": entry.title, "meaning": entry.meaning}
         row = session.scalar(select(DataSource).order_by(DataSource.id.desc()).limit(1))
         through = _as_date(row.data_through) if row is not None else None
-        return cls(entries, raw, through)
+        return cls(entries, raw, through, texts)
+
+    def titles(self) -> dict[str, str]:
+        """Every entry key to its title (for readings and known words)."""
+        return {key: text["title"] for key, text in self._texts.items()}
+
+    def meanings(self) -> dict[str, str]:
+        """Every entry key to its meaning."""
+        return {key: text["meaning"] for key, text in self._texts.items()}
+
+    def name_spellings(self) -> list[str]:
+        """Every name the owner uses, as spelled in the name entries."""
+        spellings: list[str] = []
+        for details in self._entries.get("name", {}).values():
+            items = details.get("items") if isinstance(details, dict) else None
+            for item in items or []:
+                name = item.get("name") if isinstance(item, dict) else None
+                if name and name not in spellings:
+                    spellings.append(name)
+        return spellings
 
     @property
     def data_through(self) -> date | None:

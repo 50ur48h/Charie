@@ -11,6 +11,7 @@ from charie.chat.analyst import runner as runner_module
 from charie.chat.analyst.runner import RUNNING, request_finish, run_now
 from charie.shared.tables.chat import Chat, Message, ThinkingEvent
 from charie.shared.tables.knowledge import KbVersion
+from tests.integration.chat.conftest import fake_understanding
 
 
 def _thinking_assistant(db_session, status="thinking") -> Message:
@@ -64,6 +65,7 @@ def test_thinking_log_saves_and_updates(db, db_session) -> None:
 
 def test_placeholder_answer_saved(db, db_session, monkeypatch) -> None:
     monkeypatch.setattr(answer_module, "PLACEHOLDER_PAUSE", 0)
+    fake_understanding(monkeypatch)
     assistant = _thinking_assistant(db_session)
     asyncio.run(run_now(assistant.id))
     db_session.expire_all()
@@ -77,7 +79,7 @@ def test_placeholder_answer_saved(db, db_session, monkeypatch) -> None:
         .order_by(ThinkingEvent.seq)
     ).all()
     assert titles == [
-        "Reading your question",
+        "Understood the question",
         "Placeholder: the real analyst is being built",
         "Placeholder check",
     ]
@@ -85,6 +87,7 @@ def test_placeholder_answer_saved(db, db_session, monkeypatch) -> None:
 
 def test_finish_now_skips_remaining_lines(db, db_session, monkeypatch) -> None:
     monkeypatch.setattr(answer_module, "PLACEHOLDER_PAUSE", 0.3)
+    fake_understanding(monkeypatch)
     assistant = _thinking_assistant(db_session)
 
     async def _run() -> None:
@@ -106,6 +109,7 @@ def test_finish_now_skips_remaining_lines(db, db_session, monkeypatch) -> None:
 @pytest.mark.asyncio
 async def test_start_runs_in_background(db, db_session, monkeypatch) -> None:
     monkeypatch.setattr(answer_module, "PLACEHOLDER_PAUSE", 0)
+    fake_understanding(monkeypatch)
     assistant = _thinking_assistant(db_session)
     task = runner_module.start(assistant.id)
     await task
@@ -116,6 +120,8 @@ async def test_start_runs_in_background(db, db_session, monkeypatch) -> None:
 
 def test_finish_after_end_is_409(chat_client, db_session, monkeypatch) -> None:
     from tests.conftest import log_in
+
+    fake_understanding(monkeypatch)
 
     monkeypatch.setattr(answer_module, "PLACEHOLDER_PAUSE", 0)
     log_in(chat_client)

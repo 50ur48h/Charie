@@ -37,5 +37,6 @@ Thumbs.db
 
 # Generated and local files
 backend/tests/replays/
+backend/tests/data/local/
 infra/*.local.json
 *.local.json
