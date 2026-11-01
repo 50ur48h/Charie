@@ -150,25 +150,28 @@ class Notebook:
         self.round = round
         self._counters = {letter: 0 for letter in "ntpq"}
         self._seq = 0
+        self._init_counters()
+
+    def _init_counters(self) -> None:
+        """Continue labels and order from the saved rows, if any."""
+        rows = self._session.scalars(
+            select(NotebookRow)
+            .where(NotebookRow.message_id == self.message_id)
+            .order_by(NotebookRow.seq)
+        ).all()
+        for row in rows:
+            if len(row.label) == 2 and row.label[0] in self._counters:
+                with contextlib.suppress(ValueError):
+                    self._counters[row.label[0]] = max(
+                        self._counters[row.label[0]], int(row.label[1:])
+                    )
+            self._seq = max(self._seq, row.seq)
+            self.round = max(self.round, row.round)
 
     @classmethod
     def load(cls, session: Session, message_id: int, chat_id: int) -> "Notebook":
         """Read a saved notebook back; labels and order continue."""
-        book = cls(session, message_id, chat_id)
-        rows = session.scalars(
-            select(NotebookRow)
-            .where(NotebookRow.message_id == message_id)
-            .order_by(NotebookRow.seq)
-        ).all()
-        for row in rows:
-            if len(row.label) == 2 and row.label[0] in book._counters:
-                with contextlib.suppress(ValueError):
-                    book._counters[row.label[0]] = max(
-                        book._counters[row.label[0]], int(row.label[1:])
-                    )
-            book._seq = max(book._seq, row.seq)
-            book.round = max(book.round, row.round)
-        return book
+        return cls(session, message_id, chat_id)
 
     def _next_label(self, kind: str) -> str:
         """The next label for a kind; findings get none."""

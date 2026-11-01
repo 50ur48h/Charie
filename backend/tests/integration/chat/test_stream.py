@@ -7,7 +7,6 @@ import time
 import pytest
 from fastapi.testclient import TestClient
 
-from charie.chat.analyst import answer as answer_module
 from charie.chat.analyst.stream import FEEDS, MessageFeed
 from charie.shared.tables.chat import Chat, Message
 from charie.shared.tables.knowledge import KbVersion
@@ -74,7 +73,6 @@ async def test_feed_follow_waits_for_new_events() -> None:
 
 def test_stream_sends_thinking_summary_blocks_done(chat_client, db_session, monkeypatch) -> None:
     fake_understanding(monkeypatch)
-    monkeypatch.setattr(answer_module, "PLACEHOLDER_PAUSE", 0)
     log_in(chat_client)
     _publish(db_session)
     chat_id = chat_client.post("/api/chats", json={}).json()["id"]
@@ -86,21 +84,17 @@ def test_stream_sends_thinking_summary_blocks_done(chat_client, db_session, monk
         "thinking",
         "thinking",
         "thinking",
-        "thinking",
-        "thinking",
-        "thinking",
         "summary",
         "block",
         "text",
         "done",
     ]
-    assert [event["id"] for event in events] == [str(n) for n in range(1, 11)]
+    assert [event["id"] for event in events] == [str(n) for n in range(1, 8)]
     assert events[-1]["data"]["status"] == "done"
 
 
 def test_stream_reconnect_sends_only_missed_events(chat_client, db_session, monkeypatch) -> None:
     fake_understanding(monkeypatch)
-    monkeypatch.setattr(answer_module, "PLACEHOLDER_PAUSE", 0.2)
     log_in(chat_client)
     _publish(db_session)
     chat_id = chat_client.post("/api/chats", json={}).json()["id"]
@@ -119,9 +113,9 @@ def test_stream_reconnect_sends_only_missed_events(chat_client, db_session, monk
     rest = _parse_sse(
         chat_client.get(f"/api/messages/{assistant_id}/stream", headers={"Last-Event-ID": "2"}).text
     )
-    assert [event["id"] for event in rest] == [str(n) for n in range(3, 11)]
+    assert [event["id"] for event in rest] == [str(n) for n in range(3, 8)]
     assert rest[-1] == {
-        "id": "10",
+        "id": "7",
         "event": "done",
         "data": {"message_id": assistant_id, "status": "done", "cost_usd": 0},
     }
@@ -129,7 +123,6 @@ def test_stream_reconnect_sends_only_missed_events(chat_client, db_session, monk
 
 def test_stream_after_end_rebuilds_from_database(chat_client, db_session, monkeypatch) -> None:
     fake_understanding(monkeypatch)
-    monkeypatch.setattr(answer_module, "PLACEHOLDER_PAUSE", 0)
     log_in(chat_client)
     _publish(db_session)
     chat_id = chat_client.post("/api/chats", json={}).json()["id"]
@@ -140,7 +133,6 @@ def test_stream_after_end_rebuilds_from_database(chat_client, db_session, monkey
     FEEDS.pop(assistant_id, None)
     events = _parse_sse(chat_client.get(f"/api/messages/{assistant_id}/stream").text)
     assert [event["event"] for event in events] == [
-        "thinking",
         "thinking",
         "thinking",
         "summary",
@@ -180,7 +172,6 @@ def test_stream_unknown_message_is_404(chat_client, db_session) -> None:
 
 def test_stream_user_message_is_404(chat_client, db_session, monkeypatch) -> None:
     fake_understanding(monkeypatch)
-    monkeypatch.setattr(answer_module, "PLACEHOLDER_PAUSE", 0)
     log_in(chat_client)
     _publish(db_session)
     chat_id = chat_client.post("/api/chats", json={}).json()["id"]
@@ -188,3 +179,4 @@ def test_stream_user_message_is_404(chat_client, db_session, monkeypatch) -> Non
     response = chat_client.get(f"/api/messages/{ids['user_message_id']}/stream")
     assert response.status_code == 404
     assert response.json()["error"] == "not_found"
+    _wait_done(chat_client, chat_id)

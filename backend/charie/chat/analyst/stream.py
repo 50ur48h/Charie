@@ -1,6 +1,7 @@
 """The thinking log and the live message feed (P10.1, P10.2)."""
 
 import asyncio
+import threading
 from dataclasses import dataclass
 
 from sqlalchemy import func, select
@@ -30,14 +31,17 @@ class MessageFeed:
 
     The producer adds saved events; followers replay what they missed
     and wait for the rest until the feed closes. Finished feeds stay
-    for `FEED_KEEP_SECONDS` so a late reconnect still replays.
+    for `FEED_KEEP_SECONDS` so a late reconnect still replays. Data
+    tasks run in worker threads, so adding and waking is guarded and
+    waiters wake on their own loop.
     """
 
     def __init__(self) -> None:
         self.events: list[StreamEvent] = []
         self._next_id = 1
         self._closed = False
-        self._waiters: list[asyncio.Event] = []
+        self._waiters: list[tuple[asyncio.AbstractEventLoop, asyncio.Event]] = []
+        self._guard = threading.Lock()
 
     @property
     def closed(self) -> bool:
@@ -48,28 +52,40 @@ class MessageFeed:
         """A terminal event was already sent."""
         return any(item.event == "done" for item in self.events)
 
+    def _wake(self, waiters: list[tuple[asyncio.AbstractEventLoop, asyncio.Event]]) -> None:
+        """Wake every follower on its own loop."""
+        for loop, waiter in waiters:
+            try:
+                loop.call_soon_threadsafe(waiter.set)
+            except RuntimeError:
+                waiter.set()
+
     def add(self, event: str, data: dict) -> StreamEvent:
         """Save one event and wake every follower."""
-        item = StreamEvent(self._next_id, event, data)
-        self._next_id += 1
-        self.events.append(item)
-        for waiter in list(self._waiters):
-            waiter.set()
+        with self._guard:
+            item = StreamEvent(self._next_id, event, data)
+            self._next_id += 1
+            self.events.append(item)
+            waiters = list(self._waiters)
+        self._wake(waiters)
         return item
 
     def close(self) -> None:
         """End the feed; followers finish what is left and stop."""
-        self._closed = True
-        for waiter in list(self._waiters):
-            waiter.set()
+        with self._guard:
+            self._closed = True
+            waiters = list(self._waiters)
+        self._wake(waiters)
 
     def events_after(self, after_id: int) -> list[StreamEvent]:
         """Stored events with an id above `after_id`."""
-        return [item for item in self.events if item.id > after_id]
+        with self._guard:
+            return [item for item in self.events if item.id > after_id]
 
     async def follow(self, after_id: int):
         """Replay what was missed, then wait for the rest until closed."""
         last = after_id
+        loop = asyncio.get_running_loop()
         while True:
             for item in self.events_after(last):
                 last = item.id
@@ -77,12 +93,14 @@ class MessageFeed:
             if self._closed:
                 return
             waiter = asyncio.Event()
-            self._waiters.append(waiter)
+            with self._guard:
+                self._waiters.append((loop, waiter))
             try:
                 await waiter.wait()
             finally:
-                if waiter in self._waiters:
-                    self._waiters.remove(waiter)
+                with self._guard:
+                    if (loop, waiter) in self._waiters:
+                        self._waiters.remove((loop, waiter))
 
 
 # Live feeds by assistant message id. Only one copy of the chat app

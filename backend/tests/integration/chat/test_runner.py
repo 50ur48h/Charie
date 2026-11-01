@@ -64,7 +64,6 @@ def test_thinking_log_saves_and_updates(db, db_session) -> None:
 
 
 def test_placeholder_answer_saved(db, db_session, monkeypatch) -> None:
-    monkeypatch.setattr(answer_module, "PLACEHOLDER_PAUSE", 0)
     fake_understanding(monkeypatch)
     assistant = _thinking_assistant(db_session)
     asyncio.run(run_now(assistant.id))
@@ -72,31 +71,31 @@ def test_placeholder_answer_saved(db, db_session, monkeypatch) -> None:
     saved = db_session.get(Message, assistant.id)
     assert saved.status == "done"
     assert saved.finished_at is not None
-    assert "placeholder answer" in saved.answer["blocks"][0]["sentences"][0]["text"]
+    assert (
+        "Placeholder answer. Here's what I found:"
+        in saved.answer["blocks"][0]["sentences"][0]["text"]
+    )
     titles = db_session.scalars(
         select(ThinkingEvent.title)
         .where(ThinkingEvent.message_id == assistant.id)
         .order_by(ThinkingEvent.seq)
     ).all()
-    assert titles == [
-        "Understood the question",
-        "Placeholder: the real analyst is being built",
-        "Placeholder check",
-    ]
+    assert titles == ["Understood the question", "Placeholder answer. Here's what I found:"]
 
 
 def test_finish_now_skips_remaining_lines(db, db_session, monkeypatch) -> None:
-    monkeypatch.setattr(answer_module, "PLACEHOLDER_PAUSE", 0.3)
     fake_understanding(monkeypatch)
     assistant = _thinking_assistant(db_session)
+    real_add = answer_module.add_period_items
 
-    async def _run() -> None:
-        task = asyncio.create_task(run_now(assistant.id))
-        await asyncio.sleep(0.1)
+    def _finish_early(*args, **kwargs):
         assert request_finish(assistant.id) is True
-        await task
+        return real_add(*args, **kwargs)
 
-    asyncio.run(_run())
+    monkeypatch.setattr(answer_module, "add_period_items", _finish_early)
+    monkeypatch.setattr(answer_module, "starter_tasks", lambda *args, **kwargs: [])
+    asyncio.run(run_now(assistant.id))
+    db_session.expire_all()
     saved = db_session.get(Message, assistant.id)
     assert saved.status == "thinking"
     assert saved.answer is None
@@ -108,7 +107,6 @@ def test_finish_now_skips_remaining_lines(db, db_session, monkeypatch) -> None:
 
 @pytest.mark.asyncio
 async def test_start_runs_in_background(db, db_session, monkeypatch) -> None:
-    monkeypatch.setattr(answer_module, "PLACEHOLDER_PAUSE", 0)
     fake_understanding(monkeypatch)
     assistant = _thinking_assistant(db_session)
     task = runner_module.start(assistant.id)
@@ -123,7 +121,6 @@ def test_finish_after_end_is_409(chat_client, db_session, monkeypatch) -> None:
 
     fake_understanding(monkeypatch)
 
-    monkeypatch.setattr(answer_module, "PLACEHOLDER_PAUSE", 0)
     log_in(chat_client)
     version = KbVersion(number=1, status="published", made_by="first_learning")
     db_session.add(version)

@@ -1,4 +1,10 @@
-"""Fixtures for the analyst's chat tests (P10.4)."""
+"""Fixtures for the analyst's chat tests (P10.4).
+
+Every test that asks a question must wait for the background answer to
+finish (poll for done) before returning. Otherwise teardown closes the
+test client while the analyst still holds a database transaction, and
+the next truncate waits on its lock forever.
+"""
 
 import os
 from datetime import UTC, datetime
