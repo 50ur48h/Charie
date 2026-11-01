@@ -293,12 +293,6 @@ def _format_value(recipe: Recipe, total) -> str:
     return format_ratio(str(total))
 
 
-def _is_time_split(recipe: Recipe, task: Task) -> bool:
-    """True when any split key is a time dimension."""
-    kinds = {dimension.key: dimension.kind for dimension in recipe.dimensions}
-    return any(kinds.get(key, "attribute") == "time" for key in task.split_by)
-
-
 def _dim_title(recipe: Recipe, key: str) -> str:
     """The recipe dimension's title, or the key."""
     for dimension in recipe.dimensions:
@@ -570,16 +564,16 @@ def _save_split(ctx, book, task, loaded, periods, results, seq, what, words) -> 
     recipe = loaded.recipes[task.metric_key]
     title = loaded.recipe_title(task.metric_key)
     main_built, main_result, _, _ = results[0]
-    time_split = _is_time_split(recipe, task)
-    ordered = _ordered_rows(main_result.rows, time_split)
+    width, spans, time_pos = _split_layout(task, recipe, main_built)
+    ordered = _ordered_rows(main_result.rows, width, time_pos)
     columns = _split_columns(task, loaded, recipe, main_built, len(periods) > 1)
     table_rows = [[_cell(value) for value in row] for row in ordered]
     if len(periods) > 1:
-        compare_rows = {str(row[0]): row[1] for row in results[1][1].rows}
+        compare_rows = {_group_key(row, width): row[width] for row in results[1][1].rows}
         table_rows = [
             [*cells, _cell(change), _cell(percent)]
             for cells, (change, percent) in [
-                (cells, _row_change(cells, compare_rows, recipe)) for cells in table_rows
+                (cells, _row_change(cells, compare_rows, recipe, width)) for cells in table_rows
             ]
         ]
     book.add_table(
@@ -610,6 +604,8 @@ def _save_split(ctx, book, task, loaded, periods, results, seq, what, words) -> 
             results[1][1].rows,
             periods[0],
             compare,
+            width,
+            spans,
         )
     ctx.log.finish(
         seq,
@@ -624,19 +620,68 @@ def _save_split(ctx, book, task, loaded, periods, results, seq, what, words) -> 
     )
 
 
-def _ordered_rows(raw_rows: list[list], time_split: bool) -> list[list]:
+def _split_layout(task: Task, recipe: Recipe, built) -> tuple[int, list, int | None]:
+    """Key width, per-key spans and the time column for a split result.
+
+    The builder emits one output column per split key plus a label
+    column after keys that name one; the value column comes last.
+    Each span is (key, first, label_or_None) cell positions; time_pos
+    is the output position of a time dimension, if any.
+    """
+    spans: list[tuple[str, int, int | None]] = []
+    time_pos: int | None = None
+    pos = 0
+    for key in task.split_by:
+        dimension = next((item for item in recipe.dimensions if item.key == key), None)
+        if dimension is None:
+            raise QueryBuildError(f'"{recipe.title or task.metric_key}" can\'t be split by {key}.')
+        label_pos = pos + 1 if dimension.label_expression else None
+        if dimension.kind == "time" and time_pos is None:
+            time_pos = pos
+        spans.append((key, pos, label_pos))
+        pos += 2 if dimension.label_expression else 1
+    return pos, spans, time_pos
+
+
+def _group_key(row: list, width: int) -> tuple:
+    """The complete dimension key: every dimension cell, never the value."""
+    return tuple(str(cell) for cell in row[:width])
+
+
+def _group_display(row: list, spans: list) -> str:
+    """The readable group name: the label cell when one exists."""
+    parts = []
+    for _key, first, label in spans:
+        cell = row[label] if label is not None else row[first]
+        parts.append("" if cell is None else str(cell))
+    return ", ".join(parts)
+
+
+def _group_ids(row: list, spans: list) -> dict:
+    """Each split dimension to its own id cell, JSON-safe like the table."""
+    return {key: _cell(row[first]) for key, first, _label in spans}
+
+
+def _ordered_rows(raw_rows: list[list], width: int, time_pos: int | None) -> list[list]:
     """Groups in display order: oldest first for time, largest first otherwise."""
-    if time_split:
-        return sorted(raw_rows, key=lambda row: str(row[0]))
-    filled = [row for row in raw_rows if row[1] is not None]
-    empty = [row for row in raw_rows if row[1] is None]
-    return sorted(filled, key=lambda row: row[1], reverse=True) + empty
+    if time_pos is not None:
+        return sorted(raw_rows, key=lambda row: (str(row[time_pos]), _group_key(row, width)))
+    filled = [row for row in raw_rows if row[width] is not None]
+    empty = [row for row in raw_rows if row[width] is None]
+    return (
+        sorted(
+            filled,
+            key=lambda row: (difference(row[width], 0), _group_key(row, width)),
+            reverse=True,
+        )
+        + empty
+    )
 
 
-def _row_change(cells: list, compare_rows: dict, recipe: Recipe):
+def _row_change(cells: list, compare_rows: dict, recipe: Recipe, width: int):
     """One row's change and % change against the comparison period."""
-    old = compare_rows.get(str(cells[0]))
-    new = cells[1]
+    old = compare_rows.get(tuple(str(cell) for cell in cells[:width]))
+    new = cells[width]
     if new is None or old is None:
         return None, None
     try:
@@ -650,13 +695,14 @@ def _row_change(cells: list, compare_rows: dict, recipe: Recipe):
 
 def _split_columns(task, loaded, recipe, built, compared: bool) -> list[TableColumn]:
     """The table columns: splits, the value, and changes with a comparison."""
+    width, spans, _time_pos = _split_layout(task, recipe, built)
     columns: list[TableColumn] = []
-    for pos, key in enumerate(task.split_by):
+    for key, first, label_pos in spans:
         dimension = next(
             (item for item in recipe.dimensions if item.key == key),
             RecipeDimension(key=key, title=key, kind="attribute"),
         )
-        name = built.dimension_columns[pos] if pos < len(built.dimension_columns) else key
+        name = built.dimension_columns[first] if first < len(built.dimension_columns) else key
         columns.append(
             TableColumn(
                 key=name,
@@ -666,6 +712,21 @@ def _split_columns(task, loaded, recipe, built, compared: bool) -> list[TableCol
                 is_time=dimension.kind == "time",
             )
         )
+        if label_pos is not None:
+            label_name = (
+                built.dimension_columns[label_pos]
+                if label_pos < len(built.dimension_columns)
+                else f"{key}_label"
+            )
+            columns.append(
+                TableColumn(
+                    key=label_name,
+                    label=f"{dimension.title or key} name",
+                    unit="",
+                    currency="",
+                    is_time=False,
+                )
+            )
     columns.append(
         TableColumn(
             key="value",
@@ -685,17 +746,20 @@ def _split_columns(task, loaded, recipe, built, compared: bool) -> list[TableCol
     return columns
 
 
-def _save_movers(ctx, book, task, loaded, recipe, title, ordered, compare_rows, main, compare):
+def _save_movers(
+    ctx, book, task, loaded, recipe, title, ordered, compare_rows, main, compare, width, spans
+):
     """The biggest rises and falls, plus the grew/total counts."""
-    by_group = {str(row[0]): row[1] for row in compare_rows}
+    by_group = {_group_key(row, width): row[width] for row in compare_rows}
     moves: list[tuple] = []
     for row in ordered:
-        old = by_group.get(str(row[0]))
-        if row[1] is None or old is None:
+        old = by_group.get(_group_key(row, width))
+        new = row[width]
+        if new is None or old is None:
             continue
         try:
             currency = recipe.currency or None
-            change = difference(row[1], old, currency, currency)
+            change = difference(new, old, currency, currency)
         except CalcError:
             continue
         if change is not None:
@@ -711,7 +775,7 @@ def _save_movers(ctx, book, task, loaded, recipe, title, ordered, compare_rows, 
         falls = sorted([item for item in moves if item[1] < 0], key=lambda item: item[1])[:3]
         picked = rises + falls
     for row, change in picked:
-        name = str(row[0])
+        name = _group_display(row, spans)
         book.add_number(
             f"Change in {title} at {name}, {main.text} vs {compare.text}",
             NumberValue(
@@ -721,7 +785,7 @@ def _save_movers(ctx, book, task, loaded, recipe, title, ordered, compare_rows, 
                 task,
                 loaded,
                 [],
-                _fact_key(task, loaded, recipe, main, compare, {task.split_by[0]: name}, "change"),
+                _fact_key(task, loaded, recipe, main, compare, _group_ids(row, spans), "change"),
             ),
         )
     grew = sum(1 for _, change in moves if change > 0)
@@ -739,12 +803,15 @@ def _save_movers(ctx, book, task, loaded, recipe, title, ordered, compare_rows, 
         )
     worst = min(moves, key=lambda item: item[1])
     if worst[1] < 0:
+        name = _group_display(worst[0], spans)
         ctx.log.add(
             "found",
-            f"Found: {grew} of {len(moves)} grew. The biggest drop is {worst[0][0]}.",
+            f"Found: {grew} of {len(moves)} grew. The biggest drop is {name}.",
         )
     else:
         best = max(moves, key=lambda item: item[1])
+        name = _group_display(best[0], spans)
         ctx.log.add(
-            "found", f"Found: {grew} of {len(moves)} grew. The biggest rise is {best[0][0]}."
+            "found",
+            f"Found: {grew} of {len(moves)} grew. The biggest rise is {name}.",
         )

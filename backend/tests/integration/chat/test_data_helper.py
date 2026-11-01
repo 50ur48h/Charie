@@ -88,6 +88,7 @@ def _seeded_version(db_session) -> int:
                             kind="attribute",
                             table="shop.orders",
                             expression="orders.restaurant_id",
+                            label_expression="restaurants.name",
                         ),
                     ],
                 }
@@ -375,6 +376,99 @@ def test_split_with_comparison_labels_biggest_moves(db_session, shop_version) ->
     found = [line for line in lines if line.kind == "found"]
     assert len(found) == 1
     assert found[0].title == "Found: 1 of 4 grew. The biggest drop is Lone Star Tacos."
+
+
+def test_labeled_split_uses_value_column(db_session, shop_version) -> None:
+    """An id+label split reads the value column, not the label text."""
+    ctx = _ctx(db_session, shop_version)
+    run_recipe_task(
+        _task("order_value", periods=("p1", "p2"), splits=["dimension.restaurant_id"]), ctx
+    )
+    book = _notebook(db_session, ctx)
+    tables = [item for item in book.items() if item.kind == "table"]
+    assert len(tables) == 1
+    table = tables[0]
+    assert [column["label"] for column in table.value["columns"]] == [
+        "Restaurant",
+        "Restaurant name",
+        "Order value",
+        "Change",
+        "Change %",
+    ]
+    assert [row[0] for row in table.value["rows"]] == [1, 4, 2, 3]
+    assert [row[1] for row in table.value["rows"]] == [
+        "Bella Forno",
+        "Lone Star Tacos",
+        "Forno North",
+        "Test Kitchen",
+    ]
+    assert [row[2] for row in table.value["rows"]] == ["100.00", "33.00", "25.00", "10.00"]
+    assert [row[3] for row in table.value["rows"]] == ["6.00", "-17.00", "-10.00", "-2.00"]
+    movers = [
+        item
+        for item in book.items()
+        if item.kind == "number" and item.proof["fact_key"]["measure"] == "change"
+    ]
+    by_value = {item.value["value"]: item for item in movers}
+    assert by_value["6.00"].description.split(" at ")[1].split(",")[0] == "Bella Forno"
+    assert by_value["6.00"].proof["fact_key"]["split"] == {"dimension.restaurant_id": 1}
+    lines = _lines(db_session, ctx.message_id)
+    found = [line for line in lines if line.kind == "found"]
+    assert len(found) == 1
+    assert found[0].title == "Found: 1 of 4 grew. The biggest drop is Lone Star Tacos."
+
+
+def test_two_dimension_split_uses_full_key(db_session, shop_version) -> None:
+    """A status-by-month split keeps one row per cell and reads the value column.
+
+    November completed (5) and cancelled (1) match the quarter's November
+    cells, so their change is 0; December completed (6) is new, so its change
+    stays empty. Keying by status alone would merge the two completed rows.
+    """
+    ctx = _ctx(db_session, shop_version)
+    run_recipe_task(
+        _task("orders", periods=("p3", "p1"), splits=["dimension.status", "dimension.month"]),
+        ctx,
+    )
+    book = _notebook(db_session, ctx)
+    tables = [item for item in book.items() if item.kind == "table"]
+    assert len(tables) == 1
+    table = tables[0]
+    assert [column["key"] for column in table.value["columns"]] == [
+        "status",
+        "month",
+        "value",
+        "change",
+        "percent_change",
+    ]
+    assert [row[0] for row in table.value["rows"]] == ["cancelled", "completed", "completed"]
+    assert [row[1] for row in table.value["rows"]] == ["2025-11-01", "2025-11-01", "2025-12-01"]
+    assert [row[2] for row in table.value["rows"]] == [1, 5, 6]
+    assert [row[3] for row in table.value["rows"]] == ["0", "0", None]
+    assert [row[4] for row in table.value["rows"]] == ["0", "0", None]
+    movers = [
+        item
+        for item in book.items()
+        if item.kind == "number" and item.proof["fact_key"]["measure"] == "change"
+    ]
+    assert len(movers) == 2
+    assert [item.value["value"] for item in movers] == ["0", "0"]
+    assert "cancelled, 2025-11-01" in movers[0].description
+    assert "completed, 2025-11-01" in movers[1].description
+    assert [item.proof["fact_key"]["split"] for item in movers] == [
+        {"dimension.status": "cancelled", "dimension.month": "2025-11-01"},
+        {"dimension.status": "completed", "dimension.month": "2025-11-01"},
+    ]
+    counts = {
+        item.proof["fact_key"]["measure"]: item.value["value"]
+        for item in book.items()
+        if item.kind == "number" and item.proof["fact_key"]["measure"].startswith("count_")
+    }
+    assert counts == {"count_grew": "0", "count_total": "2"}
+    lines = _lines(db_session, ctx.message_id)
+    found = [line for line in lines if line.kind == "found"]
+    assert len(found) == 1
+    assert found[0].title == "Found: 0 of 2 grew. The biggest rise is cancelled, 2025-11-01."
 
 
 def test_time_split_sorted_by_time(db_session, shop_version) -> None:
