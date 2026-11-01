@@ -177,3 +177,48 @@ def test_agreement_uses_the_self_test_rule() -> None:
     assert results_agree([["north", 5]], [["south", 5]]) is False
     assert results_agree([["north", 1]], []) is False
     assert results_agree([["north", 0]], [["north", 0]]) is False
+
+
+def test_answer_dispatches_new_number_tasks(db_session, shop_new_number, monkeypatch) -> None:
+    """The answer flow runs new-number tasks: the dispatch names exist."""
+    import asyncio
+    from datetime import UTC, datetime
+
+    from charie.chat.analyst.notebook import Notebook
+    from charie.chat.analyst.runner import run_now
+    from charie.shared.tables.chat import Chat, Message
+    from tests.integration.chat.conftest import _understanding_reply, fake_understanding
+
+    fake_understanding(
+        monkeypatch,
+        _understanding_reply(
+            kind="new_kind",
+            reading="I read this as new orders for [p1].",
+            periods=[{"kind": "month", "number": 12}],
+            asks=[{"new_metric": "How many shop orders are there?"}],
+        ),
+    )
+    _client(
+        monkeypatch,
+        [(DEC_A, "Count every row."), (DEC_B, "Count each order once.")],
+    )
+    chat = Chat(title="New chat")
+    db_session.add(chat)
+    db_session.flush()
+    assistant = Message(
+        chat_id=chat.id,
+        role="assistant",
+        text_="",
+        status="thinking",
+        mode="thinking",
+        kb_version_id=shop_new_number,
+        started_at=datetime.now(UTC),
+    )
+    db_session.add(assistant)
+    db_session.commit()
+    asyncio.run(run_now(assistant.id))
+    db_session.expire_all()
+    saved = db_session.get(Message, assistant.id)
+    assert saved.status == "done"
+    book = Notebook.load(db_session, assistant.id, chat.id)
+    assert [item.value["value"] for item in shop._numbers(book)] == ["6"]
