@@ -138,6 +138,7 @@ def test_stream_after_end_rebuilds_from_database(chat_client, db_session, monkey
     FEEDS.pop(assistant_id, None)
     events = _parse_sse(chat_client.get(f"/api/messages/{assistant_id}/stream").text)
     assert [event["event"] for event in events] == [
+        "reset",
         "thinking",
         "thinking",
         "thinking",
@@ -146,6 +147,7 @@ def test_stream_after_end_rebuilds_from_database(chat_client, db_session, monkey
         "summary",
         "done",
     ]
+    assert events[0]["id"] == "0"
     assert events[-1]["data"]["status"] == "done"
 
 

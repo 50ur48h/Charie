@@ -93,6 +93,21 @@ describe("MessageList", () => {
     expect(screen.getByRole("button", { name: /Second evidence/ })).toBeTruthy();
   });
 
+  test("a stopped answer still shows its checked numbers", () => {
+    const stopped = {
+      ...assistantMessage(2, "done", []),
+      status: "stopped" as const,
+      answer: {
+        message_id: 2,
+        kb_version: 1,
+        data_through: "2025-12-31",
+        blocks: [{ type: "callout" as const, tone: "warn" as const, text: "checked numbers" }],
+      },
+    };
+    render(list([userMessage(1, "Trucks?"), stopped]));
+    expect(screen.getByText("checked numbers")).toBeTruthy();
+  });
+
   test("a live feed renders streamed text for its own message only", () => {
     const feed = {
       ...emptyFeed(),

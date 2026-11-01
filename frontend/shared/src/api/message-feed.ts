@@ -63,6 +63,13 @@ function warn(reason: string, event: FeedEvent): void {
 }
 
 export function applyFeedEvent(state: FeedState, event: FeedEvent): FeedState {
+  if (event.event === "reset") {
+    // A rebuilt stream restarts numbering: drop the stale cursor and the
+    // partial live buffer; the snapshot that follows replaces it.
+    const fresh = emptyFeed();
+    if (event.id !== null) fresh.seenIds.add(event.id);
+    return fresh;
+  }
   // Duplicate delivery (reconnect replays) applies once.
   if (event.id !== null) {
     if (state.seenIds.has(event.id)) return state;

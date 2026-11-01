@@ -1,6 +1,7 @@
-"""The thinking log and the live message feed (P10.1, P10.2)."""
+"""The thinking log and the live message feed (P10.1, P10.2, P10.13)."""
 
 import asyncio
+import re
 import threading
 from dataclasses import dataclass
 
@@ -138,6 +139,64 @@ def _push_thinking(message_id: int, line: dict) -> None:
     feed = FEEDS.get(message_id)
     if feed is not None and not feed.closed:
         feed.add("thinking", line)
+
+
+#: Longest text delta, in characters. Chunks break at word boundaries,
+#: so joining them restores the block's text exactly.
+TEXT_DELTA_LIMIT = 120
+
+
+def block_text(block: dict) -> str:
+    """One text block as the saved answer shows it.
+
+    Sentences join with a space inside a paragraph; paragraphs join
+    with a blank line, the same shape the screen renders.
+    """
+    return "\n\n".join(
+        " ".join(sentence.get("text", "") for sentence in paragraph.get("sentences", []))
+        for paragraph in block.get("paragraphs", [])
+    )
+
+
+def text_deltas(text: str, limit: int = TEXT_DELTA_LIMIT) -> list[str]:
+    """Split text into bounded word-preserving chunks.
+
+    Breaks fall only on whitespace, so no word is ever cut in half
+    (a single longer word travels whole). Joining the chunks restores
+    the text exactly, whitespace included.
+    """
+    if not text:
+        return []
+    chunks: list[str] = []
+    current = ""
+    for token in re.findall(r"\S+|\s+", text):
+        if current and len(current) + len(token) > limit and token.strip():
+            chunks.append(current)
+            current = ""
+        current += token
+    if current:
+        chunks.append(current)
+    return chunks
+
+
+def stream_answer(message_id: int, blocks: list[dict], summary: dict) -> None:
+    """The final checked answer through the live stream (P10.13).
+
+    Only the saved blocks go out: text blocks arrive empty, then fill
+    with bounded word-preserving deltas; every other block arrives
+    whole. Emits synchronously, with no timers slowing delivery.
+    """
+    feed = FEEDS.get(message_id)
+    if feed is None or feed.closed:
+        return
+    feed.add("summary", summary)
+    for index, block in enumerate(blocks):
+        if block.get("type") == "text":
+            feed.add("block", {"index": index, "block": {"type": "text", "paragraphs": []}})
+            for delta in text_deltas(block_text(block)):
+                feed.add("text", {"index": index, "delta": delta})
+        else:
+            feed.add("block", {"index": index, "block": block})
 
 
 class ThinkingLog:

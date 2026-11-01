@@ -8,77 +8,38 @@ import time
 from dataclasses import asdict
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from charie.chat.analyst.checks import check_body, check_inputs, run_checks
 from charie.chat.analyst.context import AnalystContext
 from charie.chat.analyst.loop import run_extra_round, run_rounds
-from charie.chat.analyst.notebook import Notebook
+from charie.chat.analyst.notebook import Notebook, QuoteValue
 from charie.chat.analyst.render import fallback_blocks, render_answer
 from charie.chat.analyst.review import review_answer
-from charie.chat.analyst.stream import FEEDS, finish_feed
+from charie.chat.analyst.stream import finish_feed, stream_answer
 from charie.chat.analyst.write import write_answer
 from charie.shared.ai.errors import AiError
+from charie.shared.ai.spending import as_utc
 from charie.shared.db import session_scope
-from charie.shared.tables.chat import Message, ThinkingEvent
+from charie.shared.tables.chat import Message, QueryRun, ThinkingEvent
 from charie.shared.tables.knowledge import KbVersion
+from charie.shared.tables.usage import AiCall
 
 #: One note sentence before the short view; the real writer replaces it.
 TEMP_NOTE = "Placeholder answer. Here's what I found:"
-
-
-def _emit_temp_events(ctx: AnalystContext, tasks: list, blocks: list[dict]) -> None:
-    """The saved answer through the live stream: summary, blocks, text, done.
-
-    The wire shape matches the real rounds (P10.2): text blocks arrive
-    empty, then fill with text events; other blocks arrive whole.
-    """
-    feed = FEEDS.get(ctx.message_id)
-    if feed is None or feed.closed:
-        return
-    seconds = int(time.monotonic() - ctx.state.started)
-    feed.add(
-        "summary",
-        {
-            "seconds": seconds,
-            "steps": len(ctx.log.lines()),
-            "queries": len(tasks),
-            "documents": 0,
-        },
-    )
-    for index, block in enumerate(blocks):
-        if block.get("type") == "text":
-            feed.add("block", {"index": index, "block": {"type": "text", "paragraphs": []}})
-            feed.add(
-                "text",
-                {
-                    "index": index,
-                    "delta": "\n".join(
-                        sentence["text"]
-                        for paragraph in block.get("paragraphs", [])
-                        for sentence in paragraph.get("sentences", [])
-                    ),
-                },
-            )
-        else:
-            feed.add("block", {"index": index, "block": block})
 
 
 async def answer_question(ctx: AnalystContext) -> None:
     """Understand once, run the rounds, then write the answer."""
     tasks = await run_rounds(ctx)
     if ctx.state.finish_requested.is_set():
-        _mark_stopped(ctx)
+        _deliver_stopped(ctx)
         return
     await _save_answer(ctx, tasks)
 
 
-def _mark_stopped(ctx: AnalystContext) -> None:
-    """Finish now: settle running lines and stop the message.
-
-    Without this the message stays "thinking", every later question is
-    refused, and the stream never sends its terminal event.
-    """
+def _settle_running_lines(ctx: AnalystContext) -> None:
+    """Close every running line, so the panel reads finished."""
     with session_scope() as session:
         seqs = session.scalars(
             select(ThinkingEvent.seq).where(
@@ -88,13 +49,36 @@ def _mark_stopped(ctx: AnalystContext) -> None:
         ).all()
     for seq in seqs:
         ctx.log.finish(seq, status="done")
+
+
+def _deliver_stopped(ctx: AnalystContext) -> None:
+    """Finish now: the checked fallback when there is one, else a plain stop.
+
+    Without settling, the message stays "thinking", every later question
+    is refused, and the stream never sends its terminal event.
+    """
+    _settle_running_lines(ctx)
     with session_scope() as session:
-        message = session.get(Message, ctx.message_id)
-        if message is not None and message.status == "thinking":
-            message.status = "stopped"
-            message.finished_at = datetime.now(UTC)
-            session.commit()
-    finish_feed(ctx.message_id, status="stopped")
+        book = Notebook.load(session, ctx.message_id, ctx.chat_id)
+        ready = any(
+            item.kind in ("number", "table") and item.status == "ok" for item in book.items()
+        )
+    if not ready:
+        with session_scope() as session:
+            message = session.get(Message, ctx.message_id)
+            if message is not None and message.status == "thinking":
+                message.status = "stopped"
+                message.finished_at = datetime.now(UTC)
+                session.commit()
+        finish_feed(ctx.message_id, status="stopped")
+        return
+    ctx.log.add(
+        "note",
+        "Stopped early. Showing the checked numbers gathered so far.",
+        "Finish now ends the analysis; this is what passed the checks.",
+    )
+    blocks, shown = fallback_blocks(ctx)
+    _save_blocks(ctx, blocks, shown, status="stopped")
 
 
 async def _save_answer(ctx: AnalystContext, tasks: list) -> None:
@@ -119,7 +103,7 @@ async def _save_answer(ctx: AnalystContext, tasks: list) -> None:
         _save_fallback_answer(ctx, tasks, blocks, shown)
         return
     ctx.log.finish(seq, status="done", title="Wrote the answer.")
-    _save_blocks(ctx, tasks, blocks, shown)
+    _save_blocks(ctx, blocks, shown)
 
 
 async def write_checked_answer(ctx: AnalystContext, tasks: list) -> tuple | None:
@@ -220,7 +204,7 @@ def _save_fallback_answer(ctx: AnalystContext, tasks: list, blocks: list, shown:
         "I couldn't write a fully checked explanation, so I'm showing the checked numbers.",
         "Every number below passed the SQL checker.",
     )
-    _save_blocks(ctx, tasks, blocks, shown)
+    _save_blocks(ctx, blocks, shown)
 
 
 def _save_temp_answer(ctx: AnalystContext, tasks: list) -> None:
@@ -247,7 +231,7 @@ def _save_temp_answer(ctx: AnalystContext, tasks: list) -> None:
         }
     ]
     ctx.log.add("note", TEMP_NOTE, "Here's what I found.")
-    _save_blocks(ctx, tasks, blocks, [])
+    _save_blocks(ctx, blocks, [])
 
 
 def _kb_number(ctx: AnalystContext) -> int:
@@ -257,8 +241,36 @@ def _kb_number(ctx: AnalystContext) -> int:
     return number if number is not None else ctx.kb_version_id
 
 
-def _save_blocks(ctx: AnalystContext, tasks: list, blocks: list[dict], shown: list[str]) -> None:
-    """Save the answer blocks and settle the message and stream."""
+def _seconds_between(started, finished) -> int:
+    """Whole seconds between two stamps, never negative."""
+    if started is None:
+        return 0
+    return max(0, int((as_utc(finished) - as_utc(started)).total_seconds()))
+
+
+def _consulted_documents(session, ctx: AnalystContext) -> set:
+    """Every document the notebook quotes for this message."""
+    documents = set()
+    book = Notebook.load(session, ctx.message_id, ctx.chat_id)
+    for item in book.items():
+        if item.kind == "quote":
+            document_id = QuoteValue.model_validate(item.value).document_id
+            if document_id is not None:
+                documents.add(document_id)
+    return documents
+
+
+def _save_blocks(
+    ctx: AnalystContext,
+    blocks: list[dict],
+    shown: list[str],
+    status: str = "done",
+) -> None:
+    """Save the answer, its real totals and terminal status, then stream.
+
+    The save lands before any stream event: reload and streamed
+    completion always show the same answer and totals.
+    """
     answer = {
         "message_id": ctx.message_id,
         "kb_version": _kb_number(ctx),
@@ -269,11 +281,34 @@ def _save_blocks(ctx: AnalystContext, tasks: list, blocks: list[dict], shown: li
         message = session.get(Message, ctx.message_id)
         if message is None:
             return
+        finished = datetime.now(UTC)
         message.answer = answer
-        message.status = "done"
-        message.finished_at = datetime.now(UTC)
+        message.status = status
+        message.finished_at = finished
+        started = message.started_at
+        message.seconds = _seconds_between(started, finished)
+        message.steps = session.scalar(
+            select(func.count(ThinkingEvent.id)).where(ThinkingEvent.message_id == ctx.message_id)
+        )
+        message.queries = session.scalar(
+            select(func.count(QueryRun.id)).where(QueryRun.message_id == ctx.message_id)
+        )
+        message.documents = len(_consulted_documents(session, ctx))
+        cost = session.scalar(
+            select(func.coalesce(func.sum(AiCall.cost_usd), 0)).where(
+                AiCall.message_id == ctx.message_id
+            )
+        )
+        message.cost_usd = float(cost or 0)
         session.commit()
+        summary = {
+            "seconds": message.seconds,
+            "steps": message.steps,
+            "queries": message.queries,
+            "documents": message.documents,
+        }
+        saved_cost = float(message.cost_usd or 0)
         if shown:
             Notebook.load(session, ctx.message_id, ctx.chat_id).mark_shown(shown)
-    _emit_temp_events(ctx, tasks, blocks)
-    finish_feed(ctx.message_id, status="done")
+    stream_answer(ctx.message_id, blocks, summary)
+    finish_feed(ctx.message_id, status=status, cost_usd=saved_cost)
