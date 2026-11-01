@@ -201,6 +201,10 @@ def test_disagreement_topic(db_session, version_id, practice_shop, monkeypatch) 
     assert readiness["practice_right"] == 0
     assert readiness["practice_total"] == 1
     assert readiness["weak_area"] == "Net sales"
+    assert "did well everywhere" not in readiness["weak_area_why"]
+    assert readiness["numbers_checked"] == 1
+    assert readiness["numbers_total"] == 2
+    assert readiness["unchecked_metrics"] == ["metric.net_sales"]
 
 
 def test_unrun_not_pass(db_session, version_id, practice_shop, monkeypatch) -> None:
@@ -218,6 +222,8 @@ def test_unrun_not_pass(db_session, version_id, practice_shop, monkeypatch) -> N
     unrun = sum(1 for item in readiness["outcomes"] if item["status"] == "unrun")
     assert (right, wrong, unrun) == (0, 0, 1)
     assert right + wrong + unrun == readiness["practice_total"]
+    assert "did well everywhere" not in readiness["weak_area_why"]
+    assert "couldn't run" in readiness["weak_area_why"]
 
 
 def test_readiness_counts(db_session, version_id, practice_shop, monkeypatch) -> None:
@@ -251,6 +257,8 @@ def test_readiness_counts(db_session, version_id, practice_shop, monkeypatch) ->
     assert readiness["practice_total"] == 1
     assert readiness["weak_area"] is None
     assert readiness["unchecked_metrics"] == ["metric.gross_sales"]
+    assert "did well everywhere" not in readiness["weak_area_why"]
+    assert "Gross sales" in readiness["weak_area_why"]
     assert readiness["pending_topics"] == ["How to fix Gross sales"]
     assert readiness["learned_at"]
 

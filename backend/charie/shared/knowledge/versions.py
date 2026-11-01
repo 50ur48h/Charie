@@ -66,8 +66,8 @@ class PublishError(ValueError):
     """Only a draft can become published."""
 
 
-class PublishBlocked(ValueError):
-    """Big changes wait for the owner's review."""
+class FailedChecks(ValueError):
+    """Failed or untested numbers never publish, not even by hand."""
 
 
 def _stable(entry: dict | None) -> dict:
@@ -131,9 +131,12 @@ def big_changes(session: Session, version_id: int) -> list:
 def publish_version(session: Session, version_id: int):
     """Publish one draft: the live version becomes archived, atomically.
 
-    Publishing an already-published version is idempotent. Anything else
-    that isn't a draft is refused, as are drafts with big changes. Version
-    ids never change, so active chats stay pinned. The caller commits.
+    Publishing is the owner's explicit review, so big changes may publish
+    once reviewed here. Failed or untested numbers never publish: they stay
+    out of analyst use until their checks pass. Publishing an
+    already-published version is idempotent. Anything else that isn't a
+    draft is refused. Version ids never change, so active chats stay
+    pinned. The caller commits.
     """
     from charie.shared.tables.knowledge import KbVersion
 
@@ -145,11 +148,12 @@ def publish_version(session: Session, version_id: int):
         return version
     if version.status != "draft":
         raise PublishError("Only a draft can be published.")
-    big = big_changes(session, version_id)
-    if big:
-        raise PublishBlocked(
-            f"Version {version.number} has {len(big)} big change(s). Review them first."
-        )
+    failed = _failed_metrics(session, version_id)
+    if failed:
+        raise FailedChecks(f"{len(failed)} number(s) fail their checks.")
+    untested = _untested_metrics(session, version_id)
+    if untested:
+        raise FailedChecks(f"{len(untested)} number(s) were never checked.")
     live = session.scalar(
         select(KbVersion)
         .where(KbVersion.status == "published", KbVersion.id != version.id)
@@ -210,6 +214,13 @@ def finalize_run(session: Session, version_id: int) -> dict:
             "version": version.number,
             "reason": f"{len(failed)} number(s) fail their checks.",
         }
+    untested = _untested_metrics(session, version_id)
+    if untested:
+        return {
+            "published": False,
+            "version": version.number,
+            "reason": f"{len(untested)} number(s) were never checked.",
+        }
     conflicts = _conflicting_entries(session, version_id)
     if conflicts:
         return {
@@ -219,6 +230,22 @@ def finalize_run(session: Session, version_id: int) -> dict:
         }
     published = publish_version(session, version_id)
     return {"published": True, "version": published.number, "reason": "Every change is small."}
+
+
+def _untested_metrics(session: Session, version_id: int) -> list[str]:
+    """Metric keys with no passing runs check in the version."""
+    from charie.shared.knowledge.store import list_entries
+
+    untested = []
+    for entry in list_entries(session, version_id, kinds=["metric"]):
+        tests = entry.details.get("tests") if isinstance(entry.details, dict) else []
+        ran = any(
+            isinstance(check, dict) and check.get("name") == "runs" and check.get("passed")
+            for check in tests or []
+        )
+        if not ran:
+            untested.append(entry.key)
+    return sorted(untested)
 
 
 def _failed_metrics(session: Session, version_id: int) -> list[str]:
@@ -313,7 +340,7 @@ def get_version_changes(version_id: int, session: Session = Depends(get_session)
 
 @versions_router.post("/api/versions/{number}/publish")
 def publish_version_number(number: int, session: Session = Depends(get_session)) -> dict:
-    """Publish one draft; big changes and non-drafts are refused."""
+    """Publish one draft; failed or untested numbers refuse, big changes don't."""
     from charie.shared.tables.knowledge import KbVersion
 
     version = session.scalar(select(KbVersion).where(KbVersion.number == number))
@@ -321,8 +348,8 @@ def publish_version_number(number: int, session: Session = Depends(get_session))
         raise ApiError(404, "not_found", "Charie couldn't find that version.")
     try:
         published = publish_version(session, version.id)
-    except PublishBlocked as err:
-        raise ApiError(409, "big_changes", str(err)) from err
+    except FailedChecks as err:
+        raise ApiError(409, "failed_checks", str(err)) from err
     except PublishError as err:
         raise ApiError(409, "not_draft", str(err)) from err
     except RunActiveError as err:

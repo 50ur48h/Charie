@@ -69,6 +69,46 @@ def _seed_big(db_session, version_id: int) -> None:
     db_session.commit()
 
 
+def _seed_big_passing(db_session, version_id: int) -> None:
+    """A big change whose checks all pass: reviewable, publishable by the owner."""
+    _seed_big(db_session, version_id)
+    entry = store.get_entry(db_session, version_id, "metric.net_sales")
+    details = dict(entry.details)
+    details["tests"] = [
+        {"name": "runs", "passed": True, "text": "seed"},
+        {"name": "believable", "passed": True, "text": "seed"},
+        {"name": "matches_documents", "passed": True, "text": "seed"},
+        {"name": "parts_add_up", "passed": True, "text": "seed"},
+    ]
+    details["tested_at"] = "2000-01-01T00:00:00+00:00"
+    store.upsert_entry(
+        db_session,
+        version_id,
+        "metric.net_sales",
+        "metric",
+        "Net sales",
+        "Net sales",
+        details,
+        "checked",
+        [{"type": "structure", "text": "seed"}],
+        "seed",
+    )
+    db_session.commit()
+
+
+def _ready(db_session, version_id: int) -> None:
+    db_session.get(KbVersion, version_id).readiness = {
+        "numbers_checked": 1,
+        "numbers_total": 1,
+        "numbers_waiting": 0,
+        "practice_right": 0,
+        "practice_total": 0,
+        "weak_area": None,
+        "weak_area_why": "seed",
+    }
+    db_session.commit()
+
+
 def _finish_run(db_session, version_id: int) -> None:
     db_session.add(LearningRun(kind="first", status="done", step="", version_id=version_id))
     db_session.commit()
@@ -84,22 +124,13 @@ def test_setup_atomic(db_session, version_id, learner_client) -> None:
     assert response.status_code == 409
     assert response.json()["error"] == "finish_not_ready"
     _seed_big(db_session, version_id)
-    db_session.get(KbVersion, version_id).readiness = {
-        "numbers_checked": 1,
-        "numbers_total": 1,
-        "numbers_waiting": 0,
-        "practice_right": 0,
-        "practice_total": 0,
-        "weak_area": None,
-        "weak_area_why": "seed",
-    }
-    db_session.commit()
+    _ready(db_session, version_id)
     refused = learner_client.post("/api/versions/1/publish")
     assert refused.status_code == 409
-    assert refused.json()["error"] == "big_changes"
+    assert refused.json()["error"] == "failed_checks"
     response = learner_client.post("/api/setup/finish", json={})
     assert response.status_code == 409
-    assert response.json()["error"] == "big_changes"
+    assert response.json()["error"] == "failed_checks"
     assert db_session.get(KbVersion, version_id).status == "draft"
     from charie.shared.settings import get_setting
 
@@ -180,3 +211,41 @@ def test_waiting_draft_not_auto(db_session, version_id) -> None:
     decision = versions.finalize_run(db_session, version_id)
     assert decision["published"] is False
     assert "big change" in decision["reason"]
+
+
+def test_reviewed_big_change_publishes_but_not_automatically(
+    db_session, version_id, learner_client
+) -> None:
+    """Owner review publishes a passing big change; auto-publish still waits."""
+    from charie.shared.settings import set_setting
+
+    log_in(learner_client)
+    _seed_big_passing(db_session, version_id)
+    set_setting(db_session, "setup_done", True)
+    db_session.commit()
+    decision = versions.finalize_run(db_session, version_id)
+    assert decision["published"] is False
+    assert "big change" in decision["reason"]
+    assert db_session.get(KbVersion, version_id).status == "draft"
+    response = learner_client.post("/api/versions/1/publish")
+    assert response.status_code == 200
+    assert db_session.get(KbVersion, version_id).status == "published"
+
+
+def test_passing_first_run_reviews_publishes_and_finishes(
+    db_session, version_id, learner_client
+) -> None:
+    """First run done, review changes, publish, then setup finishes."""
+    log_in(learner_client)
+    _seed_big_passing(db_session, version_id)
+    _ready(db_session, version_id)
+    _finish_run(db_session, version_id)
+    seen = learner_client.get("/api/versions/1/changes")
+    assert seen.status_code == 200
+    response = learner_client.post("/api/setup/finish", json={})
+    assert response.status_code == 200
+    assert response.json() == {"setup_done": True}
+    assert db_session.get(KbVersion, version_id).status == "published"
+    from charie.shared.settings import get_setting
+
+    assert get_setting(db_session, "setup_done") is True

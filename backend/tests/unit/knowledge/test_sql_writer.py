@@ -109,6 +109,18 @@ def test_keyed_comparison() -> None:
     assert "missing" in missing.reason
 
 
+def test_duplicate_dimension_keys_rejected() -> None:
+    """A repeated row never silently overwrites another; both sides are checked."""
+    columns = ["restaurant_id", "total"]
+    duplicated = [[1, 999], [1, 100]]
+    bad = compare_results(columns, [[1, 100]], columns, duplicated, "count")
+    assert bad.match is False
+    assert "repeats" in bad.reason and "examiner" in bad.reason
+    flipped = compare_results(columns, duplicated, columns, [[1, 100]], "count")
+    assert flipped.match is False
+    assert "repeats" in flipped.reason and "recipe" in flipped.reason
+
+
 def test_null_not_zero() -> None:
     """A missing value never equals zero; two missing values agree."""
     columns = ["restaurant_id", "total"]

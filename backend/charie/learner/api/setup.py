@@ -101,7 +101,7 @@ def finish_setup(body: FinishBody, session: Session = Depends(get_session)) -> d
     The first run must be done and the self-test must have written a
     readiness report. A failed publish leaves setup unfinished."""
     from charie.shared.knowledge.versions import (
-        PublishBlocked,
+        FailedChecks,
         PublishError,
         VersionNotFound,
         get_draft,
@@ -127,8 +127,8 @@ def finish_setup(body: FinishBody, session: Session = Depends(get_session)) -> d
         )
     try:
         publish_version(session, draft.id)
-    except PublishBlocked as err:
-        raise ApiError(409, "big_changes", str(err)) from err
+    except FailedChecks as err:
+        raise ApiError(409, "failed_checks", str(err)) from err
     except PublishError as err:
         raise ApiError(409, "not_draft", str(err)) from err
     except (VersionNotFound, RunActiveError) as err:

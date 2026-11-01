@@ -517,6 +517,7 @@ def finish_step(ctx: StepContext) -> None:
             key for key in (row.affects or []) if isinstance(key, str) and key in recipes
         )
     wrong_by_metric: dict[str, int] = {}
+    failed: set[str] = set()
     for outcome in outcomes:
         if outcome.get("status") != "wrong":
             continue
@@ -525,6 +526,7 @@ def finish_step(ctx: StepContext) -> None:
         entry = _entry(session, ctx.version_id, key)
         if entry is None:
             continue
+        failed.add(key)
         details = dict(entry.details) if isinstance(entry.details, dict) else {}
         tests = list(details.get("tests") or [])
         tests.append({"name": "self_test", "passed": False, "text": outcome.get("reason") or ""})
@@ -543,6 +545,15 @@ def finish_step(ctx: StepContext) -> None:
             sources,
             "The self-test disagrees.",
         )
+    for key in failed:
+        usable[key] = False
+    unchecked = sorted(key for key in recipes if not usable.get(key))
+    unrun = sum(1 for outcome in outcomes if outcome.get("status") == "unrun")
+    names = []
+    for key in unchecked:
+        entry = _entry(session, ctx.version_id, key)
+        names.append(entry.title if entry is not None else key)
+    unchecked_why = ", ".join(names)
     right = sum(1 for outcome in outcomes if outcome.get("status") == "match")
     weak = sorted(wrong_by_metric, key=lambda key: (-wrong_by_metric[key], key))
     weak_key = weak[0] if weak else None
@@ -558,14 +569,22 @@ def finish_step(ctx: StepContext) -> None:
         weak_area_why=(
             f"{weak_entry.title} disagrees on {wrong_by_metric[weak_key]} practice question(s)."
             if weak_entry is not None and weak_key is not None
-            else "Charie did well everywhere."
+            else (
+                f"{len(unchecked)} number(s) still need checking: {unchecked_why}."
+                if unchecked
+                else (
+                    f"{unrun} practice question(s) couldn't run."
+                    if unrun
+                    else "Charie did well everywhere."
+                )
+            )
         ),
         outcomes=outcomes,
         learned_at=datetime.now(UTC).isoformat(),
         data_through=source.data_through.isoformat()
         if source is not None and source.data_through
         else None,
-        unchecked_metrics=sorted(key for key in recipes if not usable.get(key)),
+        unchecked_metrics=unchecked,
         pending_topics=waiting_topics,
     )
     version = session.get(KbVersion, ctx.version_id)

@@ -146,14 +146,17 @@ def write_checked_sql(brief: dict, run, learning_run_id: int | None = None) -> W
     return WrittenSql(sql=report.sql, notes=form.notes or "", columns=columns, rows=rows)
 
 
-def _keyed(columns: list[str], rows: list[list]) -> dict[tuple, object]:
+def _keyed(columns: list[str], rows: list[list], side: str) -> dict[tuple, object]:
     """Rows by leading id columns, in whatever order they came back."""
     if not columns:
         raise ValueError("A result needs columns.")
     value_at = len(columns) - 1
     found = {}
     for row in rows:
-        found[tuple(row[position] for position in range(value_at))] = row[value_at]
+        key = tuple(row[position] for position in range(value_at))
+        if key in found:
+            raise ValueError(f"The {side} result repeats a row for {key!r}.")
+        found[key] = row[value_at]
     return found
 
 
@@ -190,8 +193,8 @@ def compare_results(
     if len(recipe_columns) == 1 and (len(recipe_rows) != 1 or len(examiner_rows) != 1):
         return nope("A total needs exactly one row.")
     try:
-        wanted = _keyed(recipe_columns, recipe_rows)
-        got = _keyed(examiner_columns, examiner_rows)
+        wanted = _keyed(recipe_columns, recipe_rows, "recipe")
+        got = _keyed(examiner_columns, examiner_rows, "examiner")
     except (ValueError, IndexError) as err:
         return nope(f"The results don't line up: {err}.")
     for key in sorted(set(wanted) | set(got), key=repr):
