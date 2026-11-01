@@ -4,6 +4,7 @@ Understand once, run up to 4 rounds at the same time, then the writer
 turns the checked notebook into 09 blocks with exact copies.
 """
 
+import asyncio
 import time
 from dataclasses import asdict
 from datetime import UTC, datetime
@@ -72,11 +73,7 @@ def _deliver_stopped(ctx: AnalystContext) -> None:
                 session.commit()
         finish_feed(ctx.message_id, status="stopped")
         return
-    ctx.log.add(
-        "note",
-        "Stopped early. Showing the checked numbers gathered so far.",
-        "Finish now ends the analysis; this is what passed the checks.",
-    )
+    _note_stopped_early(ctx)
     blocks, shown = fallback_blocks(ctx)
     _save_blocks(ctx, blocks, shown, status="stopped")
 
@@ -97,7 +94,11 @@ async def _save_answer(ctx: AnalystContext, tasks: list) -> None:
         ctx.log.finish(seq, status="done", title="Wrote the answer from the notebook.")
         _save_temp_answer(ctx, tasks)
         return
-    blocks, shown, fallback = result
+    blocks, shown, fallback, stopped = result
+    if stopped:
+        ctx.log.finish(seq, status="done", title="Stopped early; showing the checked numbers.")
+        _save_blocks(ctx, blocks, shown, status="stopped")
+        return
     if fallback:
         ctx.log.finish(seq, status="done", title="Wrote the checked numbers.")
         _save_fallback_answer(ctx, tasks, blocks, shown)
@@ -106,32 +107,60 @@ async def _save_answer(ctx: AnalystContext, tasks: list) -> None:
     _save_blocks(ctx, blocks, shown)
 
 
+def _note_stopped_early(ctx: AnalystContext) -> None:
+    """The stopped line, shared by both stopped-answer paths."""
+    ctx.log.add(
+        "note",
+        "Stopped early. Showing the checked numbers gathered so far.",
+        "Finish now ends the analysis; this is what passed the checks.",
+    )
+
+
+def _stopped_fallback(ctx: AnalystContext) -> tuple:
+    """The checked fallback as a stopped answer, never a done one."""
+    _note_stopped_early(ctx)
+    return *fallback_blocks(ctx, []), True, True
+
+
 async def write_checked_answer(ctx: AnalystContext, tasks: list) -> tuple | None:
     """Write, review, check, and fix twice; None when the writer fails.
 
-    Returns the blocks, the shown labels, and whether it is the fallback.
+    The two AI calls run in threads, so Finish stays responsive while
+    they think. Finish between the calls, or before saving, delivers
+    the stopped fallback instead of another rewrite or a done answer.
+
+    Returns the blocks, the shown labels, whether it is the fallback,
+    and whether it was stopped.
     """
     ran = list(tasks)
     rounds = _round_count(ctx)
     fixes: list[str] = []
     fixes_left = 2
     while True:
-        draft = write_answer(ctx, fixes=fixes)
+        if ctx.state.finish_requested.is_set():
+            return _stopped_fallback(ctx)
+        draft = await asyncio.to_thread(write_answer, ctx, fixes)
+        if ctx.state.finish_requested.is_set():
+            return _stopped_fallback(ctx)
         rendered = render_answer(draft, ctx)
         if rendered is None:
             return None
         blocks, shown = rendered
-        review = review_answer(ctx, blocks)
+        review = await asyncio.to_thread(review_answer, ctx, blocks)
+        if ctx.state.finish_requested.is_set():
+            return _stopped_fallback(ctx)
         _review_line(ctx, review)
         inputs = check_inputs(ctx)
         failures = run_checks(draft, blocks, inputs)
         _check_line(ctx, failures, review, inputs)
+        if ctx.state.finish_requested.is_set():
+            return _stopped_fallback(ctx)
         if review.verdict == "good" and not failures:
-            return blocks, shown, False
+            return blocks, shown, False, False
         if fixes_left == 0:
             if failures:
-                return *fallback_blocks(ctx, failures), True
-            return blocks, shown, False
+                return *fallback_blocks(ctx, failures), True, False
+            return blocks, shown, False, False
         fixes_left -= 1
         attempt = 2 - fixes_left
         fix_seq = ctx.log.start("step", f"Fixing the answer (try {attempt} of 2)")

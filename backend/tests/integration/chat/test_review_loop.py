@@ -5,16 +5,20 @@ reviewer; the notebook is seeded by hand so the cited label is fixed.
 """
 
 import asyncio
+import time
 
 import pytest
 from sqlalchemy import select
 
+from charie.chat.analyst import answer as answer_module
 from charie.chat.analyst import enough as enough_module
 from charie.chat.analyst import plan as plan_module
 from charie.chat.analyst import review as review_module
 from charie.chat.analyst import write as write_module
 from charie.chat.analyst.answer import answer_question
 from charie.chat.analyst.notebook import Notebook, NumberValue, QuoteValue
+from charie.chat.analyst.stream import FEEDS, MessageFeed
+from charie.chat.analyst.write import AnswerDraft
 from charie.shared.ai.client import AiClient
 from charie.shared.ai.cost_log import MemoryCostLog
 from charie.shared.ai.fake import FakeAi
@@ -252,6 +256,85 @@ def test_reviewer_unhappy_but_checks_pass_shows_answer(db_session, loop_shop, mo
     )
     titles = [line.title for line in _lines(db_session, ctx.message_id)]
     assert "Review: 1 thing to fix" in titles
+
+
+def test_finish_during_writing_delivers_stopped_fallback(
+    db_session, loop_shop, monkeypatch
+) -> None:
+    """Finish set mid-write stops the loop with the checked fallback."""
+    ctx = _seeded(shop._ctx(db_session, loop_shop), db_session)
+    _ready(monkeypatch, [_good_draft()], [_good_review()])
+
+    def slow_write(ctx, fixes=None):
+        time.sleep(0.5)
+        return AnswerDraft.model_validate(_good_draft())
+
+    monkeypatch.setattr(answer_module, "write_answer", slow_write)
+    FEEDS[ctx.message_id] = MessageFeed()
+    try:
+
+        async def _run():
+            task = asyncio.create_task(answer_question(ctx))
+            await asyncio.sleep(0.1)
+            ctx.state.finish_requested.set()
+            await task
+
+        asyncio.run(_run())
+    finally:
+        feed = FEEDS.pop(ctx.message_id, None)
+    assert feed is not None
+    saved = db_session.get(Message, ctx.message_id)
+    assert saved.status == "stopped"
+    warns = [block for block in saved.answer["blocks"] if block["type"] == "callout"]
+    assert any("checked numbers" in warn["text"] for warn in warns)
+    assert feed.events[-1].event == "done"
+    assert feed.events[-1].data["status"] == "stopped"
+
+
+def test_no_rewrite_after_finish(db_session, loop_shop, monkeypatch) -> None:
+    """One failed draft plus Finish means no second write call."""
+    ctx = _seeded(shop._ctx(db_session, loop_shop), db_session)
+    _ready(monkeypatch, [_bad_draft(), _bad_draft(), _bad_draft()], [_good_review()] * 3)
+    calls: list = []
+    real_write = answer_module.write_answer
+
+    def counting_write(ctx, fixes=None):
+        calls.append(1)
+        if len(calls) == 1:
+            ctx.state.finish_requested.set()
+        return real_write(ctx, fixes=fixes)
+
+    monkeypatch.setattr(answer_module, "write_answer", counting_write)
+    asyncio.run(answer_question(ctx))
+    assert len(calls) == 1
+    saved = db_session.get(Message, ctx.message_id)
+    assert saved.status == "stopped"
+    warns = [block for block in saved.answer["blocks"] if block["type"] == "callout"]
+    assert any("checked numbers" in warn["text"] for warn in warns)
+
+
+def test_loop_stays_responsive_during_write(db_session, loop_shop, monkeypatch) -> None:
+    """Other work runs while the writer thinks; the loop never blocks."""
+    ctx = _seeded(shop._ctx(db_session, loop_shop), db_session)
+    _ready(monkeypatch, [_good_draft()], [_good_review()])
+    order: list = []
+
+    def slow_write(ctx, fixes=None):
+        time.sleep(0.5)
+        order.append("write")
+        return AnswerDraft.model_validate(_good_draft())
+
+    monkeypatch.setattr(answer_module, "write_answer", slow_write)
+
+    async def _marker():
+        await asyncio.sleep(0.1)
+        order.append("marker")
+
+    async def _run():
+        await asyncio.gather(answer_question(ctx), _marker())
+
+    asyncio.run(_run())
+    assert order == ["marker", "write"]
 
 
 def test_stray_digits_left_out_of_check_body(db_session, loop_shop, monkeypatch) -> None:
