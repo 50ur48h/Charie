@@ -54,8 +54,15 @@ async def _live_events(message_id: int, after_id: int):
         yield _sse(item)
 
 
-def _rebuilt_events(thinking: list[dict], summary: dict, done: dict):
-    """Ids 1..N: one thinking event per saved line, then summary, then done."""
+def _rebuilt_events(message_id: int, thinking: list[dict], summary: dict, done: dict):
+    """The saved state as a fresh stream: reset, thinking, summary, done.
+
+    Numbering restarts at 1, so the client's stale live cursor cannot
+    apply: the reset tells it to drop that cursor and the partial live
+    buffer first. The snapshot always ends in the terminal done, however
+    high the client's Last-Event-ID is.
+    """
+    yield {"event": "reset", "id": "0", "data": json.dumps({"message_id": message_id})}
     next_id = 0
     for line in thinking:
         next_id += 1
@@ -105,9 +112,11 @@ async def stream_message(message_id: int, request: Request) -> EventSourceRespon
             "status": message.status,
             "cost_usd": float(message.cost_usd or 0),
         }
-    after_id = _last_event_id(request)
     if message_id in FEEDS:
-        events = _live_events(message_id, after_id)
+        events = _live_events(message_id, _last_event_id(request))
     else:
-        events = _rebuilt_events(thinking, summary, done)
+        # A restart or an expired feed starts numbering over; the
+        # client's cursor belongs to the old numbering and is reset by
+        # the first event, so it is never applied here.
+        events = _rebuilt_events(message_id, thinking, summary, done)
     return EventSourceResponse(events, ping=15)

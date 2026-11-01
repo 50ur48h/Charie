@@ -24,9 +24,16 @@ Columns:
 
 ## Task
 Answer the question below with one read-only query.
+Approach: {{way_guidance}}
 Question: {{question}}
 Scope: read {{scope_table}}.
 Period: {{period_start}} to {{period_end}} (time column {{time_column}}, {{time_zone}})
 Splits: {{splits}}
 Structure:
 {{structure}}
+
+### Way A
+Write the most direct query: start from the main table the knowledge names for this number, and use the documented joins and filters.
+
+### Way B
+Write it a different way from the usual one: start from a different table, or use a different method (for example count distinct ids instead of rows, or a subquery instead of a join). Use the same filters and dates.

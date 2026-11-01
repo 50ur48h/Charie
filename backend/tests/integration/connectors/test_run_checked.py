@@ -67,6 +67,7 @@ def test_run_checked_blocks_and_runs(checked) -> None:
     result = connector.run_checked("SELECT id, name FROM check_items", catalog)
     assert result.row_count == 2
     assert result.columns == ["id", "name"]
+    assert result.tables == ["public.check_items"]
     # A blocked DROP never ran: the rows are still there.
     with pytest.raises(QueryBlocked):
         connector.run_checked("DROP TABLE check_items", catalog)

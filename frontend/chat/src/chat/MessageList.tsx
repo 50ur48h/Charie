@@ -116,7 +116,8 @@ export function MessageList({
                         />
                       )}
                       <AssistantStatus message={message} />
-                      {message.status === "done" && message.answer !== null && (
+                      {(message.status === "done" || message.status === "stopped") &&
+                        message.answer !== null && (
                         <AnswerView answer={message.answer} onFollowUp={onFollowUp} showReading={showReading} />
                       )}
                       {message.status === "done" && message.answer !== null && (

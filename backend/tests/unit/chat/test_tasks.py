@@ -1,4 +1,4 @@
-"""Starter tasks: one recipe task per asked metric (P10.6)."""
+"""Starter tasks: recipe tasks per metric, new-number tasks per words (P10.6, P10.7)."""
 
 from charie.chat.analyst.dates import PeriodExpression
 from charie.chat.analyst.helpers.tasks import MAX_TASKS, Task, starter_tasks, task_signature
@@ -31,11 +31,39 @@ def test_starter_tasks_one_per_metric_ask() -> None:
     assert all(len(task.filters) == 1 for task in tasks)
 
 
-def test_starter_tasks_skips_new_numbers() -> None:
-    """Asks without a recipe key get no starter task."""
+def test_starter_tasks_makes_new_number_tasks() -> None:
+    """Asks in plain words become new-number tasks with digit-free lines."""
     understanding = _understanding()
     understanding.asks = [Ask(new_metric="something new")]
-    assert starter_tasks(understanding, _titles()) == []
+    tasks = starter_tasks(understanding, _titles())
+    assert len(tasks) == 1
+    assert tasks[0].kind == "new_number"
+    assert tasks[0].new_metric == "something new"
+    assert tasks[0].periods == ["p1"]
+    assert not any(char.isdigit() for char in tasks[0].why)
+
+
+def test_starter_tasks_makes_document_tasks_first() -> None:
+    """Document topics come first and share the 4-task cap."""
+    understanding = _understanding(asks=0, periods=1)
+    understanding.document_topics = ["net sales", "checkout code", "prices", "profit", "extra"]
+    understanding.asks = [Ask(metric_key="metric_0")]
+    tasks = starter_tasks(understanding, _titles())
+    assert [task.kind for task in tasks] == ["documents"] * 4
+    assert tasks[0].search == "net sales"
+
+
+def test_starter_tasks_mixes_recipes_and_new_numbers() -> None:
+    """Recipe and new-number asks share the 4-task cap in order."""
+    understanding = _understanding(asks=0, periods=2)
+    understanding.asks = [
+        Ask(metric_key="metric_0"),
+        Ask(new_metric="something new"),
+        Ask(metric_key="metric_1"),
+    ]
+    tasks = starter_tasks(understanding, _titles())
+    assert [task.kind for task in tasks] == ["recipe", "new_number", "recipe"]
+    assert all(task.periods == ["p1", "p2"] for task in tasks)
 
 
 def test_starter_tasks_at_most_four() -> None:

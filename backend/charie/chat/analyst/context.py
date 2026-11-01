@@ -33,3 +33,6 @@ class AnalystContext:
     periods: Any = None
     problems: list = field(default_factory=list)
     notebook: Any = None
+    stop_reason: str = ""
+    still_open: list = field(default_factory=list)
+    cannot_tell: list = field(default_factory=list)

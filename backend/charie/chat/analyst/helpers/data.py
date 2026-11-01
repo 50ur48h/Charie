@@ -7,14 +7,13 @@ Excluded metrics never build anything (B018).
 """
 
 import logging
-import threading
 from datetime import date, datetime
 from decimal import Decimal
 
 from sqlalchemy import select
 
 from charie.chat.analyst.dates import ResolvedPeriod
-from charie.chat.analyst.helpers.tasks import Task, task_signature
+from charie.chat.analyst.helpers.tasks import Task, _lock, task_signature
 from charie.chat.analyst.notebook import (
     FindingValue,
     Notebook,
@@ -53,20 +52,6 @@ from charie.shared.text.numbers import (
 )
 
 logger = logging.getLogger(__name__)
-
-#: One question's tasks share a lock so notebook labels stay unique.
-_LOCKS: dict[int, threading.Lock] = {}
-_LOCKS_GUARD = threading.Lock()
-
-
-def _lock(message_id: int) -> threading.Lock:
-    """The lock for one question's tasks, made on first use."""
-    with _LOCKS_GUARD:
-        lock = _LOCKS.get(message_id)
-        if lock is None:
-            lock = threading.Lock()
-            _LOCKS[message_id] = lock
-        return lock
 
 
 class _Loaded:
@@ -312,15 +297,17 @@ def _save_run(
     duration_ms: int,
     error: str | None,
     reasons: list | None = None,
+    way: str = "recipe",
+    tables: list[str] | None = None,
 ) -> int:
     """One `query_runs` row; returns its id for the proof."""
     row = QueryRun(
         message_id=message_id,
         purpose=task.why,
         recipe_key=task.metric_key,
-        way="recipe",
+        way=way,
         sql_text=sql,
-        check_report={"ok": ok, "reasons": reasons or []},
+        check_report={"ok": ok, "reasons": reasons or [], "tables": list(tables or [])},
         status=status,
         row_count=row_count,
         duration_ms=duration_ms,
@@ -345,20 +332,20 @@ def _exclude_reason(task: Task, loaded: _Loaded) -> str | None:
     return loaded.excluded.get(task.metric_key, "It was never checked.")
 
 
-def run_recipe_task(task: Task, ctx) -> None:
+def run_recipe_task(task: Task, ctx, round_no: int = 1) -> None:
     """Get one task's numbers the safe way; failures become findings.
 
     One question's tasks share a lock so notebook labels stay unique.
     Every failure also adds a `failed` finding.
     """
     with _lock(ctx.message_id):
-        _run_recipe_task(task, ctx)
+        _run_recipe_task(task, ctx, round_no)
 
 
-def _run_recipe_task(task: Task, ctx) -> None:
+def _run_recipe_task(task: Task, ctx, round_no: int = 1) -> None:
     """The task body, under the question's lock, in one database session."""
     with session_scope() as session:
-        book = Notebook(session, ctx.message_id, ctx.chat_id)
+        book = Notebook(session, ctx.message_id, ctx.chat_id, round=round_no)
         loaded = _Loaded(session, ctx.kb_version_id)
         for note in drop_excluded_defaults(ctx, loaded.usable_defaults):
             ctx.log.add("note", note)
@@ -452,6 +439,7 @@ def _run_period(session, ctx, task: Task, loaded: _Loaded, recipe: Recipe, perio
         result.row_count,
         result.duration_ms,
         None,
+        tables=result.tables,
     )
     table = ResultTable(result.columns, [[_cell(value) for value in row] for row in result.rows])
     return built, result, table, run_id

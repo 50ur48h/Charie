@@ -6,7 +6,6 @@ from datetime import UTC, datetime
 import pytest
 from sqlalchemy import select
 
-from charie.chat.analyst import answer as answer_module
 from charie.chat.analyst import runner as runner_module
 from charie.chat.analyst.runner import RUNNING, request_finish, run_now
 from charie.shared.tables.chat import Chat, Message, ThinkingEvent
@@ -73,29 +72,36 @@ def test_placeholder_answer_saved(db, db_session, monkeypatch) -> None:
     assert saved.finished_at is not None
     assert (
         "Placeholder answer. Here's what I found:"
-        in saved.answer["blocks"][0]["sentences"][0]["text"]
+        in saved.answer["blocks"][0]["paragraphs"][0]["sentences"][0]["text"]
     )
     titles = db_session.scalars(
         select(ThinkingEvent.title)
         .where(ThinkingEvent.message_id == assistant.id)
         .order_by(ThinkingEvent.seq)
     ).all()
-    assert titles == ["Understood the question", "Placeholder answer. Here's what I found:"]
+    assert titles == [
+        "Understood the question",
+        "Round 1 done: no new tasks, so no new answers.",
+        "Checking whether the rounds so far answer the question.",
+        "Wrote the answer from the notebook.",
+        "Placeholder answer. Here's what I found:",
+    ]
 
 
 def test_finish_now_marks_stopped_and_allows_next_question(db, db_session, monkeypatch) -> None:
     from charie.chat import chat_store
+    from charie.chat.analyst import loop as loop_module
 
     fake_understanding(monkeypatch)
     assistant = _thinking_assistant(db_session)
-    real_add = answer_module.add_period_items
+    real_add = loop_module.add_period_items
 
     def _finish_early(*args, **kwargs):
         assert request_finish(assistant.id) is True
         return real_add(*args, **kwargs)
 
-    monkeypatch.setattr(answer_module, "add_period_items", _finish_early)
-    monkeypatch.setattr(answer_module, "starter_tasks", lambda *args, **kwargs: [])
+    monkeypatch.setattr(loop_module, "add_period_items", _finish_early)
+    monkeypatch.setattr(loop_module, "starter_tasks", lambda *args, **kwargs: [])
     asyncio.run(run_now(assistant.id))
     db_session.expire_all()
     saved = db_session.get(Message, assistant.id)

@@ -36,6 +36,7 @@ def _brief(**overrides) -> dict:
         "time_column": "orders.created_at",
         "time_zone": "America/Chicago",
         "structure": "shop.orders(order_id, total_amount, created_at).",
+        "way_guidance": "",
     }
     base.update(overrides)
     return {"input": base, "catalog": _catalog()}

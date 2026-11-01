@@ -1,6 +1,6 @@
 """Connector shapes and errors. Every query runs read-only (06)."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from charie.shared.errors import ApiError
 
@@ -13,6 +13,7 @@ class QueryResult:
     rows: list[list[object]]
     row_count: int
     duration_ms: int
+    tables: list[str] = field(default_factory=list)
 
 
 @dataclass
