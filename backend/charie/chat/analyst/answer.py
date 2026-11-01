@@ -69,7 +69,10 @@ async def answer_question(ctx: AnalystContext) -> None:
 
         async def _one(task) -> None:
             async with gate:
-                await asyncio.to_thread(run_recipe_task, task, ctx)
+                if task.kind == "new_number":
+                    await asyncio.to_thread(run_new_number_task, task, ctx)
+                else:
+                    await asyncio.to_thread(run_recipe_task, task, ctx)
 
         await asyncio.gather(*(_one(task) for task in tasks))
     if ctx.state.finish_requested.is_set():

@@ -18,6 +18,9 @@ from charie.shared.safety.sql_check import check_sql
 
 JOB_KIND = "write_sql"
 
+#: The approach line per way; the examiner (no way) writes directly.
+WAY_GUIDANCE = {"": "", "A": "Use Way A.", "B": "Use Way B."}
+
 ZERO_DECIMAL_CURRENCIES = frozenset({"JPY", "KRW", "VND", "CLP", "COP", "IDR", "HUF", "TWD"})
 
 TOLERANCES = {"count": "0", "money": "0.01", "percent": "0.01", "ratio": "0.0001"}
@@ -121,15 +124,42 @@ def examiner_brief(session: Session, version_id: int, task: ExamTask, time_zone:
             "time_column": time_column,
             "time_zone": context.time_zone,
             "structure": "\n".join(lines),
+            "way_guidance": "",
         },
         "catalog": catalog,
     }
 
 
-def write_checked_sql(brief: dict, run, learning_run_id: int | None = None) -> WrittenSql:
-    """Ask the examiner, check the SQL, run it read-only. Unsafe never runs."""
+def brief_for_way(brief: dict, way: str) -> dict:
+    """The same brief pointed at one way; the examiner keeps `""`.
+
+    Each way's brief is built from the task alone, never from the other
+    way's query, so way B can never see way A's SQL.
+    """
+    if way not in WAY_GUIDANCE:
+        raise ValueError(f"Way must be one of {sorted(WAY_GUIDANCE)}.")
+    return {
+        "input": {**brief["input"], "way_guidance": WAY_GUIDANCE[way]},
+        "catalog": brief["catalog"],
+    }
+
+
+def write_checked_sql(
+    brief: dict,
+    run,
+    learning_run_id: int | None = None,
+    way: str = "",
+    message_id: int | None = None,
+) -> WrittenSql:
+    """Ask the examiner (or one way), check the SQL, run it read-only."""
     form = get_ai().run(
-        JOB_KIND, brief["input"], WriteSqlForm, app="learner", learning_run_id=learning_run_id
+        JOB_KIND,
+        brief_for_way(brief, way)["input"],
+        WriteSqlForm,
+        app="learner" if learning_run_id is not None else "chat",
+        message_id=message_id,
+        learning_run_id=learning_run_id,
+        already_running=learning_run_id is None,
     )
     sql = (form.sql or "").strip()
     if not sql:
@@ -144,6 +174,49 @@ def write_checked_sql(brief: dict, run, learning_run_id: int | None = None) -> W
     columns = list(result.columns) if hasattr(result, "columns") else []
     rows = [list(row) for row in result.rows] if hasattr(result, "rows") else []
     return WrittenSql(sql=report.sql, notes=form.notes or "", columns=columns, rows=rows)
+
+
+def _agree_key(row: list) -> tuple:
+    """One result row keyed by position: every id cell, never the value."""
+    return tuple(str(cell) for cell in row[:-1])
+
+
+def _agree_value(value: object) -> Decimal | None:
+    """A result value as a decimal; text stays incomparable."""
+    if value is None:
+        return None
+    try:
+        return Decimal(str(value))
+    except Exception:  # noqa: BLE001 (anything non-numeric disagrees)
+        return None
+
+
+def results_agree(rows_a: list[list], rows_b: list[list]) -> bool:
+    """Two ways agree: the same split keys, every value within 0.5% (or 0.01)."""
+    try:
+        keyed_a = {_agree_key(row): row[-1] for row in rows_a}
+        keyed_b = {_agree_key(row): row[-1] for row in rows_b}
+    except IndexError:
+        return False
+    if len(keyed_a) != len(rows_a) or len(keyed_b) != len(rows_b):
+        return False
+    if set(keyed_a) != set(keyed_b):
+        return False
+    counted = 0
+    for key in keyed_a:
+        first, second = _agree_value(keyed_a[key]), _agree_value(keyed_b[key])
+        if first is None and second is None:
+            continue
+        if first is None or second is None:
+            return False
+        if first == 0 and second == 0:
+            continue
+        rel = max(abs(first), abs(second)) * Decimal("0.005")
+        bound = max(rel, Decimal("0.01"))
+        if abs(first - second) > bound:
+            return False
+        counted += 1
+    return counted > 0
 
 
 def _keyed(columns: list[str], rows: list[list], side: str) -> dict[tuple, object]:
