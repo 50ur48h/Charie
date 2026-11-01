@@ -25,6 +25,11 @@ def form_schema(model: type[BaseModel]) -> dict[str, Any]:
 def _strict(node: Any, owner: str, model_name: str, defs: dict[str, Any], seen: set[str]) -> Any:
     """Inline `$ref`s, then make every object strict with described fields."""
     if isinstance(node, dict):
+        if node.get("type") == "object" and "properties" not in node:
+            raise FormError(
+                f"Field `{owner}` is a free-form object; type its fields in a model "
+                "so Meta can take it."
+            )
         ref = node.get("$ref")
         if isinstance(ref, str):
             name = ref.removeprefix("#/$defs/")

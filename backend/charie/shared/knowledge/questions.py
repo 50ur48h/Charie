@@ -221,6 +221,43 @@ def select_new(
     return new[:MAX_NEW_QUESTIONS], new[MAX_NEW_QUESTIONS:]
 
 
+class CalendarProposal(BaseModel):
+    """The calendar an option proposes; code confirms it."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    time_zone: str = Field(default="", description="IANA zone, like America/Chicago.")
+    week_start: str = Field(default="", description="monday or sunday.")
+    fiscal_year_start: int = Field(default=1, description="Fiscal year start month, 1 to 12.")
+
+
+class OptionProposal(BaseModel):
+    """Machine-readable option: a metric, default, entry or calendar."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    metric: str = Field(default="", description="Tested metric key, like metric.net_sales.")
+    default: str = Field(default="", description="Default word, like sales.")
+    value: str = Field(default="", description="Default value, like metric.net_sales.")
+    entry: str = Field(default="", description="Entry key, to pick a side.")
+    calendar: CalendarProposal | None = Field(
+        default=None, description="Calendar values, when the option sets the calendar."
+    )
+
+    def flat(self) -> dict:
+        """Only the proposed keys as plain JSON; empties stay out."""
+        flat: dict = {}
+        for key, value in self.model_dump(exclude_none=True).items():
+            if isinstance(value, dict):
+                value = {k: v for k, v in value.items() if v not in ("", None)}
+                if not value:
+                    continue
+            elif value in ("", None):
+                continue
+            flat[key] = value
+        return flat
+
+
 class OptionDraft(BaseModel):
     """One option in the AI's words; code fills in the number."""
 
@@ -229,8 +266,9 @@ class OptionDraft(BaseModel):
     id: str = Field(description="Stable option id, like a or b.")
     label: str = Field(description="Plain words, no amounts.")
     explanation: str = Field(default="", description="Why this option fits, in plain words.")
-    proposal: dict = Field(
-        default={}, description="Machine-readable: metric, default/value, calendar or entry."
+    proposal: OptionProposal = Field(
+        default_factory=OptionProposal,
+        description="Machine-readable: metric, default/value, calendar or entry.",
     )
 
 
@@ -368,8 +406,8 @@ def _valid_options(draft: QuestionDraft) -> list[OptionDraft] | None:
     for option in draft.options:
         if not option.label.strip():
             return None
-        proposal = option.proposal if isinstance(option.proposal, dict) else {}
-        keys = set(proposal) & {"metric", "default", "calendar", "entry"}
+        proposal = option.proposal.flat()
+        keys = set(proposal)
         if not keys:
             return None
         kept.append(option)
@@ -436,8 +474,14 @@ def make_owner_questions(
                     "id": option.id,
                     "label": option.label,
                     "explanation": option.explanation,
-                    "number": _option_number(session, version_id, option.proposal, run, time_zone),
-                    "proposal": option.proposal,
+                    "number": _option_number(
+                        session,
+                        version_id,
+                        option.proposal.flat(),
+                        run,
+                        time_zone,
+                    ),
+                    "proposal": option.proposal.flat(),
                 }
             )
         body = draft.title.strip() + "\n\n" + draft.body.strip() if draft.title else draft.body

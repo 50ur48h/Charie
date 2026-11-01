@@ -67,3 +67,63 @@ def test_literal_becomes_enum():
 
 def test_bad_form_is_an_ai_error():
     assert issubclass(FormError, AiError)
+
+
+def test_bare_dict_refused():
+    class Vague(BaseModel):
+        proposal: dict = Field(default={}, description="Machine-readable bits.")
+
+    with pytest.raises(FormError, match="free-form object"):
+        form_schema(Vague)
+
+
+def test_write_questions_form_is_strict():
+    from charie.shared.knowledge.questions import WriteQuestionsForm
+
+    schema = form_schema(WriteQuestionsForm)
+
+    def check(node, path):
+        if isinstance(node, dict):
+            if node.get("type") == "object":
+                assert node.get("additionalProperties") is False, path
+            for key, value in node.items():
+                check(value, f"{path}.{key}")
+        elif isinstance(node, list):
+            for position, value in enumerate(node):
+                check(value, f"{path}[{position}]")
+
+    check(schema, "WriteQuestionsForm")
+    reply = WriteQuestionsForm.model_validate(
+        {
+            "questions": [
+                {
+                    "topic": "What sales means",
+                    "title": "What should sales mean?",
+                    "body": "This decides which number sales questions use.",
+                    "options": [
+                        {
+                            "id": "a",
+                            "label": "Net sales",
+                            "explanation": "Completed orders.",
+                            "proposal": {"metric": "metric.net_sales"},
+                        },
+                        {
+                            "id": "b",
+                            "label": "Use the calendar",
+                            "explanation": "Weeks start Monday.",
+                            "proposal": {
+                                "calendar": {
+                                    "time_zone": "America/Chicago",
+                                    "week_start": "monday",
+                                    "fiscal_year_start": 1,
+                                }
+                            },
+                        },
+                    ],
+                    "default_option": "a",
+                }
+            ]
+        }
+    )
+    assert reply.questions[0].options[0].proposal.metric == "metric.net_sales"
+    assert reply.questions[0].options[1].proposal.calendar.week_start == "monday"
