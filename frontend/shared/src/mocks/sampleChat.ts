@@ -486,7 +486,7 @@ function storedChat(chatId: number): Chat | undefined {
   return chat;
 }
 
-export function finishMockMessage(messageId: number): boolean {
+export function finishMockMessage(messageId: number): "ok" | "done" | "not_found" {
   rehydrate();
   const chats: Chat[] = [...created.values()];
   for (const summary of summaries) {
@@ -498,6 +498,13 @@ export function finishMockMessage(messageId: number): boolean {
       (item) => item.id === messageId && item.role === "assistant",
     );
     if (message !== undefined && message.role === "assistant") {
+      if (
+        message.status === "done" ||
+        message.status === "failed" ||
+        message.status === "stopped"
+      ) {
+        return "done";
+      }
       message.status = "stopped";
       running.delete(messageId);
       for (const line of message.thinking) {
@@ -505,10 +512,10 @@ export function finishMockMessage(messageId: number): boolean {
       }
       created.set(chat.id, chat);
       persist();
-      return true;
+      return "ok";
     }
   }
-  return false;
+  return "not_found";
 }
 
 export function addMockMessage(
@@ -518,7 +525,11 @@ export function addMockMessage(
   const chat = storedChat(chatId);
   if (chat === undefined) return undefined;
   if (chat.messages.length === 0) {
-    chat.title = text.length > 60 ? `${text.slice(0, 60)}…` : text;
+    const cut = text.slice(0, 60);
+    chat.title =
+      text.length <= 60
+        ? text
+        : `${cut.lastIndexOf(" ") > 0 ? cut.slice(0, cut.lastIndexOf(" ")) : cut}…`;
   }
   const userId = nextMessageId;
   const assistantId = nextMessageId + 1;
@@ -552,6 +563,17 @@ export interface MockAssistantRef {
 // Locate an assistant message across seed and created chats (same search
 // pattern as finishMockMessage). Used by the fake stream to play and save
 // a live answer for freshly sent messages.
+// True while a chat has a genuinely running answer: sent and neither
+// finished nor saved. Used by the ask handler to refuse a second question,
+// like the real API.
+export function isMockChatRunning(chatId: number): boolean {
+  const chat = storedChat(chatId);
+  if (chat === undefined) return false;
+  return chat.messages.some(
+    (message) => message.role === "assistant" && running.has(message.id),
+  );
+}
+
 // True while an assistant message has a genuinely running answer: sent and
 // neither finished nor saved. Static seeds never qualify, so the fake
 // stream can serve them an immediate done without touching fixtures.

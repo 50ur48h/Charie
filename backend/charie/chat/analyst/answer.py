@@ -1,14 +1,37 @@
 """The answer flow: the placeholder until the real analyst lands (P10.1)."""
 
 import asyncio
+import time
 from datetime import UTC, datetime
 
 from charie.chat.analyst.context import AnalystContext
+from charie.chat.analyst.stream import FEEDS, finish_feed
 from charie.shared.db import session_scope
 from charie.shared.tables.chat import Message
 
 # Seconds between placeholder lines; tests set it to 0.
 PLACEHOLDER_PAUSE = 1.0
+
+
+def _emit_placeholder_events(ctx: AnalystContext) -> None:
+    """The saved answer through the live stream: summary, blocks, done.
+
+    A text block goes out empty first, then one text event with all its
+    text (P10.13 will send it in small pieces). No feed, no events.
+    """
+    feed = FEEDS.get(ctx.message_id)
+    if feed is None or feed.closed:
+        return
+    seconds = int(time.monotonic() - ctx.state.started)
+    feed.add(
+        "summary",
+        {"seconds": seconds, "steps": 3, "queries": 0, "documents": 0},
+    )
+    feed.add("block", {"index": 0, "block": {"type": "text", "paragraphs": []}})
+    feed.add("text", {"index": 0, "delta": PLACEHOLDER_BODY})
+    feed.add("done", {"message_id": ctx.message_id, "status": "done", "cost_usd": 0})
+    finish_feed(ctx.message_id)
+
 
 PLACEHOLDER_BODY = "This is a placeholder answer. The real analyst arrives in the next sub-phases."
 
@@ -63,3 +86,4 @@ def _save_placeholder_answer(ctx: AnalystContext) -> None:
         message.status = "done"
         message.finished_at = datetime.now(UTC)
         session.commit()
+    _emit_placeholder_events(ctx)

@@ -7,7 +7,7 @@
 import { useEffect, useRef, useState } from "react";
 import { LogoMark, Spinner } from "@charie/shared";
 import type { ChatMessage } from "@charie/shared";
-import { AnswerActions, AnswerView, ThinkingPanel } from "@charie/shared";
+import { AnswerActions, AnswerView, MessageStatus, ThinkingPanel } from "@charie/shared";
 import type { FeedState } from "@charie/shared";
 import { LiveAnswer } from "./LiveAnswer";
 import { ScrollToLatest } from "./ScrollToLatest";
@@ -24,12 +24,10 @@ function AssistantStatus({ message }: { message: ChatMessage }) {
     );
   }
   if (message.status === "failed") {
-    return (
-      <p className="text-[14.5px] text-bad-ink">That answer didn&apos;t finish. Ask again when you&apos;re ready.</p>
-    );
+    return <MessageStatus status="failed" />;
   }
   if (message.status === "stopped") {
-    return <p className="text-[14.5px] text-muted">Stopped.</p>;
+    return <MessageStatus status="stopped" />;
   }
   return null;
 }

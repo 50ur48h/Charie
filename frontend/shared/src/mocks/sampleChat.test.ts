@@ -116,13 +116,13 @@ describe("sample chat", () => {
 
   test("finishing stops the running answer without duplicating the list", () => {
     resetMockChats();
-    expect(finishMockMessage(4)).toBe(true);
+    expect(finishMockMessage(4)).toBe("ok");
     expect(getMockChat(2)?.messages[1]?.status).toBe("stopped");
     expect(assistantOf(2, 1).thinking.map((line) => line.status)).toEqual([
       "done",
       "done",
     ]);
-    expect(finishMockMessage(999)).toBe(false);
+    expect(finishMockMessage(999)).toBe("not_found");
     expect(listMockChats()).toHaveLength(8);
   });
 });

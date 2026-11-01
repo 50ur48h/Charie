@@ -7,7 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from charie.chat.analyst.context import AnalystContext, RunState
-from charie.chat.analyst.stream import ThinkingLog
+from charie.chat.analyst.stream import FEEDS, ThinkingLog, finish_feed
 from charie.shared.ai.spending import month_spent, spending_state
 from charie.shared.db import session_scope
 from charie.shared.errors import ApiError
@@ -289,7 +289,7 @@ def build_context(message_id: int) -> AnalystContext | None:
 
 
 def mark_failed(message_id: int, body: str) -> None:
-    """A crashed question: failed, with a failed note line, stamped."""
+    """A crashed question: failed, with error and done events, stamped."""
     with session_scope() as session:
         message = session.get(Message, message_id)
         if message is None:
@@ -298,6 +298,13 @@ def mark_failed(message_id: int, body: str) -> None:
         message.status = "failed"
         message.finished_at = datetime.now(UTC)
         session.commit()
+    feed = FEEDS.get(message_id)
+    if feed is not None and not feed.closed:
+        feed.add(
+            "error",
+            {"code": "analyst_failed", "message": body},
+        )
+    finish_feed(message_id, status="failed")
 
 
 def mark_stopped(session: Session, message: Message, body: str) -> None:

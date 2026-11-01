@@ -1,4 +1,7 @@
-"""The thinking log: one saved line per thinking-panel row (P10.1)."""
+"""The thinking log and the live message feed (P10.1, P10.2)."""
+
+import asyncio
+from dataclasses import dataclass
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -8,6 +11,115 @@ from charie.shared.tables.chat import ThinkingEvent
 
 _VALID_KINDS = ("step", "found", "query", "document", "decision", "check", "note")
 _VALID_STATUSES = ("running", "done", "failed")
+
+# Seconds a finished feed stays before the stream rebuilds from the database.
+FEED_KEEP_SECONDS = 60
+
+
+@dataclass
+class StreamEvent:
+    """One stream event: a running id, the name, and JSON-ready data."""
+
+    id: int
+    event: str
+    data: dict
+
+
+class MessageFeed:
+    """Live events for one running answer, then closed (P10.2).
+
+    The producer adds saved events; followers replay what they missed
+    and wait for the rest until the feed closes. Finished feeds stay
+    for `FEED_KEEP_SECONDS` so a late reconnect still replays.
+    """
+
+    def __init__(self) -> None:
+        self.events: list[StreamEvent] = []
+        self._next_id = 1
+        self._closed = False
+        self._waiters: list[asyncio.Event] = []
+
+    @property
+    def closed(self) -> bool:
+        """No more events will come."""
+        return self._closed
+
+    def has_done(self) -> bool:
+        """A terminal event was already sent."""
+        return any(item.event == "done" for item in self.events)
+
+    def add(self, event: str, data: dict) -> StreamEvent:
+        """Save one event and wake every follower."""
+        item = StreamEvent(self._next_id, event, data)
+        self._next_id += 1
+        self.events.append(item)
+        for waiter in list(self._waiters):
+            waiter.set()
+        return item
+
+    def close(self) -> None:
+        """End the feed; followers finish what is left and stop."""
+        self._closed = True
+        for waiter in list(self._waiters):
+            waiter.set()
+
+    def events_after(self, after_id: int) -> list[StreamEvent]:
+        """Stored events with an id above `after_id`."""
+        return [item for item in self.events if item.id > after_id]
+
+    async def follow(self, after_id: int):
+        """Replay what was missed, then wait for the rest until closed."""
+        last = after_id
+        while True:
+            for item in self.events_after(last):
+                last = item.id
+                yield item
+            if self._closed:
+                return
+            waiter = asyncio.Event()
+            self._waiters.append(waiter)
+            try:
+                await waiter.wait()
+            finally:
+                if waiter in self._waiters:
+                    self._waiters.remove(waiter)
+
+
+# Live feeds by assistant message id. Only one copy of the chat app
+# runs, so memory is enough; the database replays everything older.
+FEEDS: dict[int, MessageFeed] = {}
+
+
+def _schedule_removal(message_id: int) -> None:
+    """Forget a finished feed a minute later; the database replays after."""
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        FEEDS.pop(message_id, None)
+        return
+    loop.call_later(FEED_KEEP_SECONDS, FEEDS.pop, message_id, None)
+
+
+def finish_feed(message_id: int, status: str | None = None, cost_usd: float = 0) -> None:
+    """Send the terminal event if none went out, close, and schedule removal.
+
+    Every producer ends through here, so a stream ends exactly once:
+    after the one `done`. A feed with no live stream simply expires.
+    """
+    feed = FEEDS.get(message_id)
+    if feed is None or feed.closed:
+        return
+    if status is not None and not feed.has_done():
+        feed.add("done", {"message_id": message_id, "status": status, "cost_usd": cost_usd})
+    feed.close()
+    _schedule_removal(message_id)
+
+
+def _push_thinking(message_id: int, line: dict) -> None:
+    """A saved thinking line also goes out live (P10.2)."""
+    feed = FEEDS.get(message_id)
+    if feed is not None and not feed.closed:
+        feed.add("thinking", line)
 
 
 class ThinkingLog:
@@ -34,21 +146,20 @@ class ThinkingLog:
         body: str = "",
         details: dict | None = None,
         status: str = "done",
-    ) -> int:
+    ) -> tuple[int, dict]:
         seq = self._next_seq(session)
-        session.add(
-            ThinkingEvent(
-                message_id=self.message_id,
-                seq=seq,
-                kind=kind,
-                status=status,
-                title=title,
-                body=body,
-                details=details or {},
-            )
+        row = ThinkingEvent(
+            message_id=self.message_id,
+            seq=seq,
+            kind=kind,
+            status=status,
+            title=title,
+            body=body,
+            details=details or {},
         )
+        session.add(row)
         session.commit()
-        return seq
+        return seq, self._line_shape(row)
 
     def _run(
         self,
@@ -59,7 +170,9 @@ class ThinkingLog:
         status: str = "done",
     ) -> int:
         with session_scope() as session:
-            return self._save(session, kind, title, body, details, status)
+            seq, line = self._save(session, kind, title, body, details, status)
+        _push_thinking(self.message_id, line)
+        return seq
 
     def start(self, kind: str, title: str, body: str = "", details: dict | None = None) -> int:
         """Open a running line; the caller finishes it later."""
@@ -92,6 +205,8 @@ class ThinkingLog:
             if details is not None:
                 line.details = details
             session.commit()
+            shape = self._line_shape(line)
+        _push_thinking(self.message_id, shape)
 
     def add(
         self,
@@ -106,6 +221,19 @@ class ThinkingLog:
         assert status in _VALID_STATUSES, f"unknown thinking status: {status}"
         return self._run(kind, title, body, details, status)
 
+    @staticmethod
+    def _line_shape(row: ThinkingEvent) -> dict:
+        """One saved line as the screen and the stream read it."""
+        return {
+            "seq": row.seq,
+            "kind": row.kind,
+            "status": row.status,
+            "title": row.title,
+            "body": row.body,
+            "details": row.details,
+            "at": row.at.isoformat() if row.at is not None else None,
+        }
+
     def lines(self) -> list[dict]:
         """Every saved line, in `seq` order (for the screen and the stream)."""
         with session_scope() as session:
@@ -114,15 +242,4 @@ class ThinkingLog:
                 .where(ThinkingEvent.message_id == self.message_id)
                 .order_by(ThinkingEvent.seq)
             ).all()
-            return [
-                {
-                    "seq": row.seq,
-                    "kind": row.kind,
-                    "status": row.status,
-                    "title": row.title,
-                    "body": row.body,
-                    "details": row.details,
-                    "at": row.at.isoformat() if row.at is not None else None,
-                }
-                for row in rows
-            ]
+            return [self._line_shape(row) for row in rows]
