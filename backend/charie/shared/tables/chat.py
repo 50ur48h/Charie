@@ -117,7 +117,14 @@ class NotebookItem(Base):
 
     __tablename__ = "notebook_items"
     __table_args__ = (
-        UniqueConstraint("message_id", "label"),
+        # Labels stay unique per message; findings share the empty label.
+        Index(
+            "uq_notebook_items_message_id_label",
+            "message_id",
+            "label",
+            unique=True,
+            postgresql_where=text("label <> ''"),
+        ),
         Index("ix_notebook_items_message_id", "message_id"),
         Index("ix_notebook_items_chat_id", "chat_id"),
         CheckConstraint(

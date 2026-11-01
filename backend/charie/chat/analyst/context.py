@@ -32,3 +32,4 @@ class AnalystContext:
     understanding: Any = None
     periods: Any = None
     problems: list = field(default_factory=list)
+    notebook: Any = None
