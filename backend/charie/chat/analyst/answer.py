@@ -10,11 +10,12 @@ from datetime import UTC, datetime
 
 from sqlalchemy import select
 
-from charie.chat.analyst.checks import check_inputs, run_checks
+from charie.chat.analyst.checks import check_body, check_inputs, run_checks
 from charie.chat.analyst.context import AnalystContext
-from charie.chat.analyst.loop import run_rounds
+from charie.chat.analyst.loop import run_extra_round, run_rounds
 from charie.chat.analyst.notebook import Notebook
-from charie.chat.analyst.render import render_answer
+from charie.chat.analyst.render import fallback_blocks, render_answer
+from charie.chat.analyst.review import review_answer
 from charie.chat.analyst.stream import FEEDS, finish_feed
 from charie.chat.analyst.write import write_answer
 from charie.shared.ai.errors import AiError
@@ -69,7 +70,7 @@ async def answer_question(ctx: AnalystContext) -> None:
     if ctx.state.finish_requested.is_set():
         _mark_stopped(ctx)
         return
-    _save_answer(ctx, tasks)
+    await _save_answer(ctx, tasks)
 
 
 def _mark_stopped(ctx: AnalystContext) -> None:
@@ -96,7 +97,7 @@ def _mark_stopped(ctx: AnalystContext) -> None:
     finish_feed(ctx.message_id, status="stopped")
 
 
-def _save_answer(ctx: AnalystContext, tasks: list) -> None:
+async def _save_answer(ctx: AnalystContext, tasks: list) -> None:
     """Write, render and save; the notebook view is the fallback."""
     with session_scope() as session:
         message = session.get(Message, ctx.message_id)
@@ -105,39 +106,121 @@ def _save_answer(ctx: AnalystContext, tasks: list) -> None:
             session.commit()
     seq = ctx.log.start("step", "Writing the answer")
     try:
-        draft = write_answer(ctx)
-        rendered = render_answer(draft, ctx)
+        result = await write_checked_answer(ctx, tasks)
     except AiError:
-        draft = None
-        rendered = None
-    if rendered is None:
+        result = None
+    if result is None:
         ctx.log.finish(seq, status="done", title="Wrote the answer from the notebook.")
         _save_temp_answer(ctx, tasks)
         return
+    blocks, shown, fallback = result
+    if fallback:
+        ctx.log.finish(seq, status="done", title="Wrote the checked numbers.")
+        _save_fallback_answer(ctx, tasks, blocks, shown)
+        return
     ctx.log.finish(seq, status="done", title="Wrote the answer.")
-    _run_checks(ctx, draft, rendered[0])
-    _save_blocks(ctx, tasks, *rendered)
+    _save_blocks(ctx, tasks, blocks, shown)
 
 
-def _run_checks(ctx: AnalystContext, draft, blocks: list[dict]) -> None:
-    """Check every number, label and claim; a failure still shows the answer.
+async def write_checked_answer(ctx: AnalystContext, tasks: list) -> tuple | None:
+    """Write, review, check, and fix twice; None when the writer fails.
 
-    The review loop (P10.12) retries failures; until then the answer is
-    shown with a failed check line.
+    Returns the blocks, the shown labels, and whether it is the fallback.
     """
-    seq = ctx.log.start("check", "Checking every number, label and claim")
-    failures = run_checks(draft, blocks, check_inputs(ctx))
+    ran = list(tasks)
+    rounds = _round_count(ctx)
+    fixes: list[str] = []
+    fixes_left = 2
+    while True:
+        draft = write_answer(ctx, fixes=fixes)
+        rendered = render_answer(draft, ctx)
+        if rendered is None:
+            return None
+        blocks, shown = rendered
+        review = review_answer(ctx, blocks)
+        _review_line(ctx, review)
+        inputs = check_inputs(ctx)
+        failures = run_checks(draft, blocks, inputs)
+        _check_line(ctx, failures, review, inputs)
+        if review.verdict == "good" and not failures:
+            return blocks, shown, False
+        if fixes_left == 0:
+            if failures:
+                return *fallback_blocks(ctx, failures), True
+            return blocks, shown, False
+        fixes_left -= 1
+        attempt = 2 - fixes_left
+        fix_seq = ctx.log.start("step", f"Fixing the answer (try {attempt} of 2)")
+        if review.needs_more_data and _extra_round_allowed(ctx, rounds):
+            current = await run_extra_round(ctx, ran, rounds + 1, review.missing_data or "")
+            ran.extend(current)
+            rounds += 1
+            fixes = []
+        else:
+            fixes = [f"{fix.problem}: {fix.how_to_fix}" for fix in review.fixes]
+            fixes.extend(failure.message for failure in failures)
+        ctx.log.finish(fix_seq, status="done")
+
+
+def _round_count(ctx: AnalystContext) -> int:
+    """How many rounds ran, from their step lines."""
+    return sum(
+        1
+        for line in ctx.log.lines()
+        if line.get("kind") == "step" and (line.get("title") or "").startswith("Round ")
+    )
+
+
+def _extra_round_allowed(ctx: AnalystContext, rounds: int) -> bool:
+    """Another round needs no Finish, time left, and fewer than 6 rounds."""
+    if ctx.state.finish_requested.is_set() or rounds >= 6:
+        return False
+    minutes = (ctx.settings or {}).get("thinking_minutes", 10)
+    return time.monotonic() - ctx.state.started < minutes * 60
+
+
+def _review_line(ctx: AnalystContext, review) -> None:
+    """The reviewer's verdict as a check line."""
+    seq = ctx.log.start("check", "Reviewing the answer like a strict manager")
+    if review.verdict == "good" and not review.fixes:
+        ctx.log.finish(seq, status="done", title="Review: looks good")
+        return
+    count = len(review.fixes)
+    ctx.log.finish(
+        seq,
+        status="failed",
+        title=f"Review: {count} thing" + ("" if count == 1 else "s") + " to fix",
+        body="\n".join(f"{fix.problem}: {fix.how_to_fix}" for fix in review.fixes),
+    )
+
+
+def _check_line(ctx: AnalystContext, failures: list, review, inputs) -> None:
+    """Every number, claim, quote and chart; failures stay in the details."""
+    seq = ctx.log.start("check", "Checking every number, claim, quote and chart")
+    details: dict = {"failures": [asdict(failure) for failure in failures]}
+    if review.fixes:
+        details["review_fixes"] = [fix.model_dump() for fix in review.fixes]
     if not failures:
-        ctx.log.finish(seq, status="done", title="Checks passed")
+        ctx.log.finish(seq, status="done", title="Checks passed", details=details)
         return
     count = len(failures)
     ctx.log.finish(
         seq,
         status="failed",
         title=f"Checks found {count} problem" + ("" if count == 1 else "s"),
-        body="\n".join(failure.message for failure in failures),
-        details={"failures": [asdict(failure) for failure in failures]},
+        body="\n".join(check_body(failures, inputs)),
+        details=details,
     )
+
+
+def _save_fallback_answer(ctx: AnalystContext, tasks: list, blocks: list, shown: list) -> None:
+    """The checked numbers and tables when no draft passes."""
+    ctx.log.add(
+        "note",
+        "I couldn't write a fully checked explanation, so I'm showing the checked numbers.",
+        "Every number below passed the SQL checker.",
+    )
+    _save_blocks(ctx, tasks, blocks, shown)
 
 
 def _save_temp_answer(ctx: AnalystContext, tasks: list) -> None:

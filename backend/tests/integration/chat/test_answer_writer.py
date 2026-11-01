@@ -9,6 +9,7 @@ import asyncio
 import pytest
 
 from charie.chat.analyst import enough as enough_module
+from charie.chat.analyst import review as review_module
 from charie.chat.analyst import write as write_module
 from charie.chat.analyst.answer import answer_question
 from charie.chat.analyst.notebook import Notebook, NumberValue, by_label, check
@@ -51,6 +52,12 @@ def _ready(monkeypatch) -> None:
     """No tasks to run; the writer has labelled blocks to fill."""
     fake_understanding(monkeypatch, _understanding_reply(asks=[]))
     _patch(monkeypatch, enough_module, "check_enough", [{"enough": True, "missing": ""}])
+    _patch(
+        monkeypatch,
+        review_module,
+        "review_answer",
+        [{"verdict": "good", "fixes": [], "needs_more_data": False, "missing_data": ""}],
+    )
     _patch(
         monkeypatch,
         write_module,

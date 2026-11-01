@@ -14,7 +14,7 @@ from charie.shared.db import session_scope
 JOB_KIND = "write_answer"
 
 
-def _style_line(title: str, details) -> str:
+def style_line(title: str, details) -> str:
     """One style rule as `title: text`, whatever shape the entry has."""
     if isinstance(details, dict):
         return f"{title}: {details.get('text', str(details))}"
@@ -146,7 +146,7 @@ def write_answer(ctx, fixes: list[str] | None = None) -> AnswerDraft:
             if filled is not None:
                 values[item.label] = filled
         reading = fill_labels(ctx.understanding.reading or "", values)
-        styles = [_style_line(title, details) for title, details in sorted(kb.styles().items())]
+        styles = [style_line(title, details) for title, details in sorted(kb.styles().items())]
         inputs = write_input(
             question=ctx.question,
             reading=reading,

@@ -58,6 +58,19 @@ async def run_rounds(ctx) -> list[Task]:
     return ran
 
 
+async def run_extra_round(ctx, ran: list[Task], round_no: int, focus: str) -> list[Task]:
+    """One more round after the loop, guided by the reviewer's focus."""
+    current = [
+        task for task in plan_round(ctx, ran, ctx.question, round_no, focus) if task not in ran
+    ]
+    seq = _start_round(ctx, current, round_no)
+    await _run_tasks(current, ctx, round_no)
+    missing = run_check_enough(ctx, round_no)
+    _finish_round(ctx, seq, current, round_no, missing)
+    _remember_stop(ctx, "rounds_done", missing)
+    return current
+
+
 def _remember_stop(ctx, reason: str, missing: str) -> None:
     """What the writer needs: why the rounds stopped and what is still open."""
     ctx.stop_reason = reason

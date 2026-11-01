@@ -47,7 +47,7 @@ def _has_digits(text: str) -> bool:
     return any(char.isdigit() for char in text)
 
 
-def plan_round(ctx, tasks: list[Task], question: str, round_no: int) -> list[Task]:
+def plan_round(ctx, tasks: list[Task], question: str, round_no: int, focus: str = "") -> list[Task]:
     """The follow-up tasks for one round: asked, checked, and new only."""
     with session_scope() as session:
         kb = KbView.load(session, ctx.kb_version_id)
@@ -65,6 +65,7 @@ def plan_round(ctx, tasks: list[Task], question: str, round_no: int) -> list[Tas
             "round": round_no,
             "starter": "\n".join(f"{task.kind}: {task.why}" for task in tasks),
             "usable": "\n".join(usable),
+            "focus": focus or "none",
         },
         RoundPlan,
         app="chat",

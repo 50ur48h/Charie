@@ -5,7 +5,9 @@ in order (reading, warns, the AI's blocks, notes, method, follow-ups),
 and reports which labels the answer showed.
 """
 
+from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
+from types import SimpleNamespace
 
 from sqlalchemy import select
 
@@ -21,7 +23,6 @@ from charie.chat.analyst.notebook import (
     QuoteValue,
     TableValue,
     _format_number,
-    check,
 )
 from charie.shared.calc.core import ResultTable
 from charie.shared.db import session_scope
@@ -341,6 +342,54 @@ def tree_block(title: str, nodes: list, values: dict[str, str]) -> dict | None:
     }
 
 
+def ai_filled_texts(blocks: list[dict]) -> list[str]:
+    """Every filled word of the rendered answer, except query SQL."""
+    texts = []
+    for block in blocks if isinstance(blocks, list) else []:
+        if not isinstance(block, dict):
+            continue
+        kind = block.get("type")
+        if kind == "reading":
+            texts.append(block.get("text") or "")
+        elif kind == "text":
+            for paragraph in block.get("paragraphs", []):
+                for sentence in paragraph.get("sentences", []):
+                    texts.append(sentence.get("text") or "")
+        elif kind == "kpis":
+            for item in block.get("items", []):
+                texts.extend(
+                    str(item.get(key) or "") for key in ("label", "value", "change", "compare")
+                )
+        elif kind == "chart":
+            texts.extend([block.get("title") or "", block.get("subtitle") or ""])
+        elif kind == "table":
+            texts.append(block.get("title") or "")
+        elif kind == "tree":
+            texts.append(block.get("title") or "")
+            for node in block.get("nodes", []):
+                texts.append(node.get("label") or "")
+        elif kind == "callout":
+            texts.append(block.get("text") or "")
+        elif kind == "suggestions":
+            texts.append(block.get("title") or "")
+            for item in block.get("items", []):
+                texts.append(item.get("text") or "")
+        elif kind == "method":
+            texts.extend(block.get("definitions", []))
+            texts.extend(block.get("steps", []))
+            for source in block.get("sources", []):
+                texts.extend(
+                    [
+                        source.get("document") or "",
+                        source.get("quote") or "",
+                        source.get("location") or "",
+                    ]
+                )
+        elif kind == "follow_ups":
+            texts.extend(block.get("items", []))
+    return [text for text in texts if text]
+
+
 def suggestions_block(title: str, suggestions: list, values: dict[str, str]) -> dict | None:
     """The follow-ups the writer proposes."""
     if not suggestions:
@@ -519,174 +568,6 @@ def _mover(lines: list[dict], word: str) -> str | None:
     return None
 
 
-def render_answer(draft, ctx) -> tuple[list[dict], list[str]] | None:
-    """The final 09 blocks with filled labels, or None when the draft fails.
-
-    The gate is interim: every label resolves to a current card and every
-    AI text copies the notebook exactly. P10.11 checks this properly.
-    """
-
-    with session_scope() as session:
-        kb = KbView.load(session, ctx.kb_version_id)
-        book = Notebook.load(session, ctx.message_id, ctx.chat_id)
-        items = book.items()
-        cards = {item.label: item for item in items if item.label}
-        view = book.labelled_view()
-        for label in used_labels(draft):
-            if check(session, ctx.message_id, ctx.chat_id, label) is None:
-                return None
-        for text in ai_texts(draft):
-            if not check_matches(text, view):
-                return None
-        style = (ctx.settings or {}).get("number_format", "short")
-        values = values_for(items, style)
-        replaced = book.items(status="replaced")
-        values.update(values_for(replaced, style))
-        titles, meanings = kb.titles(), kb.meanings()
-        metrics = kb.metrics()
-        default_words = [used.removeprefix("default.") for used in ctx.understanding.defaults_used]
-        default_titles = [_default_title(word, titles, kb) for word in default_words]
-        periods = ctx.periods.periods if ctx.periods is not None else []
-        lines = ctx.log.lines()
-        queries = [
-            {"purpose": row.purpose, "sql": row.sql_text or ""}
-            for row in session.scalars(
-                select(QueryRun).where(
-                    QueryRun.message_id == ctx.message_id, QueryRun.status == "ok"
-                )
-            ).all()
-        ]
-        show = bool(get_setting(session, "show_reading"))
-        ai_blocks = []
-        for block in draft.blocks:
-            if block.type == "text":
-                made = text_block(block.sentences, values)
-            elif block.type == "kpis":
-                made = kpi_block(block.kpis, cards, values)
-            elif block.type == "chart" and block.chart is not None:
-                made = chart_block(block.chart, cards, values, style)
-            elif block.type == "table" and block.table is not None:
-                made = table_block(block.table, cards, values, style)
-            elif block.type == "tree":
-                made = tree_block(block.tree_title, block.tree_nodes, values)
-            elif block.type == "callout":
-                made = (
-                    {
-                        "type": "callout",
-                        "tone": block.callout_tone,
-                        "text": fill_labels(block.callout_text, values),
-                    }
-                    if block.callout_text
-                    else None
-                )
-            elif block.type == "suggestions":
-                made = suggestions_block(block.suggestions_title, block.suggestions, values)
-            else:
-                made = None
-            if made is not None:
-                ai_blocks.append(made)
-        kind = ctx.understanding.kind or ""
-        filled_reading = fill_labels(
-            ctx.understanding.reading or "",
-            {
-                label: values[label]
-                for label in labels_in(ctx.understanding.reading or "")
-                if label in values
-            },
-        )
-        reading = reading_block(filled_reading, show or kind in VAGUE_KINDS)
-        anchor = ctx.periods.anchor_note if ctx.periods is not None else ""
-        period_notes = [period.note for period in periods if getattr(period, "note", "")]
-        dropped = [
-            line.get("title") or ""
-            for line in lines
-            if line.get("kind") == "note" and "left it out" in (line.get("title") or "")
-        ]
-        warns = warn_notes(
-            ctx.stop_reason or "", list(ctx.still_open), list(ctx.cannot_tell), dropped
-        )
-        corrections = []
-        for old in replaced:
-            if not old.replaced_by:
-                continue
-            try:
-                new = book.get(old.replaced_by)
-            except NotebookError:
-                continue
-            corrections.append((old, new))
-        by_proof = [card for card in items if (card.proof or {}).get("way") == "A+B"]
-        new_measures = [card for card in by_proof if not (card.proof or {}).get("recipe_key")]
-        notes = code_notes(
-            anchor,
-            period_notes,
-            default_titles,
-            corrections,
-            new_measures,
-            ctx.stop_reason or "",
-            list(ctx.still_open),
-            values,
-        )
-        used_metrics: list[str] = []
-        for card in items:
-            key = (card.proof or {}).get("recipe_key")
-            if key and key not in used_metrics:
-                used_metrics.append(key)
-        definitions = [
-            f"{titles[key]}: {meanings[key]}"
-            for key in used_metrics
-            if key in titles and key in meanings
-        ]
-        definitions.extend(
-            f"{card.description}: not a standard measure yet, worked out two ways that agree."
-            for card in new_measures
-        )
-        steps = [
-            line.get("title") or ""
-            for line in lines
-            if line.get("kind") == "step" and (line.get("title") or "").startswith("Round ")
-        ]
-        title = stop_title(ctx.stop_reason or "")
-        if title:
-            steps.append(title)
-        sources = []
-        for card in items:
-            if card.kind != "quote":
-                continue
-            quote = QuoteValue.model_validate(card.value)
-            sources.append(
-                {"document": quote.document, "quote": quote.text, "location": quote.location}
-            )
-        method = method_block(definitions, steps, queries, sources)
-        drop = _mover(lines, "drop")
-        rise = _mover(lines, "rise")
-        year = ctx.data_through.year if getattr(ctx.data_through, "year", None) else None
-        last_year = year - 1 if year is not None else None
-        last_year_used = (
-            any(str(last_year) in (period.expression or "") for period in periods)
-            if last_year is not None
-            else True
-        )
-        first_period = next((period.text for period in periods if getattr(period, "text", "")), "")
-        unsplit = None
-        for card in items:
-            fact = (card.proof or {}).get("fact_key") or {}
-            key = (card.proof or {}).get("recipe_key")
-            if key and fact.get("split") == {} and key in metrics:
-                dims = metrics[key].get("dimensions") or []
-                if dims and isinstance(dims[0], dict) and dims[0].get("title"):
-                    unsplit = (titles.get(key, key), dims[0]["title"])
-                    break
-        follow = follow_ups_block(drop, rise, last_year_used, first_period, unsplit)
-        blocks = ([reading] if reading is not None else []) + warns + ai_blocks + notes + [method]
-        if follow is not None:
-            blocks.append(follow)
-        shown = used_labels(draft)
-        shown.extend(old.label for old, _ in corrections)
-        shown.extend(new.label for _, new in corrections)
-        shown.extend(card.label for card in items if card.kind == "quote")
-        return blocks, list(dict.fromkeys(shown))
-
-
 def _default_title(word: str, titles: dict[str, str], kb) -> str:
     """The default's meaning in the owner's words (understand's rule)."""
     value = kb.defaults().get(word)
@@ -694,6 +575,292 @@ def _default_title(word: str, titles: dict[str, str], kb) -> str:
     if text in titles:
         return titles[text]
     return text.replace("_", " ")
+
+
+@dataclass
+class AnswerInputs:
+    """Everything the block builders read: cards, texts, settings, stops."""
+
+    items: list = field(default_factory=list)
+    replaced: list = field(default_factory=list)
+    corrections: list = field(default_factory=list)
+    new_measures: list = field(default_factory=list)
+    cards: dict = field(default_factory=dict)
+    values: dict = field(default_factory=dict)
+    view: str = ""
+    style: str = "short"
+    titles: dict = field(default_factory=dict)
+    meanings: dict = field(default_factory=dict)
+    metrics: dict = field(default_factory=dict)
+    default_titles: list = field(default_factory=list)
+    periods: list = field(default_factory=list)
+    anchor: str = ""
+    lines: list = field(default_factory=list)
+    queries: list = field(default_factory=list)
+    show: bool = False
+    kind: str = ""
+    stop_reason: str = ""
+    still_open: list = field(default_factory=list)
+    cannot_tell: list = field(default_factory=list)
+    filled_reading: str = ""
+    data_through: object = None
+
+
+def _load_inputs(session, ctx) -> AnswerInputs:
+    """Load every block input in one session."""
+    kb = KbView.load(session, ctx.kb_version_id)
+    book = Notebook.load(session, ctx.message_id, ctx.chat_id)
+    items = book.items()
+    cards = {item.label: item for item in items if item.label}
+    style = (ctx.settings or {}).get("number_format", "short")
+    values = values_for(items, style)
+    replaced = book.items(status="replaced")
+    values.update(values_for(replaced, style))
+    titles, meanings, metrics = kb.titles(), kb.meanings(), kb.metrics()
+    default_words = [used.removeprefix("default.") for used in ctx.understanding.defaults_used]
+    periods = ctx.periods.periods if ctx.periods is not None else []
+    lines = ctx.log.lines()
+    queries = [
+        {"purpose": row.purpose, "sql": row.sql_text or ""}
+        for row in session.scalars(
+            select(QueryRun).where(QueryRun.message_id == ctx.message_id, QueryRun.status == "ok")
+        ).all()
+    ]
+    reading_values = {
+        label: values[label]
+        for label in labels_in(ctx.understanding.reading or "")
+        if label in values
+    }
+    corrections = []
+    for old in replaced:
+        if not old.replaced_by:
+            continue
+        try:
+            corrections.append((old, book.get(old.replaced_by)))
+        except NotebookError:
+            continue
+    return AnswerInputs(
+        items=items,
+        replaced=replaced,
+        corrections=corrections,
+        new_measures=[
+            card
+            for card in items
+            if (card.proof or {}).get("way") == "A+B" and not (card.proof or {}).get("recipe_key")
+        ],
+        cards=cards,
+        values=values,
+        view=book.labelled_view(),
+        style=style,
+        titles=titles,
+        meanings=meanings,
+        metrics=metrics,
+        default_titles=[_default_title(word, titles, kb) for word in default_words],
+        periods=periods,
+        anchor=ctx.periods.anchor_note if ctx.periods is not None else "",
+        lines=lines,
+        queries=queries,
+        show=bool(get_setting(session, "show_reading")),
+        kind=ctx.understanding.kind or "",
+        stop_reason=ctx.stop_reason or "",
+        still_open=list(ctx.still_open),
+        cannot_tell=list(ctx.cannot_tell),
+        filled_reading=fill_labels(ctx.understanding.reading or "", reading_values),
+        data_through=ctx.data_through if hasattr(ctx, "data_through") else None,
+    )
+
+
+def _render_ai(draft, g: AnswerInputs) -> list[dict]:
+    """The AI's blocks filled and rendered, skipping empty ones."""
+    ai_blocks = []
+    for block in draft.blocks:
+        if block.type == "text":
+            made = text_block(block.sentences, g.values)
+        elif block.type == "kpis":
+            made = kpi_block(block.kpis, g.cards, g.values)
+        elif block.type == "chart" and block.chart is not None:
+            made = chart_block(block.chart, g.cards, g.values, g.style)
+        elif block.type == "table" and block.table is not None:
+            made = table_block(block.table, g.cards, g.values, g.style)
+        elif block.type == "tree":
+            made = tree_block(block.tree_title, block.tree_nodes, g.values)
+        elif block.type == "callout":
+            made = (
+                {
+                    "type": "callout",
+                    "tone": block.callout_tone,
+                    "text": fill_labels(block.callout_text, g.values),
+                }
+                if block.callout_text
+                else None
+            )
+        elif block.type == "suggestions":
+            made = suggestions_block(block.suggestions_title, block.suggestions, g.values)
+        else:
+            made = None
+        if made is not None:
+            ai_blocks.append(made)
+    return ai_blocks
+
+
+def _assemble(g: AnswerInputs, ai_blocks: list[dict], extra_shown: list[str]):
+    """Reading, warns, the AI's blocks, notes, method and follow-ups, in order."""
+    reading = reading_block(g.filled_reading, g.show or g.kind in VAGUE_KINDS)
+    dropped = [
+        line.get("title") or ""
+        for line in g.lines
+        if line.get("kind") == "note" and "left it out" in (line.get("title") or "")
+    ]
+    warns = warn_notes(g.stop_reason, g.still_open, g.cannot_tell, dropped)
+    period_notes = [period.note for period in g.periods if getattr(period, "note", "")]
+    notes = code_notes(
+        g.anchor,
+        period_notes,
+        g.default_titles,
+        g.corrections,
+        g.new_measures,
+        g.stop_reason,
+        g.still_open,
+        g.values,
+    )
+    used_metrics: list[str] = []
+    for card in g.items:
+        key = (card.proof or {}).get("recipe_key")
+        if key and key not in used_metrics:
+            used_metrics.append(key)
+    definitions = [
+        f"{g.titles[key]}: {g.meanings[key]}"
+        for key in used_metrics
+        if key in g.titles and key in g.meanings
+    ]
+    definitions.extend(
+        f"{card.description}: not a standard measure yet, worked out two ways that agree."
+        for card in g.new_measures
+    )
+    steps = [
+        line.get("title") or ""
+        for line in g.lines
+        if line.get("kind") == "step" and (line.get("title") or "").startswith("Round ")
+    ]
+    title = stop_title(g.stop_reason)
+    if title:
+        steps.append(title)
+    sources = []
+    for card in g.items:
+        if card.kind != "quote":
+            continue
+        quote = QuoteValue.model_validate(card.value)
+        sources.append(
+            {"document": quote.document, "quote": quote.text, "location": quote.location}
+        )
+    method = method_block(definitions, steps, g.queries, sources)
+    drop = _mover(g.lines, "drop")
+    rise = _mover(g.lines, "rise")
+    first_period = next((period.text for period in g.periods if getattr(period, "text", "")), "")
+    unsplit = None
+    for card in g.items:
+        fact = (card.proof or {}).get("fact_key") or {}
+        key = (card.proof or {}).get("recipe_key")
+        if key and fact.get("split") == {} and key in g.metrics:
+            dims = g.metrics[key].get("dimensions") or []
+            if dims and isinstance(dims[0], dict) and dims[0].get("title"):
+                unsplit = (g.titles.get(key, key), dims[0]["title"])
+                break
+    follow = follow_ups_block(drop, rise, _last_year_used(g), first_period, unsplit)
+    blocks = ([reading] if reading is not None else []) + warns + ai_blocks + notes + [method]
+    if follow is not None:
+        blocks.append(follow)
+    shown = list(extra_shown)
+    shown.extend(old.label for old, _ in g.corrections)
+    shown.extend(new.label for _, new in g.corrections)
+    shown.extend(card.label for card in g.items if card.kind == "quote")
+    return blocks, list(dict.fromkeys(shown))
+
+
+def _last_year_used(g: AnswerInputs) -> bool:
+    """Whether any period already covers the same time last year."""
+    year = g.data_through.year if getattr(g.data_through, "year", None) else None
+    if year is None:
+        return True
+    last_year = year - 1
+    return any(str(last_year) in (period.expression or "") for period in g.periods)
+
+
+def render_answer(draft, ctx) -> tuple[list[dict], list[str]] | None:
+    """The final 09 blocks with filled labels, or None when the draft fails.
+
+    The gate keeps raw labels off the screen; the 10 checks run after.
+    """
+    with session_scope() as session:
+        g = _load_inputs(session, ctx)
+        for label in used_labels(draft):
+            if label not in g.cards:
+                return None
+        for text in ai_texts(draft):
+            if not check_matches(text, g.view):
+                return None
+        return _assemble(g, _render_ai(draft, g), used_labels(draft))
+
+
+def fallback_blocks(ctx, failures=None) -> tuple[list[dict], list[str]]:  # noqa: ARG001
+    """The checked numbers and tables when no draft passes, all marked shown."""
+    with session_scope() as session:
+        g = _load_inputs(session, ctx)
+    warn = {
+        "type": "callout",
+        "tone": "warn",
+        "text": "I couldn't write a fully checked explanation, so I'm showing the checked numbers.",
+    }
+    numbered = [card for card in g.items if card.kind == "number"]
+    rows = []
+    for card in numbered:
+        amount = _dec(str(card.value.get("value")))
+        if amount is None:
+            continue
+        number = NumberValue(
+            value=str(amount),
+            unit=card.value.get("unit") or "count",
+            currency=card.value.get("currency") or "",
+        )
+        rows.append(
+            {
+                "what": card.description,
+                "value": {"v": float(amount), "f": _format_number(number, g.style)},
+            }
+        )
+    checked = {
+        "type": "table",
+        "title": "Checked numbers",
+        "columns": [
+            {"key": "what", "label": "What"},
+            {"key": "value", "label": "Value"},
+        ],
+        "rows": rows,
+    }
+    tables = []
+    for card in g.items:
+        if card.kind != "table":
+            continue
+        value = TableValue.model_validate(card.value)
+        made = table_block(
+            SimpleNamespace(
+                title=card.description,
+                table=card.label,
+                columns=[column.key for column in value.columns],
+            ),
+            g.cards,
+            g.values,
+            g.style,
+        )
+        if made is not None:
+            tables.append(made)
+    blocks, shown = _assemble(g, [checked] + tables, [])
+    reading = reading_block(g.filled_reading, g.show or g.kind in VAGUE_KINDS)
+    ordered = ([reading] if reading is not None else []) + [warn]
+    ordered.extend(block for block in blocks if block.get("type") != "reading")
+    shown.extend(card.label for card in numbered)
+    shown.extend(card.label for card in g.items if card.kind == "table")
+    return ordered, list(dict.fromkeys(shown))
 
 
 def render_blocks(draft, ctx) -> list[dict]:

@@ -1,7 +1,7 @@
-"""The check line on a rendered answer (P10.11 Task 5).
+"""The review and check lines on a passing answer (P10.12 Task 6).
 
-A draft that renders but breaks a check still shows its answer, with a
-failed check line naming the problem.
+The writer's draft renders, the reviewer approves, and the checks pass:
+the thinking panel shows the review line and the new check wording.
 """
 
 import asyncio
@@ -10,6 +10,7 @@ import pytest
 from sqlalchemy import select
 
 from charie.chat.analyst import enough as enough_module
+from charie.chat.analyst import review as review_module
 from charie.chat.analyst import write as write_module
 from charie.chat.analyst.answer import answer_question
 from charie.chat.analyst.notebook import Notebook, NumberValue
@@ -40,12 +41,18 @@ def _patch(monkeypatch, module, job, replies) -> FakeAi:
 
 
 def test_check_line_lists_failures(db_session, check_shop, monkeypatch) -> None:
-    """A fact with no proof shows the answer with one named problem."""
+    """A good draft leaves a review line and the passing check line."""
     ctx = shop._ctx(db_session, check_shop)
     book = Notebook.load(db_session, ctx.message_id, ctx.chat_id)
     book.add_number("Net sales", NumberValue(value="359.00", unit="money"), proof={})
     fake_understanding(monkeypatch, _understanding_reply(asks=[]))
     _patch(monkeypatch, enough_module, "check_enough", [{"enough": True, "missing": ""}])
+    _patch(
+        monkeypatch,
+        review_module,
+        "review_answer",
+        [{"verdict": "good", "fixes": [], "needs_more_data": False, "missing_data": ""}],
+    )
     _patch(
         monkeypatch,
         write_module,
@@ -59,7 +66,7 @@ def test_check_line_lists_failures(db_session, check_shop, monkeypatch) -> None:
                             {
                                 "kind": "fact",
                                 "text": "Net sales were [n1].",
-                                "proof": [],
+                                "proof": ["n1"],
                                 "starts_paragraph": True,
                             }
                         ],
@@ -71,7 +78,6 @@ def test_check_line_lists_failures(db_session, check_shop, monkeypatch) -> None:
     asyncio.run(answer_question(ctx))
     saved = db_session.get(Message, ctx.message_id)
     assert saved.status == "done"
-    assert saved.answer["blocks"][0]["type"] == "reading"
     assert saved.answer["blocks"][1]["paragraphs"][0]["sentences"][0]["text"] == (
         "Net sales were $359.00."
     )
@@ -80,9 +86,6 @@ def test_check_line_lists_failures(db_session, check_shop, monkeypatch) -> None:
         .where(ThinkingEvent.message_id == ctx.message_id)
         .order_by(ThinkingEvent.seq)
     ).all()
-    last = lines[-1]
-    assert (last.title, last.status) == ("Checks found 1 problem", "failed")
-    assert last.body == (
-        "Block 1, sentence 1: This fact has no proof. "
-        "Add at least one n, t or q label to its proof."
-    )
+    review, check = lines[-2], lines[-1]
+    assert (review.title, review.status) == ("Review: looks good", "done")
+    assert (check.title, check.status) == ("Checks passed", "done")

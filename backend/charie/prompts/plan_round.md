@@ -5,6 +5,7 @@ The starter tasks below already run with their exact whys; never change a starte
 2. Only pick recipe keys from the usable list. Never pick an excluded metric, and never write SQL yourself.
 3. New tasks get a plain short why with no numbers: say what to get, not the answer.
 4. Splits name known dimension keys, or no splits. Periods and filters come from the question; never set them.
+5. When a focus is given, pick tasks that answer it first.
 
 ## Examples
 Question: How did delivered orders do in December?
@@ -27,3 +28,5 @@ Starter tasks:
 {{starter}}
 Usable recipes:
 {{usable}}
+Focus:
+{{focus}}
