@@ -212,6 +212,77 @@ function finishedSeed(summary: ChatSummary): Chat {
   };
 }
 
+// Chat 9: a finished about-answer (P11.6) under its new title.
+function aboutAnswer(): Answer {
+  return {
+    message_id: 22,
+    kb_version: 3,
+    data_through: "2025-12-31",
+    blocks: [
+      {
+        type: "text",
+        paragraphs: [
+          {
+            sentences: [
+              {
+                kind: "note",
+                text: "Here's how I worked out 25,064, Delivered orders in 1-31 Dec 2025.",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        type: "method",
+        definitions: ["Delivered orders: Orders handed to the customer."],
+        steps: ["Round 1: Get delivered orders."],
+        queries: [{ purpose: "Get delivered orders.", sql: "SELECT SUM(orders) AS value" }],
+        sources: [],
+      },
+    ],
+  };
+}
+
+function aboutSeed(summary: ChatSummary): Chat {
+  const started = summary.created_at;
+  const firstUser: UserMessage = {
+    id: 19,
+    role: "user",
+    text: "What was the delivered order amount in December 2025?",
+    status: "done",
+    started_at: started,
+  };
+  const firstAssistant: AssistantMessage = {
+    id: 20,
+    role: "assistant",
+    status: "done",
+    mode: "thinking",
+    answer: sampleAnswer(20),
+    thinking: finishedThinking,
+    summary: finishedSummary,
+  };
+  const secondUser: UserMessage = {
+    id: 21,
+    role: "user",
+    text: "How did you get that?",
+    status: "done",
+    started_at: started,
+  };
+  const secondAssistant: AssistantMessage = {
+    id: 22,
+    role: "assistant",
+    status: "done",
+    mode: "thinking",
+    answer: aboutAnswer(),
+    thinking: finishedThinking,
+    summary: finishedSummary,
+  };
+  return {
+    ...summary,
+    messages: [firstUser, firstAssistant, secondUser, secondAssistant],
+  };
+}
+
 function thinkingSeed(summary: ChatSummary): Chat {
   return {
     ...summary,
@@ -400,6 +471,7 @@ function seedDetail(summary: ChatSummary): Chat {
   if (summary.id === 1) return finishedSeed(summary);
   if (summary.id === 2) return thinkingSeed(summary);
   if (summary.id === 4) return failedSeed(summary);
+  if (summary.id === 9) return aboutSeed(summary);
   return { ...summary, messages: [] };
 }
 

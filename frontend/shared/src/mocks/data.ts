@@ -23,6 +23,7 @@ const chats: ChatSummary[] = [
   chat(6, "Food waste by restaurant", 3),
   chat(7, "Best hours to add staff", 4),
   chat(8, "Dallas vs Houston, last quarter", 6),
+  chat(9, "December delivery review", 0),
 ];
 
 export default chats;
