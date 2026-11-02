@@ -228,6 +228,24 @@ export function mockSuggestions(): MockSuggestion[] {
   return [...suggestions];
 }
 
+// Fake "still learning" state for tests (mock only, like P03.12's warning and
+// paused states). When set, /api/status reports no published knowledge and
+// asking gets still_learning.
+const STILL_LEARNING_KEY = "charie-mock-still-learning";
+
+export function stillLearningOverride(): boolean {
+  try {
+    return localStorage.getItem(STILL_LEARNING_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
 export function resetMockKnowledge(): void {
   suggestions.length = 0;
+  try {
+    localStorage.removeItem(STILL_LEARNING_KEY);
+  } catch {
+    // Nothing to clear.
+  }
 }

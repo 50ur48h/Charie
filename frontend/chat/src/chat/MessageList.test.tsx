@@ -29,6 +29,7 @@ function assistantMessage(
       at: "2025-10-26T12:00:00Z",
     })),
     summary: null,
+    feedback: null,
   };
 }
 

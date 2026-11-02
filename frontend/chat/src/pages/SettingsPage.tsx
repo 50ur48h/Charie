@@ -5,6 +5,8 @@ import {
   Button,
   Card,
   ConfirmDialog,
+  formatDataThrough,
+  formatDate,
   IconBox,
   isThemeKey,
   Page,
@@ -16,7 +18,6 @@ import {
   toast,
   useClearMemories,
   useDeleteMemory,
-  useKnowledge,
   useLogout,
   useMe,
   useMemories,
@@ -162,7 +163,22 @@ export function SettingsPage() {
   const update = useUpdateSettings();
   const me = useMe();
   const status = useStatus();
-  const knowledge = useKnowledge({});
+  const statusData = status.data?.data ?? null;
+  const statusKnowledge = status.data?.knowledge ?? null;
+  const dataConnected = statusData?.status === "connected";
+  const dataTitle = statusData
+    ? `${statusData.name} · ${statusData.kind === "postgres" ? "Postgres" : statusData.kind} · read-only${statusData.data_through ? ` · data up to ${formatDate(statusData.data_through.slice(0, 10))}` : ""}`
+    : "No database connected";
+  const knowledgeVersion = statusKnowledge?.version ?? null;
+  const knowledgeTitle =
+    knowledgeVersion !== null ? `Knowledge version ${knowledgeVersion}` : "No knowledge published yet";
+  const knowledgeEntries = statusKnowledge?.entries ?? 0;
+  const knowledgeDocuments = statusKnowledge?.documents ?? 0;
+  const knowledgeSub =
+    knowledgeVersion !== null
+      ? `${knowledgeEntries} ${knowledgeEntries === 1 ? "entry" : "entries"} · ${knowledgeDocuments} ${knowledgeDocuments === 1 ? "document" : "documents"}${statusKnowledge?.published_at ? ` · updated ${formatDataThrough(statusKnowledge.published_at)}` : ""}`
+      : "Publish the first version in the Learner.";
+  const learnerUrl = status.data?.learner_url ?? me.data?.learner_url ?? null;
   const memories = useMemories();
   const removeMemory = useDeleteMemory();
   const clearMemories = useClearMemories();
@@ -347,30 +363,27 @@ export function SettingsPage() {
                 <div className="flex items-center gap-3.5 rounded-[14px] bg-surface-2 p-[14px_16px]">
                   <IconBox icon={Database} tone="good" />
                   <div className="min-w-0">
-                    <div className="text-[14px] font-semibold">{status.data?.data?.name ?? "No database connected"}</div>
-                    <div className="text-[12.5px] text-muted">
-                      {status.data?.data
-                        ? `${status.data.data.kind === "postgres" ? "Postgres" : status.data.data.kind} · read-only${status.data.data.data_through ? ` · data up to ${status.data.data.data_through}` : ""}`
-                        : "Connect one in the Learner."}
-                    </div>
+                    <div className="text-[14px] font-semibold">{dataTitle}</div>
+                    {!statusData && (
+                      <div className="text-[12.5px] text-muted">Connect one in the Learner.</div>
+                    )}
                   </div>
-                  <Pill tone={status.data?.data ? "good" : "neutral"} className="ml-auto flex-none">
-                    {status.data?.data ? "Connected" : "Not connected"}
+                  <Pill
+                    tone={dataConnected ? "good" : statusData ? "bad" : "neutral"}
+                    className="ml-auto flex-none"
+                  >
+                    {dataConnected ? "Connected" : statusData ? "Connection problem" : "Not connected"}
                   </Pill>
                 </div>
                 <div className="flex items-center gap-3.5 rounded-[14px] bg-surface-2 p-[14px_16px]">
                   <IconBox icon={Layers} />
                   <div className="min-w-0">
-                    <div className="text-[14px] font-semibold">
-                      Knowledge version {knowledge.data?.version?.number ?? "–"}
-                    </div>
-                    <div className="text-[12.5px] text-muted">
-                      {knowledge.data ? `${knowledge.data.entries.length} entries` : "Loading knowledge…"}
-                    </div>
+                    <div className="text-[14px] font-semibold">{knowledgeTitle}</div>
+                    <div className="text-[12.5px] text-muted">{knowledgeSub}</div>
                   </div>
-                  {me.data?.learner_url && (
+                  {learnerUrl && (
                     <Button variant="outline" size="sm" className="ml-auto flex-none" asChild>
-                      <a href={me.data.learner_url} target="_blank" rel="noreferrer">
+                      <a href={learnerUrl} target="_blank" rel="noreferrer">
                         Open Learner
                       </a>
                     </Button>

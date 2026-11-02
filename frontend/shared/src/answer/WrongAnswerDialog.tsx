@@ -38,7 +38,7 @@ export function WrongAnswerDialog({
       await wrongMessage.mutateAsync({ messageId, correction: correction.trim() });
       setCorrection("");
       onOpenChange(false);
-      toast("Sent to the Learner to check.");
+      toast("Thanks. Sent to the learner's to-do list.");
     } catch (error) {
       toast(
         error instanceof ApiError

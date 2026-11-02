@@ -47,11 +47,11 @@ export function useKnowledgeEntry(key: string | null, version?: number | "draft"
 }
 
 // POST /api/knowledge/{key}/suggest { text } (architecture 09, P12.2 shape).
-// The suggestion goes to the learner; the published entry never rewrites.
+// The suggestion goes to the learner as a to-do; the published entry never rewrites.
 export function useSuggestChange() {
   return useMutation({
     mutationFn: ({ entryKey, text }: { entryKey: string; text: string }) =>
-      apiFetch<{ ok: true }>(`/api/knowledge/${entryKey}/suggest`, {
+      apiFetch<{ todo_id: number }>(`/api/knowledge/${entryKey}/suggest`, {
         method: "POST",
         body: { text },
       }),

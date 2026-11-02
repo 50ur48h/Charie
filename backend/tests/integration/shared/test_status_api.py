@@ -37,15 +37,17 @@ def test_empty_database_status(chat_client) -> None:
             "published_at": None,
         },
         "data": None,
-        "learning": {"runs_today": 0, "questions_waiting": 0},
+        "learning": {"status": "none", "step_title": None, "percent": 0},
         "spending": {
             "limit_usd": 150.0,
             "spent_usd": 0.0,
             "remaining_usd": 150.0,
             "percent_used": 0.0,
             "state": "ok",
+            "warn_percent": 80.0,
         },
         "questions_waiting": 0,
+        "learner_url": "http://localhost:5174",
     }
 
 

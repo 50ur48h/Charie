@@ -16,6 +16,7 @@
     "build": "npm run build -w @charie/chat && npm run build -w @charie/learner && node scripts/check-prod-build.mjs",
     "build:mock": "npm run build:mock -w @charie/chat && npm run build:mock -w @charie/learner",
     "e2e:mock": "npm run build:mock && playwright test",
+    "e2e:real": "npm run build && uv run --project ../backend python ../scripts/e2e_real.py run",
     "lint": "eslint .",
     "typecheck": "npm run typecheck --workspaces --if-present && tsc --noEmit -p e2e",
     "test": "vitest run",
