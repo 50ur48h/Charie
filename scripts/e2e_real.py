@@ -76,7 +76,9 @@ def check_guard(name: str) -> None:
         fail(f"refusing to drop {name!r}: this script only ever drops {E2E_DB!r}")
 
 
-def compose(*args: str, input_bytes: bytes | None = None, env: dict | None = None) -> None:
+def compose(
+    *args: str, input_bytes: bytes | None = None, env: dict | None = None
+) -> None:
     """Run `docker compose` from the repo root; the DB must be up."""
     try:
         subprocess.run(
@@ -91,7 +93,9 @@ def compose(*args: str, input_bytes: bytes | None = None, env: dict | None = Non
         fail("docker is not installed or not on PATH.")
     except subprocess.CalledProcessError as err:
         detail = (err.stderr or b"").decode("utf-8", "replace").strip().splitlines()
-        fail(f"`docker compose {' '.join(args)}` failed: {detail[-1] if detail else err}")
+        fail(
+            f"`docker compose {' '.join(args)}` failed: {detail[-1] if detail else err}"
+        )
 
 
 def server_url(raw: str) -> str:
@@ -109,8 +113,12 @@ def cmd_save() -> None:
     parts = parse_db_url(real_db_url())
     engine = create_engine(server_url(real_db_url()))
     with Session(engine) as session:
-        published = session.scalars(select(KbVersion).where(KbVersion.status == "published")).all()
-        drafts = session.scalars(select(KbVersion).where(KbVersion.status == "draft")).all()
+        published = session.scalars(
+            select(KbVersion).where(KbVersion.status == "published")
+        ).all()
+        drafts = session.scalars(
+            select(KbVersion).where(KbVersion.status == "draft")
+        ).all()
     engine.dispose()
     if len(published) != 1 or drafts:
         fail(
@@ -214,7 +222,7 @@ def cmd_reset() -> None:
     with engine.connect() as conn:
         from sqlalchemy import text
 
-        conn.execute(text(f'DROP DATABASE IF EXISTS "{E2E_DB}"'))
+        conn.execute(text(f'DROP DATABASE IF EXISTS "{E2E_DB}" WITH (FORCE)'))
         conn.execute(text(f'CREATE DATABASE "{E2E_DB}"'))
     env = dict(os.environ, PGPASSWORD=parts["password"])
     compose(
@@ -231,7 +239,9 @@ def cmd_reset() -> None:
         env=env,
     )
     version_number = scrub_e2e_database(url)
-    print(f"e2e database ready: version {version_number} waiting to be published, setup not done")
+    print(
+        f"e2e database ready: version {version_number} waiting to be published, setup not done"
+    )
 
 
 def _wait_for_health(port: int, timeout_seconds: int = 60) -> None:
@@ -252,16 +262,7 @@ def _wait_for_health(port: int, timeout_seconds: int = 60) -> None:
 def _start_api(app: str, port: int, extra_env: dict) -> "subprocess.Popen":
     env = dict(os.environ, DATABASE_URL=e2e_db_url(), **extra_env)
     return subprocess.Popen(
-        [
-            "uv",
-            "run",
-            "--project",
-            str(BACKEND_DIR),
-            "uvicorn",
-            f"charie.{app}.app:app",
-            "--port",
-            str(port),
-        ],
+        [sys.executable, "-m", "uvicorn", f"charie.{app}.app:app", "--port", str(port)],
         cwd=BACKEND_DIR,
         env=env,
     )
@@ -290,8 +291,14 @@ def _run_playwright(project: str, recording: bool = False) -> int:
         # The specs record instead of skipping while this is set.
         env["E2E_RECORDING"] = "1"
     return subprocess.run(
-        [*_npx(), "playwright", "test", "-c", "playwright.real.config.ts",
-         f"--project={project}"],
+        [
+            *_npx(),
+            "playwright",
+            "test",
+            "-c",
+            "playwright.real.config.ts",
+            f"--project={project}",
+        ],
         cwd=FRONTEND_DIR,
         env=env,
         check=False,
