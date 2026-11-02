@@ -155,6 +155,15 @@ describe("ChatPage", () => {
     });
   });
 
+  test("status is refreshed after an answer is done", async () => {
+    stubFetch(true);
+    const { client } = renderAt("/chat/3");
+    const refetch = vi.spyOn(client, "refetchQueries");
+    await vi.waitFor(() => {
+      expect(refetch).toHaveBeenCalledWith({ queryKey: ["status"] });
+    });
+  });
+
   test("an unknown chat says it is gone", async () => {
     vi.stubGlobal(
       "fetch",

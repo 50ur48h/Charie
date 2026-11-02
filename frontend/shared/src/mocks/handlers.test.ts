@@ -6,7 +6,8 @@ import { resetMockChats } from "./sampleChat";
 import { resetMockQuestions, waitingOverride } from "./sampleQuestions";
 import { resetMockKnowledge, mockSuggestions } from "./sampleKnowledge";
 import { resetMockUsage } from "./sampleUsage";
-import { resetLearnerMock } from "./learner/state";
+import { learner, resetLearnerMock } from "./learner/state";
+import { publishedBase } from "./learner/versions";
 
 const server = setupServer(...handlers);
 
@@ -186,14 +187,19 @@ describe("mock handlers", () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({
       questions_waiting: 3,
-      knowledge: { version: null, entries: 0, documents: 0, published_at: null },
+      knowledge: {
+        version: 14,
+        entries: publishedBase().length,
+        documents: learner().documents.filter((doc) => doc.status !== "removed").length,
+        published_at: "2026-10-20T02:06:00+05:30",
+      },
       data: {
         name: "Bella Forno database",
         kind: "postgres",
         status: "connected",
         data_through: "2025-10-26",
       },
-      learning: null,
+      learning: { status: "done", step_title: "Self-test", percent: 100 },
       spending: {
         state: "ok",
         spent_usd: 41.2,
@@ -201,7 +207,20 @@ describe("mock handlers", () => {
         warn_percent: 80,
         percent_used: 27.47,
       },
+      learner_url: "http://localhost:5174",
     });
+  });
+
+  test("the still-learning fake state reports no knowledge and refuses asking", async () => {
+    await signIn();
+    localStorage.setItem("charie-mock-still-learning", "1");
+    const status = await (await fetch(`${APP}/api/status`)).json();
+    expect(status.knowledge).toEqual({ version: null, entries: 0, documents: 0, published_at: null });
+    expect(status.learning).toEqual({ status: "running", step_title: "Read your documents", percent: 38 });
+    const created = (await (await post("/api/chats", {})).json()) as ChatSummary;
+    const refused = await post(`/api/chats/${created.id}/messages`, { text: "How are we doing?" });
+    expect(refused.status).toBe(409);
+    await expect(refused.json()).resolves.toMatchObject({ error: "still_learning" });
   });
 
   test("POST /api/messages/:id/finish stops the running answer", async () => {
@@ -281,6 +300,7 @@ describe("mock handlers", () => {
       spent_usd: 41.2,
       limit_usd: 150,
       state: "ok",
+      model: "muse-wonder-1.0",
     });
     expect(demo.per_day).toHaveLength(27);
     expect(demo.top_questions[0]).toMatchObject({ chat_id: 3 });

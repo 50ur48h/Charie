@@ -19,13 +19,13 @@ test("the new chat page matches the design", async ({ page }) => {
   await signedIn(page, CHAT, "/");
   await expect(page.getByRole("heading", { name: /Good (morning|afternoon|evening)/ })).toBeVisible();
   await expect(
-    page.getByText("Ask anything about Bella Forno. Charie checks every number before it shows it."),
+    page.getByText("Ask anything about your business. Charie checks every number before it shows it."),
   ).toBeVisible();
   for (const question of [
     "How are we doing this month?",
-    "Which dishes make us the most profit?",
-    "Why did delivery drop in Austin last week?",
-    "When should we add more staff?",
+    "What changed the most last month?",
+    "Why did sales change last month?",
+    "Which are our best performers?",
   ]) {
     await expect(page.getByRole("main").getByRole("button", { name: question })).toBeVisible();
   }

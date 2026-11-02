@@ -182,7 +182,10 @@ def _published_version_id(session: Session) -> int:
     published = get_published(session)
     if published is None:
         raise ApiError(
-            409, "not_ready", "Charie is still learning. Finish the setup in the Learner first."
+            409,
+            "still_learning",
+            "Charie is still learning. You can ask questions once the first version "
+            "of its knowledge is published.",
         )
     return published.id
 

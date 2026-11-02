@@ -2,8 +2,9 @@
 // question box, the questions notice and recent chats.
 import { useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
-import { Clock, Inbox, ScanSearch, TrendingUp, Utensils } from "lucide-react";
+import { ArrowUpDown, Inbox, ScanSearch, TrendingUp, Trophy } from "lucide-react";
 import { ApiError } from "@charie/shared";
+import { StillLearning } from "./StillLearning";
 import {
   Button,
   IconBox,
@@ -16,11 +17,26 @@ import {
   useStatus,
 } from "@charie/shared";
 
-const SAMPLE_QUESTIONS = [
+const IDEA_CARDS = [
   { kind: "How we're doing", text: "How are we doing this month?", icon: TrendingUp },
-  { kind: "Menu", text: "Which dishes make us the most profit?", icon: Utensils },
-  { kind: "Find out why", text: "Why did delivery drop in Austin last week?", icon: ScanSearch },
-  { kind: "Staff", text: "When should we add more staff?", icon: Clock },
+  { kind: "Biggest changes", text: "What changed the most last month?", icon: ArrowUpDown },
+  { kind: "Find out why", text: "Why did sales change last month?", icon: ScanSearch },
+  { kind: "Best and worst", text: "Which are our best performers?", icon: Trophy },
+];
+
+const MONTHS = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
 ];
 
 function greeting(): string {
@@ -39,7 +55,7 @@ function relativeDay(isoDate: string): string {
   const count = Math.round(days / 86_400_000);
   if (count <= 0) return "Today";
   if (count === 1) return "Yesterday";
-  return `${count} days ago`;
+  return `${then.getDate()} ${MONTHS[then.getMonth()]}`;
 }
 
 export function NewChatPage() {
@@ -57,6 +73,10 @@ export function NewChatPage() {
 
   const waiting = statusQuery.data?.questions_waiting ?? 0;
   const recent = (chatsQuery.data ?? []).slice(0, 3);
+  // Before the first published version, the ideas make way for the
+  // still-learning card and the question box stays disabled (P12.1).
+  const stillLearning =
+    statusQuery.data !== undefined && (statusQuery.data?.knowledge?.version ?? null) === null;
 
   async function submit(): Promise<void> {
     const text = draft.trim();
@@ -88,7 +108,7 @@ export function NewChatPage() {
           {greeting()}
         </h1>
         <p className="mt-2 text-[16px] text-muted">
-          Ask anything about Bella Forno. Charie checks every number before it shows it.
+          Ask anything about your business. Charie checks every number before it shows it.
         </p>
       </div>
 
@@ -101,11 +121,21 @@ export function NewChatPage() {
         sending={sending}
         dataThrough={statusQuery.data?.data?.data_through ?? null}
         textareaRef={composerRef}
+        disabled={stillLearning}
+        disabledPlaceholder="You can ask once Charie has finished learning."
       />
       </div>
 
+      {stillLearning ? (
+        <div className="mt-[18px]">
+          <StillLearning
+            learning={statusQuery.data?.learning ?? null}
+            learnerUrl={statusQuery.data?.learner_url ?? null}
+          />
+        </div>
+      ) : (
       <div className="mt-[18px] grid grid-cols-1 gap-3 sm:grid-cols-2">
-        {SAMPLE_QUESTIONS.map(({ kind, text, icon }) => (
+        {IDEA_CARDS.map(({ kind, text, icon }) => (
           <button
             key={text}
             type="button"
@@ -125,14 +155,15 @@ export function NewChatPage() {
           </button>
         ))}
       </div>
+      )}
 
       {waiting > 0 && (
         <div className="mt-[26px] flex items-center gap-[14px] rounded-[16px] bg-accent-soft p-[14px_16px] text-accent-ink">
           <IconBox icon={Inbox} />
           <div>
             <b className="text-text">
-              {waiting === 1 ? "1 question needs your answer." : `${waiting} questions need your answer.`}
-            </b>{" "}
+              {waiting === 1 ? "1 question needs your answer." : `${waiting} questions need your answer.`}{" "}
+            </b>
             Until then, Charie uses sensible defaults and tells you when it does.
           </div>
           <Button asChild size="sm" className="ml-auto flex-none">

@@ -1,11 +1,13 @@
 import { useState } from "react";
 import { useSearchParams } from "react-router";
+import { Brain } from "lucide-react";
 import {
   Button,
   Card,
   Chart,
   Page,
   PageHeader,
+  Pill,
   Progress,
   SpendingLimitsDialog,
   StatCard,
@@ -99,6 +101,10 @@ function thisMonth(): string {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 }
 
+function modelLabel(model: string): string {
+  return `Model: ${model === "muse-wonder-1.0" ? "Muse Wonder" : model}`;
+}
+
 export function UsagePage() {
   const [params, setParams] = useSearchParams();
   const month = params.get("month") ?? undefined;
@@ -118,6 +124,7 @@ export function UsagePage() {
         lead="What Charie's AI has cost this month. Every number here comes from the log of each AI call."
         actions={
           <div className="flex items-center gap-2">
+            {data && <Pill icon={Brain}>{modelLabel(data.model)}</Pill>}
             <label className="text-[13px] text-muted" htmlFor="usage-month">
               Month
             </label>

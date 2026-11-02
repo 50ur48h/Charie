@@ -105,11 +105,15 @@ def test_status_learning(learner_client, db, two_steps) -> None:
     log_in(learner_client)
     status = learner_client.get("/api/status")
     assert status.status_code == 200, status.text
-    assert status.json()["learning"] == {"runs_today": 0, "questions_waiting": 0}
+    assert status.json()["learning"] == {"status": "none", "step_title": None, "percent": 0}
     _start(learner_client)
     status = learner_client.get("/api/status")
     assert status.status_code == 200, status.text
-    assert status.json()["learning"] == {"runs_today": 1, "questions_waiting": 0}
+    assert status.json()["learning"] == {
+        "status": "running",
+        "step_title": "Read your notes",
+        "percent": 0,
+    }
 
 
 def test_resume_failed_run_requeues_only_failed(learner_client, db, two_steps) -> None:

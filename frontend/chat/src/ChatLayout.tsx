@@ -53,6 +53,7 @@ export function ChatLayout() {
       onShowSidebar={() => setHidden(false)}
       sidebar={(place) => (
         <ChatSidebar
+          user={{ name: "You", detail: "Signed in" }}
           active={pageFromPath(pathname)}
           activeChatId={chatId === undefined ? undefined : Number(chatId)}
           questionCount={statusQuery.data?.questions_waiting}
