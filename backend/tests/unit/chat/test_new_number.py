@@ -1,11 +1,12 @@
 """Ways A and B stay independent: different guidance, no query leaks (P10.7)."""
 
 import json
-from types import SimpleNamespace
 
 from charie.chat.analyst.helpers.new_number import (
+    MeasureDef,
+    _measure_descriptor,
+    _measures_comparable,
     _normalized_measure_sql,
-    _periods_comparable,
     brief_input,
 )
 from charie.shared.knowledge.sql_writer import brief_for_way
@@ -44,19 +45,36 @@ def test_way_b_input_has_no_way_a_query() -> None:
     assert "shop.orders(id, created_on)." in shown
 
 
-def _pair(sql: str) -> tuple:
-    written = SimpleNamespace(sql=sql, columns=["value"], rows=[[1]])
-    return (written, None, True, (1, 2))
+MONEY_CATALOG = {("shop", "orders", "total"): ("money", "USD")}
+
+
+def _measures(sql_first: str, sql_second: str, catalog: dict) -> list:
+    return [
+        _measure_descriptor(sql_first, catalog),
+        _measure_descriptor(sql_second, catalog),
+    ]
 
 
 def test_same_measure_modulo_dates_compares() -> None:
+    """Same verified money measure across periods compares; dates still blank."""
     sql_2025 = (
         "SELECT SUM(o.total) AS value FROM shop.orders o WHERE o.created_at >= DATE '2025-12-01'"
     )
     sql_2024 = (
         "SELECT SUM(o.total) AS value FROM shop.orders o WHERE o.created_at >= DATE '2024-12-01'"
     )
-    assert _periods_comparable([_pair(sql_2025), _pair(sql_2024)]) is True
+    assert _measures_comparable(_measures(sql_2025, sql_2024, MONEY_CATALOG)) is True
+
+
+def test_unverified_units_do_not_compare() -> None:
+    """Same SQL without a catalog entry refuses; equality alone is not proof."""
+    sql_2025 = (
+        "SELECT SUM(o.total) AS value FROM shop.orders o WHERE o.created_at >= DATE '2025-12-01'"
+    )
+    sql_2024 = (
+        "SELECT SUM(o.total) AS value FROM shop.orders o WHERE o.created_at >= DATE '2024-12-01'"
+    )
+    assert _measures_comparable(_measures(sql_2025, sql_2024, {})) is False
 
 
 def test_different_expression_does_not_compare() -> None:
@@ -67,7 +85,11 @@ def test_different_expression_does_not_compare() -> None:
     dollars = (
         "SELECT SUM(o.total) AS value FROM shop.orders o WHERE o.created_at >= DATE '2024-12-01'"
     )
-    assert _periods_comparable([_pair(cents), _pair(dollars)]) is False
+    catalog = {
+        ("shop", "orders", "total_cents"): ("money", "USD"),
+        ("shop", "orders", "total"): ("money", "USD"),
+    }
+    assert _measures_comparable(_measures(cents, dollars, catalog)) is False
 
 
 def test_different_tables_do_not_compare() -> None:
@@ -78,7 +100,18 @@ def test_different_tables_do_not_compare() -> None:
     orders = (
         "SELECT SUM(o.total) AS value FROM shop.orders o WHERE o.created_at >= DATE '2024-12-01'"
     )
-    assert _periods_comparable([_pair(lines), _pair(orders)]) is False
+    catalog = {
+        **MONEY_CATALOG,
+        ("shop", "order_lines", "amount"): ("money", "USD"),
+    }
+    assert _measures_comparable(_measures(lines, orders, catalog)) is False
+
+
+def test_distinct_units_do_not_compare() -> None:
+    """Same expression, conflicting units across periods: no comparison."""
+    first = MeasureDef("SELECT SUM(x)", ("s.t",), (("s", "t", "x"),), "sum", "money")
+    second = MeasureDef("SELECT SUM(x)", ("s.t",), (("s", "t", "x"),), "sum", "count")
+    assert _measures_comparable([first, second]) is False
 
 
 def test_normalization_blanks_dates_only() -> None:
@@ -88,5 +121,18 @@ def test_normalization_blanks_dates_only() -> None:
     assert _normalized_measure_sql(first) != _normalized_measure_sql("SELECT SUM(y) AS v FROM t")
 
 
-def test_single_period_compares_trivially() -> None:
-    assert _periods_comparable([_pair("SELECT 1")]) is True
+def test_single_measure_follows_unit_evidence() -> None:
+    # No column refs means the count default (keeps COUNT(*) working); one
+    # period alone never drives a change, so the trivial single still passes.
+    assert _measures_comparable([_measure_descriptor("SELECT 1", MONEY_CATALOG)]) is True
+    assert (
+        _measures_comparable(
+            [
+                _measure_descriptor(
+                    "SELECT SUM(o.total) AS value FROM shop.orders o",
+                    MONEY_CATALOG,
+                )
+            ]
+        )
+        is True
+    )

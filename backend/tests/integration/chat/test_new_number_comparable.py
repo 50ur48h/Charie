@@ -41,6 +41,18 @@ def _task():
     return Task(kind="new_number", new_metric="average order value", periods=["p1", "p2"])
 
 
+MONEY_CATALOG = {
+    ("shop", "orders", "total"): ("money", "USD"),
+    ("shop", "orders", "total_cents"): ("money", "USD"),
+}
+
+
+def _measures_for(per_period):
+    return [
+        new_number_module._measure_descriptor(pair[0].sql, MONEY_CATALOG) for pair in per_period
+    ]
+
+
 SQL_2025 = (
     "SELECT SUM(o.total) AS value FROM shop.orders o "
     "WHERE o.created_at >= DATE '2025-12-01' AND o.created_at < DATE '2026-01-01'"
@@ -77,6 +89,7 @@ def test_mismatched_periods_save_no_change(db_session) -> None:
         1,
         "average order value",
         "new:average order value",
+        _measures_for(per_period),
     )
     items = book.items()
     assert not any(item.kind == "number" and item.value.get("style") == "change" for item in items)
@@ -102,7 +115,16 @@ def test_matching_periods_save_change(db_session) -> None:
         1,
         "average order value",
         "new:average order value",
+        _measures_for(per_period),
     )
     items = book.items()
     assert any(item.kind == "number" and item.value.get("style") == "change" for item in items)
     assert not [item for item in items if item.kind == "finding"]
+    numbers = [item for item in items if item.kind == "number"]
+    assert numbers, "expected value and change numbers"
+    units = {item.value.get("unit") for item in numbers}
+    assert units == {"money", "percent"}, units
+    assert "count" not in units, "money must not be saved as count"
+    assert all(
+        item.value.get("currency") == "USD" for item in numbers if item.value.get("unit") == "money"
+    )

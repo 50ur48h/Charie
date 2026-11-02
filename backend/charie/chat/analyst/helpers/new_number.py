@@ -10,8 +10,11 @@ gets a to-do; if they disagree, no number is used.
 import re
 import time
 from decimal import Decimal
+from typing import NamedTuple
 
+import sqlglot
 from sqlalchemy import select
+from sqlglot import exp
 
 from charie.chat.analyst.dates import ResolvedPeriod
 from charie.chat.analyst.helpers import data as data_module
@@ -41,12 +44,21 @@ from charie.shared.knowledge.sql_writer import (
     results_agree,
     write_checked_sql,
 )
+from charie.shared.knowledge.store import list_entries
 from charie.shared.knowledge.todos import add_learner_todo
 from charie.shared.tables.questions import LearnerTodo
 from charie.shared.text.numbers import format_count, format_percent
 
 #: New numbers have no recipe unit; counts cover the "how many" questions.
 NEW_UNIT = "count"
+
+
+_STAMPABLE_UNITS = ("money", "count", "percent", "ratio")
+
+
+def _number_unit(unit: str) -> str:
+    """Units NumberValue accepts; anything else keeps today's count default."""
+    return unit if unit in _STAMPABLE_UNITS else NEW_UNIT
 
 
 _DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2})?)?")
@@ -57,15 +69,122 @@ def _normalized_measure_sql(sql: str) -> str:
     return " ".join(_DATE_RE.sub("DATE", sql).lower().split())
 
 
-def _periods_comparable(per_period) -> bool:
-    """All periods share one way-A measure; anything else is unverifiable.
+class MeasureDef(NamedTuple):
+    """One verified measure definition behind a way-A query."""
 
-    The brief is identical except the dates, so identical normalized SQL means
-    identical tables and expressions, hence compatible units. Comparisons the
-    code cannot verify are refused rather than computed.
+    normalized: str
+    tables: tuple
+    columns: tuple
+    agg: str
+    unit: str
+    currency: str = ""
+
+
+def _catalog_column_units(session, version_id: int) -> dict:
+    """(schema, table, column) to (unit, currency), lowercase, from column entries."""
+    found = {}
+    for entry in list_entries(session, version_id, kinds=["column"]):
+        details = entry.details if isinstance(entry.details, dict) else {}
+        key = (
+            str(details.get("schema", "")).lower(),
+            str(details.get("table", "")).lower(),
+            str(details.get("name", "")).lower(),
+        )
+        if all(key) and key not in found:
+            unit = str(details.get("unit", "") or "")
+            currency = str(details.get("currency", "") or "")
+            found[key] = (unit, currency)
+    return found
+
+
+def _value_refs(sql: str):
+    """Tables, source columns and the aggregate behind the value projection.
+
+    Returns None when the query does not parse or a ref cannot resolve;
+    callers treat that as unverifiable, never as a match.
     """
-    measures = {_normalized_measure_sql(pair[0].sql) for pair in per_period}
-    return len(measures) == 1
+    try:
+        tree = sqlglot.parse_one(sql, read="postgres")
+    except Exception:
+        return None
+    select = tree.find(exp.Select)
+    if select is None or not select.expressions:
+        return None
+    value_expr = select.expressions[-1]
+    alias_map = {}
+    sources = []
+    from_clause = select.find(exp.From)
+    if from_clause is not None:
+        sources.append(from_clause)
+    sources.extend(select.find_all(exp.Join))
+    for source in sources:
+        for table in source.find_all(exp.Table):
+            alias_map[(table.alias_or_name or table.name).lower()] = (
+                table.db.lower(),
+                table.name.lower(),
+            )
+    physical = {(schema, table) for schema, table in alias_map.values() if schema and table}
+    aggs = list(value_expr.find_all(exp.AggFunc))
+    agg = type(aggs[0]).__name__ if aggs else ""
+    refs = []
+    for column in value_expr.find_all(exp.Column):
+        alias = column.table.lower()
+        if alias:
+            resolved = alias_map.get(alias)
+            if resolved is None or not all(resolved):
+                return None
+            schema, table = resolved
+        elif len(physical) == 1:
+            schema, table = next(iter(physical))
+        else:
+            return None
+        refs.append((schema, table, column.name.lower()))
+    tables = sorted(frozenset(f"{schema}.{table}" for schema, table in physical))
+    return tables, refs, agg
+
+
+def _resolve_unit(columns, agg, catalog_columns):
+    """The unanimous catalog unit behind the value columns; money never defaults to count."""
+    if agg == "Count" or not columns:
+        return ("count", "")
+    seen = set()
+    for ref in columns:
+        hit = catalog_columns.get(ref)
+        if hit is None:
+            return ("", "")
+        seen.add(hit)
+        if len(seen) != 1:
+            return ("", "")
+    unit, currency = seen.pop()
+    if not unit:
+        return ("", "")
+    return (unit, currency)
+
+
+def _measure_descriptor(sql, catalog_columns) -> MeasureDef:
+    """The verified measure definition behind one way-A query."""
+    normalized = _normalized_measure_sql(sql)
+    parsed = _value_refs(sql)
+    if parsed is None:
+        return MeasureDef(normalized, (), (), "", "", "")
+    tables, columns, agg = parsed
+    unit, currency = _resolve_unit(columns, agg, catalog_columns)
+    return MeasureDef(normalized, tuple(tables), tuple(columns), agg, unit, currency)
+
+
+def _measures_comparable(measures) -> bool:
+    """Every period shares one verified measure with a known unit."""
+    if not measures:
+        return False
+    first = measures[0]
+    key = (first.normalized, first.tables, first.columns, first.agg, first.unit)
+    return (
+        all(
+            (item.normalized, item.tables, item.columns, item.agg, item.unit) == key
+            for item in measures[1:]
+        )
+        and first.unit != ""
+    )
 
 
 def brief_input(
@@ -194,10 +313,16 @@ def _run_new_number_task(task: Task, ctx, round_no: int = 1) -> None:
         if any(not agreed for _, _, agreed, _ in per_period):
             _disagree(ctx, book, task, seq, description, metric, periods, per_period)
             return
+        catalog_columns = _catalog_column_units(session, ctx.kb_version_id)
+        measures = [_measure_descriptor(pair[0].sql, catalog_columns) for pair in per_period]
         if task.split_by:
-            _save_new_split(ctx, book, task, loaded, periods, per_period, seq, description, metric)
+            _save_new_split(
+                ctx, book, task, loaded, periods, per_period, seq, description, metric, measures
+            )
         else:
-            _save_new_totals(ctx, book, task, loaded, periods, per_period, seq, description, metric)
+            _save_new_totals(
+                ctx, book, task, loaded, periods, per_period, seq, description, metric, measures
+            )
         _maybe_add_todo(session, task, ctx, description, per_period[0])
         ctx.log.finish(
             seq,
@@ -357,13 +482,13 @@ def _disagree(ctx, book, task, seq, description, metric, periods, per_period) ->
 
 
 def _save_new_totals(
-    ctx, book, task, loaded, periods, per_period, seq, description, metric
+    ctx, book, task, loaded, periods, per_period, seq, description, metric, measures
 ) -> None:
     """One number per period, then changes; every description ends the same way."""
     title = f"{description} (not a standard measure yet)"
     totals = _totals(per_period)
     run_ids = [run_id for _, _, _, (run_a, run_b) in per_period for run_id in (run_a, run_b)]
-    for period, total in zip(periods, totals, strict=True):
+    for pos, (period, total) in enumerate(zip(periods, totals, strict=True)):
         if total is None:
             book.add_finding(
                 title,
@@ -376,12 +501,31 @@ def _save_new_totals(
             continue
         book.add_number(
             f"{title}, {period.text}",
-            NumberValue(value=str(total), unit=NEW_UNIT, currency=""),
+            NumberValue(
+                value=str(total),
+                unit=_number_unit(measures[pos].unit),
+                currency=measures[pos].currency,
+            ),
             proof=_proof(task, run_ids, metric, {}, period, None, "value"),
         )
     if len(periods) == 2 and totals[0] is not None and totals[1] is not None:
-        if _periods_comparable(per_period):
-            _save_new_change(ctx, book, task, periods, run_ids, title, metric, totals[0], totals[1])
+        if _measures_comparable(measures):
+            shared = measures[0]
+            currencies = {item.currency for item in measures}
+            currency = shared.currency if currencies == {shared.currency} else ""
+            _save_new_change(
+                ctx,
+                book,
+                task,
+                periods,
+                run_ids,
+                title,
+                metric,
+                totals[0],
+                totals[1],
+                _number_unit(shared.unit),
+                currency,
+            )
         else:
             book.add_finding(
                 title,
@@ -393,7 +537,19 @@ def _save_new_totals(
             )
 
 
-def _save_new_change(ctx, book, task, periods, run_ids, title, metric, new, old) -> None:
+def _save_new_change(
+    ctx,
+    book,
+    task,
+    periods,
+    run_ids,
+    title,
+    metric,
+    new,
+    old,
+    unit: str = NEW_UNIT,
+    currency: str = "",
+) -> None:
     """One comparison's change and % change, or silence when they fail."""
     try:
         change = difference(new, old)
@@ -406,7 +562,7 @@ def _save_new_change(ctx, book, task, periods, run_ids, title, metric, new, old)
     desc = f"Change in {title}, {main.text} vs {compare.text}"
     book.add_number(
         desc,
-        NumberValue(value=str(change), unit=NEW_UNIT, currency="", style="change"),
+        NumberValue(value=str(change), unit=unit, currency=currency, style="change"),
         proof=_proof(task, run_ids, metric, {}, main, compare, "change"),
     )
     if percent is not None:
@@ -426,12 +582,16 @@ def _save_new_change(ctx, book, task, periods, run_ids, title, metric, new, old)
     )
 
 
-def _save_new_split(ctx, book, task, loaded, periods, per_period, seq, description, metric) -> None:
+def _save_new_split(
+    ctx, book, task, loaded, periods, per_period, seq, description, metric, measures
+) -> None:
     """One table per main period, with changes on a comparison."""
     title = f"{description} (not a standard measure yet)"
     main_written = per_period[0][0]
     columns = list(main_written.columns)
     width = len(columns) - 1
+    value_unit = _number_unit(measures[0].unit)
+    value_currency = measures[0].currency
     table_columns = []
     for pos, name in enumerate(columns[:-1]):
         key = task.split_by[pos] if pos < len(task.split_by) else name
@@ -439,11 +599,18 @@ def _save_new_split(ctx, book, task, loaded, periods, per_period, seq, descripti
             TableColumn(key=name, label=loaded.titles.get(key, name), unit="", currency="")
         )
     table_columns.append(
-        TableColumn(key=columns[-1], label=task.new_metric, unit=NEW_UNIT, currency="")
+        TableColumn(
+            key=columns[-1],
+            label=task.new_metric,
+            unit=value_unit,
+            currency=value_currency,
+        ),
     )
-    compared = len(periods) > 1 and _periods_comparable(per_period)
+    compared = _measures_comparable(measures)
     if compared:
-        table_columns.append(TableColumn(key="change", label="Change", unit=NEW_UNIT))
+        table_columns.append(
+            TableColumn(key="change", label="Change", unit=value_unit, currency=value_currency)
+        )
         table_columns.append(TableColumn(key="percent_change", label="Change %", unit="percent"))
     for pos, period in enumerate(periods):
         written_a = per_period[pos][0]
@@ -474,7 +641,18 @@ def _save_new_split(ctx, book, task, loaded, periods, per_period, seq, descripti
         )
     if len(periods) == 2 and compared:
         _save_new_movers(
-            ctx, book, task, loaded, periods, per_period, title, metric, columns, width
+            ctx,
+            book,
+            task,
+            loaded,
+            periods,
+            per_period,
+            title,
+            metric,
+            columns,
+            width,
+            value_unit,
+            value_currency,
         )
     elif len(periods) == 2:
         book.add_finding(
@@ -502,7 +680,18 @@ def _new_row_change(cells: list, compare_rows: dict, width: int):
 
 
 def _save_new_movers(
-    ctx, book, task, loaded, periods, per_period, title, metric, columns, width
+    ctx,
+    book,
+    task,
+    loaded,
+    periods,
+    per_period,
+    title,
+    metric,
+    columns,
+    width,
+    unit: str = NEW_UNIT,
+    currency: str = "",
 ) -> None:
     """The biggest rises and falls, plus the grew/total counts."""
     main_rows = [[data_module._cell(value) for value in row] for row in per_period[0][0].rows]
@@ -530,7 +719,7 @@ def _save_new_movers(
         name = data_module._group_display(row, spans)
         book.add_number(
             f"Change in {title} at {name}, {periods[0].text} vs {periods[1].text}",
-            NumberValue(value=str(change), unit=NEW_UNIT, currency="", style="change"),
+            NumberValue(value=str(change), unit=unit, currency=currency, style="change"),
             proof=_proof(
                 task,
                 [],
