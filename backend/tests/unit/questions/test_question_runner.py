@@ -238,7 +238,8 @@ def test_estimate_counts_earlier_turns() -> None:
     smoke = _select("smoke", None, [])
     assert len(smoke) == 10
     assert (
-        estimate(smoke) == "Fresh run of 10 questions (11 answers, 10 judge calls): about $11–34."
+        estimate(smoke)
+        == "Fresh run of 10 questions (11 answers, 10 judge calls): about $11.20–34.00."
     )
 
 

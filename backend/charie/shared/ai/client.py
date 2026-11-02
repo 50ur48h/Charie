@@ -267,12 +267,17 @@ class AiClient:
         context: dict[str, Any],
         free: bool = False,
     ) -> None:
+        model = request.model
         if reply is None or free:
             cost: Decimal = Decimal(0)
             usage = (0, 0, 0, 0)
         else:
+            model = reply.model or request.model
             cost = call_cost(
-                request.model, reply.prompt_tokens, reply.cached_tokens, reply.completion_tokens
+                model,
+                reply.prompt_tokens,
+                reply.cached_tokens,
+                reply.completion_tokens,
             )
             usage = (
                 reply.prompt_tokens,
@@ -284,7 +289,7 @@ class AiClient:
             usage_row(
                 job=request.job,
                 app=context["app"],
-                model=request.model,
+                model=model,
                 prompt_tokens=usage[0],
                 cached_tokens=usage[1],
                 completion_tokens=usage[2],

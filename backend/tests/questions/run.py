@@ -11,6 +11,7 @@ from decimal import Decimal
 from pathlib import Path
 
 from charie.shared.ai.client import AiClient, get_ai
+from charie.shared.config import get_settings
 from tests.questions.answers import TestAnswer, fake_answer
 from tests.questions.charie_answer import NotReadyError, charie_answer
 from tests.questions.format import Question, QuestionFileError, load_questions
@@ -32,6 +33,14 @@ HIDDEN_REPORTS_DIR = REPO / "docs" / "hidden-tests" / "reports"
 # Rough cost of one fresh question (03): $1-3 per answer, $0.02-0.10 per judge call.
 ANSWER_COST_USD = (Decimal("1.00"), Decimal("3.00"))
 JUDGE_COST_USD = (Decimal("0.02"), Decimal("0.10"))
+
+SPARK_MODEL = "muse-spark-1.3-contributor"
+# Spark bands scale the Nov 2021 pilot ($3.01 Wonder for 3 questions,
+# docs/test-reports/2026-11-01-public-some-2.md) by the contributor prices.
+SPARK_ANSWER_COST_USD = (Decimal("0.02"), Decimal("0.10"))
+SPARK_JUDGE_COST_USD = (Decimal("0.01"), Decimal("0.02"))
+_MODEL_ANSWER_COST_USD = {SPARK_MODEL: SPARK_ANSWER_COST_USD}
+_MODEL_JUDGE_COST_USD = {SPARK_MODEL: SPARK_JUDGE_COST_USD}
 
 JudgeFunction = Callable[[Question, TestAnswer], JudgeVerdict]
 
@@ -121,15 +130,18 @@ def run_questions(
     )
 
 
-def estimate(questions: list[Question]) -> str:
+def estimate(questions: list[Question], model: str = "muse-wonder-1.0") -> str:
     """What a fresh run of these questions costs, before the owner says yes."""
     answers = sum(1 + len(question.chat) for question in questions)
     judges = len(questions)
-    low = answers * ANSWER_COST_USD[0] + judges * JUDGE_COST_USD[0]
-    high = answers * ANSWER_COST_USD[1] + judges * JUDGE_COST_USD[1]
+    answer_low, answer_high = _MODEL_ANSWER_COST_USD.get(model, ANSWER_COST_USD)
+    judge_low, judge_high = _MODEL_JUDGE_COST_USD.get(model, JUDGE_COST_USD)
+    low = answers * answer_low + judges * judge_low
+    high = answers * answer_high + judges * judge_high
+    picked = f" with {model}" if model != "muse-wonder-1.0" else ""
     return (
-        f"Fresh run of {len(questions)} questions "
-        f"({answers} answers, {judges} judge calls): about ${low:.0f}–{high:.0f}."
+        f"Fresh run of {len(questions)} questions{picked} "
+        f"({answers} answers, {judges} judge calls): about ${low:.2f}–{high:.2f}."
     )
 
 
@@ -167,6 +179,13 @@ def _print_hidden(report: RunReport) -> None:
     print("Report saved in the hidden folder.")
 
 
+def _apply_model_flags(args) -> None:
+    """Pin the model and effort for this run via the environment."""
+    os.environ["AI_MODEL"] = args.model
+    os.environ["AI_REASONING_EFFORT"] = args.effort
+    get_settings.cache_clear()
+
+
 def main(argv: list[str] | None = None) -> int:
     """Run one set: --set smoke|public|hidden [--kind K] [--ids a,b] [--dry-run|--fresh]."""
     parser = argparse.ArgumentParser(description="Ask the test questions and score them.")
@@ -179,6 +198,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--estimate", action="store_true", help="Print the fresh cost and stop.")
     parser.add_argument("--yes", action="store_true", help="The owner approved a fresh run.")
+    parser.add_argument(
+        "--model",
+        default=SPARK_MODEL,
+        help="The AI model for this run (Wonder stays one flag away: --model muse-wonder-1.0).",
+    )
+    parser.add_argument("--effort", default="high", help="Reasoning effort for this run.")
     args = parser.parse_args(argv)
 
     if args.set == "hidden" and not HIDDEN_FILE.exists():
@@ -195,11 +220,12 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     if args.estimate:
-        print(estimate(questions))
+        print(estimate(questions, args.model))
         return 0
 
     if args.fresh:
-        print(estimate(questions))
+        _apply_model_flags(args)
+        print(estimate(questions, args.model))
         approved = args.yes or (
             sys.stdin.isatty() and input("Run fresh? [yes/no] ").strip() == "yes"
         )
@@ -217,6 +243,7 @@ def main(argv: list[str] | None = None) -> int:
         answer_fn = lambda question, private: fake_answer(question, {})  # noqa: E731
         client = None
     else:
+        _apply_model_flags(args)
         os.environ["AI_REPLAY"] = "replay"
         if args.set == "hidden":
             os.environ["AI_REPLAY_DIR"] = "docs/hidden-tests/replays"

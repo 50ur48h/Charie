@@ -83,8 +83,25 @@ JOB_SETTINGS["explain_table"] = JobSettings(
 
 
 def get_job_settings(job: str) -> JobSettings:
-    """The settings for a job, or an error naming the unknown job."""
+    """The settings for a job, or an error naming the unknown job.
+
+    AI_MODEL and AI_REASONING_EFFORT override the per-job defaults
+    (practice tests select Spark Contributor/high this way). The
+    override passes through verbatim: there is no fallback model.
+    """
+    from charie.shared.config import get_settings
+
     try:
-        return JOB_SETTINGS[job]
+        base = JOB_SETTINGS[job]
     except KeyError:
         raise AiError("unknown_job", f"Unknown AI job: `{job}`.") from None
+    override = get_settings()
+    if override.ai_model is None and override.ai_reasoning_effort is None:
+        return base
+    return JobSettings(
+        provider=base.provider,
+        model=override.ai_model or base.model,
+        reasoning_effort=override.ai_reasoning_effort or base.reasoning_effort,
+        max_output_tokens=base.max_output_tokens,
+        timeout_seconds=base.timeout_seconds,
+    )
