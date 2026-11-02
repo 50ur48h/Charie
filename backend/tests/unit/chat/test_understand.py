@@ -489,9 +489,7 @@ def test_reading_alone_does_not_justify_gross() -> None:
         document_topics=[],
     )
     question = "What were net sales in December?"
-    assert understand_module.unjustified_asks(reply, _gross_only_kb(), question) == {
-        1: None
-    }
+    assert understand_module.unjustified_asks(reply, _gross_only_kb(), question) == {1: None}
     problems = check_understanding(reply, _gross_only_kb(), question=question)
     assert any("nothing in the question" in problem for problem in problems)
 
