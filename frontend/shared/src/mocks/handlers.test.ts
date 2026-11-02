@@ -335,7 +335,8 @@ describe("mock handlers", () => {
       message: "There's no knowledge entry called nope.",
     });
     const suggested = await post("/api/knowledge/metric.net_sales/suggest", { text: "  Try this  " });
-    expect(suggested.status).toBe(200);
+    expect(suggested.status).toBe(201);
+    await expect(suggested.json()).resolves.toMatchObject({ todo_id: 1 });
     expect(mockSuggestions()).toHaveLength(1);
     const empty = await post("/api/knowledge/metric.net_sales/suggest", { text: "   " });
     expect(empty.status).toBe(400);

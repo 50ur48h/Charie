@@ -74,6 +74,8 @@ export function ChatLayout() {
         <SpendingLimitsDialog
           limitUsd={budgetQuery.data.spend_limit_usd}
           warnPercent={budgetQuery.data.spend_warn_percent}
+          spentUsd={spending?.spent_usd}
+          paused={spending?.state === "paused"}
           saving={updateBudget.isPending}
           serverError={saveError}
           onSave={(patch) => {

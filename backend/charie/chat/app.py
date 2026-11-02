@@ -10,6 +10,7 @@ from charie.chat import chat_store
 from charie.chat.api.chats import chats_router
 from charie.chat.api.memories import memories_router
 from charie.chat.api.messages import messages_router
+from charie.chat.api.suggest import suggest_router
 from charie.chat.api.usage import usage_router
 from charie.shared.auth import auth_router, login_router
 from charie.shared.db import session_scope
@@ -49,6 +50,7 @@ def build_app() -> FastAPI:
             chats_router,
             memories_router,
             messages_router,
+            suggest_router,
             make_knowledge_router(allow_draft=False),
         ),
         public_routers=(login_router,),

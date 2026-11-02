@@ -1,6 +1,6 @@
 // The new-chat page (Calm home.html): greeting, sample questions, the
 // question box, the questions notice and recent chats.
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { ArrowUpDown, Inbox, ScanSearch, TrendingUp, Trophy } from "lucide-react";
 import { ApiError } from "@charie/shared";
@@ -66,6 +66,16 @@ export function NewChatPage() {
   const [sending, setSending] = useState(false);
   const sendingRef = useRef(false);
   const composerRef = useRef<HTMLTextAreaElement>(null);
+  const focusedDraft = useRef(false);
+  // "Ask Charie about this" links here with ?draft= filled in: focus the box
+  // with the cursor at the end. Nothing is ever sent on its own.
+  useEffect(() => {
+    if (!focusedDraft.current && draft !== "" && composerRef.current) {
+      focusedDraft.current = true;
+      composerRef.current.focus();
+      composerRef.current.setSelectionRange(draft.length, draft.length);
+    }
+  }, [draft]);
   const createChat = useCreateChat();
   const sendMessage = useSendMessage();
   const statusQuery = useStatus();

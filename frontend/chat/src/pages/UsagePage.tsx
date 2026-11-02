@@ -234,6 +234,8 @@ export function UsagePage() {
         <SpendingLimitsDialog
           limitUsd={budget.data.spend_limit_usd}
           warnPercent={budget.data.spend_warn_percent}
+          spentUsd={data?.spent_usd}
+          paused={data?.state === "paused"}
           saving={updateBudget.isPending}
           serverError={saveError}
           onSave={(patch) => {

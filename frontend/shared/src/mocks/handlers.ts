@@ -41,7 +41,7 @@ import {
   mockUsage,
 } from "./sampleUsage";
 
-import { stillLearningOverride, suggestMockChange } from "./sampleKnowledge";
+import { mockSuggestions, stillLearningOverride, suggestMockChange } from "./sampleKnowledge";
 
 import { getMockPassword, setMockPassword } from "./password";
 
@@ -611,7 +611,7 @@ http.get(KNOWLEDGE_URL, ({ request }) => {
         { status: 404 },
       );
     }
-    return HttpResponse.json({ ok: true });
+    return HttpResponse.json({ todo_id: mockSuggestions().length }, { status: 201 });
   }),
   http.get(USAGE_URL, ({ request }) => {
     const blocked = needSession();

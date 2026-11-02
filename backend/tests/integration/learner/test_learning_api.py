@@ -157,3 +157,33 @@ def test_resume_nothing_to_retry(learner_client, db) -> None:
     response = learner_client.post("/api/learning/resume")
     assert response.status_code == 404, response.text
     assert response.json()["error"] == "nothing_to_resume"
+
+
+def test_raising_limit_continues_spending_paused_run(learner_client, db, two_steps) -> None:
+    """Raising the limit resumes a spending-paused run and logs the message."""
+    from decimal import Decimal
+
+    from charie.shared.settings import set_setting
+    from charie.shared.tables.usage import AiCall
+
+    log_in(learner_client)
+    run_id = _start(learner_client)["id"]
+    with session_scope() as session:
+        session.add(
+            AiCall(
+                app="tests",
+                job="write_answer",
+                provider="meta",
+                model="muse-wonder-1.0",
+                cost_usd=Decimal("10"),
+            )
+        )
+        session.commit()
+        set_setting(session, "spend_limit_usd", 5)
+        assert runs.pause_run(session, run_id, "spending") is True
+        session.commit()
+    assert _run(run_id).status == "paused"
+    response = learner_client.patch("/api/settings", json={"spend_limit_usd": 150})
+    assert response.status_code == 200, response.text
+    assert _run(run_id).status == "running"
+    assert any("Continuing paused run." in message for message in _events(run_id))

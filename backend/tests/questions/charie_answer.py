@@ -117,7 +117,7 @@ async def _ask_turn(chat_id: int, text: str, private: bool, choice: str | None =
                 _, assistant = ask_question(session, chat_id, text, "thinking", choice)
                 message_id = assistant.id
     except ApiError as err:
-        if err.code == "not_ready":
+        if err.code == "still_learning":
             raise NotReadyError(err.message) from err
         raise
     await run_now(message_id, RunState(remember=False, name_chat=False), private=private)
