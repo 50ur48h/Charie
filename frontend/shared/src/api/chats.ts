@@ -60,13 +60,21 @@ export function useChat(chatId: number) {
 export type FeedbackVote = "up" | "down" | null;
 
 // POST /api/messages/{id}/feedback { vote, note? } (architecture 09).
-// A null vote clears a previous one; the note stays unused for now.
+// A null vote clears a previous one and its note; the answer never changes.
 export function useFeedback() {
   return useMutation({
-    mutationFn: ({ messageId, vote }: { messageId: number; vote: FeedbackVote }) =>
-      apiFetch<{ ok: true }>(`/api/messages/${messageId}/feedback`, {
+    mutationFn: ({
+      messageId,
+      vote,
+      note,
+    }: {
+      messageId: number;
+      vote: FeedbackVote;
+      note?: string;
+    }) =>
+      apiFetch<{ vote: FeedbackVote }>(`/api/messages/${messageId}/feedback`, {
         method: "POST",
-        body: { vote },
+        body: { vote, note },
       }),
   });
 }
@@ -76,7 +84,7 @@ export function useFeedback() {
 export function useWrongMessage() {
   return useMutation({
     mutationFn: ({ messageId, correction }: { messageId: number; correction: string }) =>
-      apiFetch<{ ok: true }>(`/api/messages/${messageId}/wrong`, {
+      apiFetch<{ todo_id: number }>(`/api/messages/${messageId}/wrong`, {
         method: "POST",
         body: { correction },
       }),

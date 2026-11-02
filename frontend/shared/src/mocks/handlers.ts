@@ -955,7 +955,7 @@ http.get(KNOWLEDGE_URL, ({ request }) => {
       );
     }
     countMockPosts("feedback");
-    return HttpResponse.json({ ok: true });
+    return HttpResponse.json({ vote: vote ?? null });
   }),
   http.post(MESSAGE_WRONG_URL, async ({ request }) => {
     const blocked = needSession();
@@ -968,14 +968,12 @@ http.get(KNOWLEDGE_URL, ({ request }) => {
     }
     if (typeof correction !== "string" || correction.trim() === "") {
       return HttpResponse.json(
-        { error: "empty_correction", message: "Please describe what is wrong." },
+        { error: "empty_text", message: "Please describe what is wrong." },
         { status: 400 },
       );
     }
     countMockPosts("wrong");
-    // The learner to-do list itself ships later: the mock only proves the
-    // correction was sent once and kept verbatim.
-    return HttpResponse.json({ ok: true });
+    return HttpResponse.json({ todo_id: 1 }, { status: 201 });
   }),
   http.all(CATCH_ALL_URL, () => {
     const blocked = needSession();

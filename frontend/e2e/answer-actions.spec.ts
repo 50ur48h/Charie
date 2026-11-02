@@ -41,7 +41,7 @@ test("copy_vote_correction work on the saved answer", async ({ page, context }) 
   await dialog.getByPlaceholder(/sales should not include/).fill("Trucks are not delivery.");
   const send = dialog.getByRole("button", { name: "Send correction" });
   await send.click();
-  await expect(page.getByText("Sent to the Learner to check.")).toBeVisible();
+  await expect(page.getByText("Thanks. Sent to the learner's to-do list.")).toBeVisible();
   await expect.poll(() => mockCount(page, "wrong")).toBe(1);
   await expect(dialog).toBeHidden();
 });

@@ -189,6 +189,7 @@ function finishedSeed(summary: ChatSummary): Chat {
     answer: sampleAnswer(2),
     thinking: finishedThinking,
     summary: finishedSummary,
+    feedback: null,
   };
   const secondUser: UserMessage = {
     id: 7,
@@ -205,6 +206,7 @@ function finishedSeed(summary: ChatSummary): Chat {
     answer: null,
     thinking: secondThinking,
     summary: secondSummary,
+    feedback: null,
   };
   return {
     ...summary,
@@ -260,6 +262,7 @@ function aboutSeed(summary: ChatSummary): Chat {
     answer: sampleAnswer(20),
     thinking: finishedThinking,
     summary: finishedSummary,
+    feedback: null,
   };
   const secondUser: UserMessage = {
     id: 21,
@@ -276,6 +279,7 @@ function aboutSeed(summary: ChatSummary): Chat {
     answer: aboutAnswer(),
     thinking: finishedThinking,
     summary: finishedSummary,
+    feedback: null,
   };
   return {
     ...summary,
@@ -302,6 +306,7 @@ function thinkingSeed(summary: ChatSummary): Chat {
         answer: null,
         thinking: runningThinking,
         summary: null,
+        feedback: null,
       },
     ],
   };
@@ -326,6 +331,7 @@ function failedSeed(summary: ChatSummary): Chat {
         answer: null,
         thinking: failedThinking,
         summary: null,
+        feedback: null,
       },
     ],
   };
@@ -652,6 +658,7 @@ export function addMockMessage(
       answer: null,
       thinking: [],
       summary: null,
+      feedback: null,
     },
   );
   running.add(assistantId);
