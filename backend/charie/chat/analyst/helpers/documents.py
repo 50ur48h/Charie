@@ -183,6 +183,7 @@ def _save_picks(ctx, book, session, task, seq, search, hits, picks: QuotePicks) 
                 heading_path=found.heading_path or "",
                 location=location,
             ),
+            proof={"task": task_signature(task)},
         )
         kept.append((choice, found))
     if not kept:

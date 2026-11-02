@@ -663,7 +663,7 @@ def test_excluded_metric_builds_nothing(db_session, shop_version) -> None:
 
 @pytest.mark.asyncio
 async def test_temp_answer_runs_tasks(db_session, shop_version, monkeypatch) -> None:
-    """The temporary flow: understand, tasks together, note plus short view."""
+    """The temporary flow: understand, tasks together, note plus fallback view."""
     from charie.chat.analyst import understand as understand_module
     from charie.chat.analyst.answer import TEMP_NOTE, answer_question
     from charie.shared.ai.client import AiClient
@@ -699,7 +699,9 @@ async def test_temp_answer_runs_tasks(db_session, shop_version, monkeypatch) -> 
     texts = " ".join(
         sentence["text"] for sentence in saved.answer["blocks"][0]["paragraphs"][0]["sentences"]
     )
-    assert "n1 = 5" in texts
+    assert "n1 = " not in texts
+    assert "p1 = " not in texts
+    assert "5: Completed orders" in texts
     titles = [line.title for line in _lines(db_session, ctx.message_id)]
     assert titles[0] == "Understood the question"
     assert any(title.startswith("Getting completed orders for ") for title in titles)

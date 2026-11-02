@@ -375,37 +375,64 @@ class Notebook:
     def fallback_view(self) -> str:
         """The user-facing fallback: kept evidence, never planner signals.
 
-        nothing_found and dropped_quote cards stay in the notebook for the
-        next round. They reach the user only when nothing was kept at all.
+        A hidden finding hides only behind evidence from its own task: a
+        checkout-code quote never hides a missing refund-policy result.
+        Period cards are dates, not evidence, so they hide nothing. The
+        same words from several documents read once, naming every source.
+        Card labels stay in the prompt view; this text faces the user.
         """
         hidden = ("nothing_found", "dropped_quote")
         cards = sorted(self.items(status="ok"), key=lambda card: card.seq)
-        kept = [item for item in cards if item.kind in ("number", "table", "period", "quote")]
-        seen: set[str] = set()
-        out: list[str] = []
-        shown = [item for item in cards if item.kind != "finding"]
-        shown.extend(
-            item
-            for item in cards
-            if item.kind == "finding"
-            and (not kept or FindingValue.model_validate(item.value).type not in hidden)
-        )
-        for item in sorted(shown, key=lambda card: card.seq):
-            if item.kind == "number":
-                out.append(self._short_number(item))
-            elif item.kind == "table":
-                out.extend(self._short_table(item))
-            elif item.kind == "period":
-                out.append(self._short_period(item))
-            elif item.kind == "quote":
-                text = QuoteValue.model_validate(item.value).text
-                if text in seen:
+        evidence = [item for item in cards if item.kind in ("number", "table", "quote")]
+        covered = {item.proof.get("task", "") for item in evidence} - {""}
+        segments: list[tuple[str, str]] = []
+        quoted: dict[str, list[str]] = {}
+        for item in cards:
+            if item.kind == "quote":
+                value = QuoteValue.model_validate(item.value)
+                where = ", ".join(part for part in (value.document, value.location) if part)
+                if value.text not in quoted:
+                    quoted[value.text] = []
+                    segments.append(("quote", value.text))
+                if where and where not in quoted[value.text]:
+                    quoted[value.text].append(where)
+            elif item.kind == "finding":
+                finding = FindingValue.model_validate(item.value)
+                if finding.type in hidden and self._finding_covered(finding, evidence, covered):
                     continue
-                seen.add(text)
-                out.append(self._short_quote(item))
+                out_text = finding.text
+                segments.append(("line", out_text))
             else:
-                out.append(FindingValue.model_validate(item.value).text)
+                segments.extend(("line", line) for line in self._bare_lines(item))
+        out: list[str] = []
+        for kind, text in segments:
+            if kind == "line":
+                out.append(text)
+            else:
+                sources = "; ".join(quoted[text]) if quoted[text] else "the documents"
+                out.append(f'"{text}" ({sources})')
         return "\n".join(out)
+
+    @staticmethod
+    def _finding_covered(finding: FindingValue, evidence: list, covered: set) -> bool:
+        """Whether kept evidence hides a nothing_found/dropped_quote finding.
+
+        Only evidence from the finding's own task counts. Task-less
+        findings keep the old rule: any kept evidence hides them.
+        """
+        if finding.task:
+            return finding.task in covered
+        return bool(evidence)
+
+    def _bare_lines(self, item: NotebookItem) -> list[str]:
+        """The card lines without its label, for the user-facing view."""
+        if item.kind == "table":
+            lines = self._short_table(item)
+        elif item.kind == "period":
+            lines = [self._short_period(item)]
+        else:
+            lines = [self._short_number(item)]
+        return [line.removeprefix(f"{item.label} = ") for line in lines]
 
     def labelled_view(self) -> str:
         """The short view with card labels in brackets, for labelled answers."""
