@@ -14,7 +14,9 @@ test("asks a quick question and continues after a choice", async ({ page }) => {
   await expect(page.getByText("How should I rank them?")).toBeVisible();
   await page.getByRole("radio", { name: "By growth" }).click();
   // Picking one plays the usual sample answer for the picked label.
-  await expect(page.getByText("I read this as By growth.", { exact: false })).toBeVisible();
+  // Exact words: the played answer also streams the same sentence inside
+  // its longer reading paragraph, so a substring match sees two elements.
+  await expect(page.getByText("I read this as By growth.", { exact: true })).toBeVisible();
   // The answered quick question keeps its picked card, now unclickable.
   const picked = page.getByRole("radio", { name: "By growth" });
   await expect(picked).toHaveAttribute("data-state", "checked");
