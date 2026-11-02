@@ -7,6 +7,7 @@ from charie.chat.analyst.helpers.new_number import (
     _measure_descriptor,
     _measures_comparable,
     _normalized_measure_sql,
+    _period_boundaries,
     brief_input,
 )
 from charie.shared.knowledge.sql_writer import brief_for_way
@@ -152,6 +153,31 @@ def test_distinct_units_do_not_compare() -> None:
     first = MeasureDef("SELECT SUM(x)", ("s.t",), (("s", "t", "x"),), "sum", "money")
     second = MeasureDef("SELECT SUM(x)", ("s.t",), (("s", "t", "x"),), "sum", "count")
     assert _measures_comparable([first, second]) is False
+
+
+def test_case_literals_equal_to_boundaries_do_not_compare() -> None:
+    """Exact B021 repro: year periods, same money column, CASE scaling differs."""
+    from datetime import date
+    from types import SimpleNamespace
+
+    periods = [
+        SimpleNamespace(start=date(2025, 1, 1), end=date(2025, 12, 31)),
+        SimpleNamespace(start=date(2024, 1, 1), end=date(2024, 12, 31)),
+    ]
+    boundaries = _period_boundaries(periods)
+    new = (
+        "SELECT SUM(o.total) / CASE WHEN DATE '2025-01-01' >= DATE '2025-01-01' "
+        "THEN 100 ELSE 1 END AS value "
+        "FROM shop.orders o WHERE o.created_at >= DATE '2025-01-01' "
+        "AND o.created_at < DATE '2026-01-01'"
+    )
+    old = (
+        "SELECT SUM(o.total) / CASE WHEN DATE '2024-01-01' >= DATE '2025-01-01' "
+        "THEN 100 ELSE 1 END AS value "
+        "FROM shop.orders o WHERE o.created_at >= DATE '2024-01-01' "
+        "AND o.created_at < DATE '2025-01-01'"
+    )
+    assert _measures_comparable(_measures(new, old, MONEY_CATALOG, boundaries)) is False
 
 
 def test_matching_units_need_matching_currency() -> None:

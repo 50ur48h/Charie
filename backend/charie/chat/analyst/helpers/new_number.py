@@ -63,17 +63,38 @@ def _number_unit(unit: str) -> str:
     return unit if unit in _STAMPABLE_UNITS else NEW_UNIT
 
 
-def _normalized_measure_sql(sql: str, boundaries: Collection[str] = ()) -> str:
-    """Way-A SQL with only the verified period boundaries blanked.
+_DAY_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
 
-    Dates inside calculations and unrelated filters stay literal, so a
-    shifted CASE threshold or extra filter can never compare equal.
+
+def _normalized_measure_sql(sql: str, boundaries: Collection[str] = ()) -> str:
+    """Way-A SQL with only verified time-range predicates blanked.
+
+    A date literal blanks only inside a WHERE clause, outside any CASE,
+    when it spells a period boundary. Projection and CASE literals stay
+    literal even when they equal a boundary, and anything ambiguous keeps
+    its dates, so the comparison refuses instead of equating.
     """
     normalized = " ".join(sql.lower().split())
-    for day in boundaries:
-        day_re = re.compile(r"\b" + re.escape(day) + r"(?:[T ]\d{2}:\d{2}(?::\d{2})?)?")
-        normalized = day_re.sub("DATE", normalized)
-    return normalized
+    allowed = set(boundaries)
+    if not allowed:
+        return normalized
+    try:
+        tree = sqlglot.parse_one(sql, read="postgres")
+    except Exception:
+        return normalized
+    for where in tree.find_all(exp.Where):
+        if where.find_ancestor(exp.Case) is not None:
+            continue
+        for literal in where.find_all(exp.Literal):
+            if not literal.is_string:
+                continue
+            if literal.find_ancestor(exp.Case) is not None:
+                continue
+            day = literal.name[:10]
+            if _DAY_RE.fullmatch(day) is None or day not in allowed:
+                continue
+            literal.replace(exp.Literal.string("DATE"))
+    return tree.sql()
 
 
 class MeasureDef(NamedTuple):
