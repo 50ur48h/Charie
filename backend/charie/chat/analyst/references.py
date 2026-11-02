@@ -63,8 +63,17 @@ def ref_numbers(reading: str) -> list[int]:
     return [int(match.group(1)) for match in REF_RE.finditer(reading or "")]
 
 
+def _whole_month(start: date, end: date) -> bool:
+    """A range covering exactly one calendar month."""
+    import calendar as pycalendar
+
+    return start.day == 1 and end == date(
+        start.year, start.month, pycalendar.monthrange(start.year, start.month)[1]
+    )
+
+
 def _shift_months(start: date, end: date, months: int) -> tuple[date, date]:
-    """Move both dates by whole months; a missing day becomes the last day."""
+    """Move both dates by whole months; a whole month stays a whole month."""
     import calendar as pycalendar
 
     def _move(day: date) -> date:
@@ -73,6 +82,11 @@ def _shift_months(start: date, end: date, months: int) -> tuple[date, date]:
         last = pycalendar.monthrange(year, month)[1]
         return date(year, month, min(day.day, last))
 
+    if _whole_month(start, end):
+        total = (start.year * 12 + (start.month - 1)) + months
+        year, month = total // 12, total % 12 + 1
+        last = pycalendar.monthrange(year, month)[1]
+        return date(year, month, 1), date(year, month, last)
     return _move(start), _move(end)
 
 

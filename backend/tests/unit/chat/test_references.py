@@ -223,6 +223,44 @@ def test_march_minus_one_month_is_february() -> None:
     assert shift_period(day, day, "month", -1) == (date(2025, 2, 28), date(2025, 2, 28))
 
 
+def test_whole_months_stay_whole_when_shifting() -> None:
+    """A whole shorter month fills the whole longer month, leap years included."""
+    assert shift_period(date(2025, 6, 1), date(2025, 6, 30), "month", 1) == (
+        date(2025, 7, 1),
+        date(2025, 7, 31),
+    )
+    assert shift_period(date(2025, 7, 1), date(2025, 7, 31), "month", -1) == (
+        date(2025, 6, 1),
+        date(2025, 6, 30),
+    )
+    assert shift_period(date(2023, 2, 1), date(2023, 2, 28), "month", 1) == (
+        date(2023, 3, 1),
+        date(2023, 3, 31),
+    )
+    assert shift_period(date(2024, 2, 1), date(2024, 2, 29), "month", 1) == (
+        date(2024, 3, 1),
+        date(2024, 3, 31),
+    )
+    assert shift_period(date(2024, 2, 1), date(2024, 2, 29), "month", 12) == (
+        date(2025, 2, 1),
+        date(2025, 2, 28),
+    )
+
+
+def test_partial_ranges_keep_their_days_when_shifting() -> None:
+    """Mid-month and custom ranges move day by day, clamping past month ends."""
+    assert shift_period(date(2025, 6, 15), date(2025, 7, 14), "month", 1) == (
+        date(2025, 7, 15),
+        date(2025, 8, 14),
+    )
+    assert shift_period(date(2025, 1, 31), date(2025, 2, 15), "month", 1) == (
+        date(2025, 2, 28),
+        date(2025, 3, 15),
+    )
+    day = date(2024, 2, 29)
+    assert shift_period(day, day, "month", 12) == (date(2025, 2, 28), date(2025, 2, 28))
+
+
 def test_week_and_day_shifts_move_every_date() -> None:
     start, end = date(2025, 12, 8), date(2025, 12, 14)
     assert shift_period(start, end, "week", -1) == (date(2025, 12, 1), date(2025, 12, 7))
