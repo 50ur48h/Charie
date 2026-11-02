@@ -122,6 +122,7 @@ async def stream_message(message_id: int, request: Request) -> EventSourceRespon
         events = _rebuilt_events(message_id, thinking, summary, done)
     return EventSourceResponse(events, ping=15)
 
+
 class FeedbackBody(BaseModel):
     vote: str | None
     note: str | None = None
@@ -147,9 +148,7 @@ def set_feedback(
         raise ApiError(400, "bad_vote", "Vote up, down or clear it.")
     note = (body.note or "").strip() or None
     if note is not None and len(note) > 500:
-        raise ApiError(
-            400, "note_too_long", "The note is too long. Keep it under 500 characters."
-        )
+        raise ApiError(400, "note_too_long", "The note is too long. Keep it under 500 characters.")
     message.feedback = body.vote
     # Clearing the vote clears its note too.
     message.feedback_note = note if body.vote is not None else None

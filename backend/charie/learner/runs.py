@@ -360,6 +360,7 @@ def resume_spending_paused(session: Session, old_limit: float) -> int:
     session.commit()
     return resumed
 
+
 def run_step_job(info: JobInfo) -> None:
     """The handler for step jobs: do the step's work, then advance the run.
 
