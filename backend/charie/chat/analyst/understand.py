@@ -311,8 +311,10 @@ def _default_targets(u: Understanding, kb: KbView) -> set[str]:
 def unjustified_asks(u: Understanding, kb: KbView, question: str) -> dict:
     """Ask positions keying a metric nothing justifies; value names a known metric or None.
 
-    One ask is justified when the question or the reading names its metric title,
-    a used default resolves to it, or it answers a meaning or an inherited follow-up.
+    One ask is justified when the question names its metric title, a used
+    default resolves to it, or it answers a meaning or an inherited
+    follow-up. The AI reading alone never justifies an ask: explicit
+    user meaning takes precedence over generated words.
     Only multi-word titles count as named: single words like "orders" stay ambiguous.
     An empty question disables the check, as do asks without a metric key.
     """
@@ -327,13 +329,12 @@ def unjustified_asks(u: Understanding, kb: KbView, question: str) -> dict:
         meanings_keys = set()
     targets = _default_targets(u, kb)
     lowered = question.lower()
-    reading = (u.reading or "").lower()
     out: dict = {}
     for pos, ask in enumerate(u.asks, start=1):
         if not ask.metric_key or ask.metric_key not in metric_titles:
             continue
         own = metric_titles[ask.metric_key]
-        if own.lower() in lowered or own.lower() in reading:
+        if own.lower() in lowered:
             continue
         if ask.metric_key in targets or ask.metric_key in meanings_keys:
             continue

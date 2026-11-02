@@ -477,7 +477,8 @@ def test_used_default_justifies_its_metric() -> None:
     assert check_understanding(reply, kb, question="How are we doing this month?") == []
 
 
-def test_reading_names_justify_the_metric() -> None:
+def test_reading_alone_does_not_justify_gross() -> None:
+    """Exact B020 case: the AI reading names gross; the user asked net sales."""
     reply = Understanding(
         kind="clear",
         reading="I read this as delivered order amount for [p1].",
@@ -487,7 +488,12 @@ def test_reading_names_justify_the_metric() -> None:
         defaults_used=[],
         document_topics=[],
     )
-    assert check_understanding(reply, _gross_only_kb(), question="How are we doing?") == []
+    question = "What were net sales in December?"
+    assert understand_module.unjustified_asks(reply, _gross_only_kb(), question) == {
+        1: None
+    }
+    problems = check_understanding(reply, _gross_only_kb(), question=question)
+    assert any("nothing in the question" in problem for problem in problems)
 
 
 def test_inherited_follow_up_skips_the_fit_check() -> None:
