@@ -283,7 +283,36 @@ def _check_meanings(u: Understanding, kb: KbView, problems: list[str]) -> None:
             )
 
 
-def check_understanding(u: Understanding, kb: KbView, choice_answered: bool = False) -> list[str]:
+def mismatched_asks(u: Understanding, kb: KbView, question: str) -> dict[int, str]:
+    """Asks keying a metric the question does not name, while it names another.
+
+    Keys are 1-based ask positions, values the named metric title. Only
+    multi-word titles count: single words like "orders" are too ambiguous.
+    An empty question disables the check, as do asks without a metric key.
+    """
+    if not question:
+        return {}
+    lowered = question.lower()
+    titles = kb.titles()
+    metric_titles = {key: titles[key] for key in kb.metrics() if key in titles}
+    out: dict[int, str] = {}
+    for pos, ask in enumerate(u.asks, start=1):
+        if not ask.metric_key or ask.metric_key not in metric_titles:
+            continue
+        if metric_titles[ask.metric_key].lower() in lowered:
+            continue
+        for key, title in metric_titles.items():
+            if key == ask.metric_key or len(title.split()) < 2:
+                continue
+            if title.lower() in lowered:
+                out[pos] = title
+                break
+    return out
+
+
+def check_understanding(
+    u: Understanding, kb: KbView, choice_answered: bool = False, question: str = ""
+) -> list[str]:
     """Every problem with the AI's reply, in words it can act on.
 
     Matching filter spellings are fixed in place; the reply keeps no
@@ -305,6 +334,12 @@ def check_understanding(u: Understanding, kb: KbView, choice_answered: bool = Fa
                 problems.append(
                     f"Unknown split {split!r}. Use one of: {', '.join(sorted(dimensions))}."
                 )
+    for pos, title in mismatched_asks(u, kb, question).items():
+        key = u.asks[pos - 1].metric_key
+        problems.append(
+            f"Ask {pos} uses {key!r} but the question names {title!r}; "
+            "use the named metric instead."
+        )
     for filt in u.filters:
         if filt.dimension_key not in dimensions:
             problems.append(f"Unknown filter dimension {filt.dimension_key!r}.")
@@ -411,7 +446,11 @@ def _fallback_periods() -> list[PeriodExpression]:
 
 
 def apply_fallbacks(
-    u: Understanding, kb: KbView, date_ctx: DateContext, problems: list[str]
+    u: Understanding,
+    kb: KbView,
+    date_ctx: DateContext,
+    problems: list[str],
+    question: str = "",
 ) -> list[str]:
     """Fix what the retry couldn't; every fix is saved for the writer.
 
@@ -421,7 +460,16 @@ def apply_fallbacks(
     kept_asks: list[Ask] = []
     metrics = kb.metrics()
     dimensions = kb.dimensions()
-    for ask in u.asks:
+    mismatched = mismatched_asks(u, kb, question)
+    for pos, ask in enumerate(u.asks, start=1):
+        if bool(ask.metric_key) == bool(ask.new_metric):
+            continue
+        if ask.metric_key and ask.metric_key not in metrics:
+            continue
+        if pos in mismatched:
+            own = kb.titles().get(ask.metric_key, ask.metric_key)
+            notes.append(f"Left out {own} because the question names {mismatched[pos]} instead.")
+            continue
         if bool(ask.metric_key) == bool(ask.new_metric):
             continue
         if ask.metric_key and ask.metric_key not in metrics:
@@ -541,7 +589,7 @@ def understand(ctx) -> None:
             knowledge_version=ctx.kb_version_id,
             already_running=False,
         )
-        problems = check_understanding(first, kb, answered_choice)
+        problems = check_understanding(first, kb, answered_choice, inputs["question"])
         if problems:
             second_inputs = dict(inputs, repair="; ".join(problems))
             second = ai.run(
@@ -554,7 +602,7 @@ def understand(ctx) -> None:
                 knowledge_version=ctx.kb_version_id,
                 already_running=False,
             )
-            problems = check_understanding(second, kb, answered_choice)
+            problems = check_understanding(second, kb, answered_choice, inputs["question"])
             u = second
         else:
             u = first
@@ -562,7 +610,7 @@ def understand(ctx) -> None:
         u = _blank_understanding()
         problems = [str(err)]
     _add_meaning_asks(u)
-    notes = apply_fallbacks(u, kb, date_ctx, problems)
+    notes = apply_fallbacks(u, kb, date_ctx, problems, inputs["question"])
     if answered_choice and u.choice is not None:
         ctx.choice_failed = True
         ctx.understanding = u

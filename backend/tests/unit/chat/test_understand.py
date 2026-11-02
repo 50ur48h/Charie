@@ -11,6 +11,7 @@ from charie.chat.analyst.understand import (
     Filter,
     Meaning,
     Understanding,
+    apply_fallbacks,
     check_understanding,
     knowledge_summary,
     understand_input,
@@ -292,3 +293,86 @@ def test_a_ref_placeholder_needs_its_list_ref() -> None:
     assert check_understanding(reply, _kb()) != []
     reply.list_refs = [ListRef(words="the second one", position=2, dimension=None)]
     assert check_understanding(reply, _kb()) == []
+
+
+def _two_metric_kb() -> KbView:
+    entries = {
+        "metric": {"net_sales": {"kind": "sum"}, "delivered_amount": {"kind": "sum"}},
+        "dimension": {},
+        "default": {},
+        "name": {},
+        "calendar": {"cal": {"week_start": "monday", "fiscal_year_start": 1}},
+    }
+    texts = {
+        "net_sales": {"title": "Net sales", "meaning": "Order totals minus tax and delivery fees."},
+        "delivered_amount": {
+            "title": "Delivered order amount",
+            "meaning": "Order totals as charged.",
+        },
+        "cal": {"title": "Calendar", "meaning": "Business calendar."},
+    }
+    return KbView(entries, {}, date(2025, 12, 31), texts)
+
+
+def _clear_reply_for(metric_key: str) -> Understanding:
+    return Understanding(
+        kind="clear",
+        reading="I read this as net sales for [p1].",
+        periods=[PeriodExpression(kind="month", number=12)],
+        asks=[Ask(metric_key=metric_key)],
+        filters=[],
+        defaults_used=[],
+        document_topics=[],
+    )
+
+
+def test_gross_key_for_net_sales_words_is_a_problem() -> None:
+    reply = _clear_reply_for("delivered_amount")
+    problems = check_understanding(
+        reply, _two_metric_kb(), question="December orders and net sales"
+    )
+    assert any("Net sales" in problem for problem in problems)
+
+
+def test_named_metric_key_is_fine() -> None:
+    reply = _clear_reply_for("net_sales")
+    assert (
+        check_understanding(reply, _two_metric_kb(), question="December orders and net sales") == []
+    )
+
+
+def test_fit_check_skipped_without_question() -> None:
+    reply = _clear_reply_for("delivered_amount")
+    assert check_understanding(reply, _two_metric_kb()) == []
+
+
+def test_fallback_drops_the_miskeyed_ask() -> None:
+    from charie.chat.analyst.dates import DateContext
+
+    kb = _two_metric_kb()
+    reply = _clear_reply_for("delivered_amount")
+    notes = apply_fallbacks(
+        reply,
+        kb,
+        DateContext(today=date(2025, 12, 31), data_through=date(2025, 12, 31), data_from=None),
+        ["Ask 1 uses the wrong metric."],
+        question="December orders and net sales",
+    )
+    assert reply.asks == []
+    assert any("Delivered order amount" in note and "Net sales" in note for note in notes)
+
+
+def test_fallback_keeps_the_named_ask() -> None:
+    from charie.chat.analyst.dates import DateContext
+
+    kb = _two_metric_kb()
+    reply = _clear_reply_for("net_sales")
+    notes = apply_fallbacks(
+        reply,
+        kb,
+        DateContext(today=date(2025, 12, 31), data_through=date(2025, 12, 31), data_from=None),
+        [],
+        question="December orders and net sales",
+    )
+    assert [ask.metric_key for ask in reply.asks] == ["net_sales"]
+    assert notes == []

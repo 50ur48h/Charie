@@ -7,6 +7,7 @@ into the notebook (marked "not a standard measure yet") and the learner
 gets a to-do; if they disagree, no number is used.
 """
 
+import re
 import time
 from decimal import Decimal
 
@@ -46,6 +47,25 @@ from charie.shared.text.numbers import format_count, format_percent
 
 #: New numbers have no recipe unit; counts cover the "how many" questions.
 NEW_UNIT = "count"
+
+
+_DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2})?)?")
+
+
+def _normalized_measure_sql(sql: str) -> str:
+    """Way-A SQL with only the period dates blanked, for cross-period comparison."""
+    return " ".join(_DATE_RE.sub("DATE", sql).lower().split())
+
+
+def _periods_comparable(per_period) -> bool:
+    """All periods share one way-A measure; anything else is unverifiable.
+
+    The brief is identical except the dates, so identical normalized SQL means
+    identical tables and expressions, hence compatible units. Comparisons the
+    code cannot verify are refused rather than computed.
+    """
+    measures = {_normalized_measure_sql(pair[0].sql) for pair in per_period}
+    return len(measures) == 1
 
 
 def brief_input(
@@ -360,7 +380,17 @@ def _save_new_totals(
             proof=_proof(task, run_ids, metric, {}, period, None, "value"),
         )
     if len(periods) == 2 and totals[0] is not None and totals[1] is not None:
-        _save_new_change(ctx, book, task, periods, run_ids, title, metric, totals[0], totals[1])
+        if _periods_comparable(per_period):
+            _save_new_change(ctx, book, task, periods, run_ids, title, metric, totals[0], totals[1])
+        else:
+            book.add_finding(
+                title,
+                FindingValue(
+                    type="couldnt_check",
+                    text=f"Could not compare {description} across periods: the measures differ.",
+                    task=task_signature(task),
+                ),
+            )
 
 
 def _save_new_change(ctx, book, task, periods, run_ids, title, metric, new, old) -> None:
@@ -411,14 +441,15 @@ def _save_new_split(ctx, book, task, loaded, periods, per_period, seq, descripti
     table_columns.append(
         TableColumn(key=columns[-1], label=task.new_metric, unit=NEW_UNIT, currency="")
     )
-    if len(periods) > 1:
+    compared = len(periods) > 1 and _periods_comparable(per_period)
+    if compared:
         table_columns.append(TableColumn(key="change", label="Change", unit=NEW_UNIT))
         table_columns.append(TableColumn(key="percent_change", label="Change %", unit="percent"))
     for pos, period in enumerate(periods):
         written_a = per_period[pos][0]
         rows = [[data_module._cell(value) for value in row] for row in written_a.rows]
         ordered = data_module._ordered_rows(rows, width, None)
-        if len(periods) > 1 and pos == 0:
+        if compared and pos == 0:
             compare_rows = {
                 data_module._group_key(row, width): row[width] for row in per_period[1][0].rows
             }
@@ -428,7 +459,7 @@ def _save_new_split(ctx, book, task, loaded, periods, per_period, seq, descripti
                     (cells, _new_row_change(cells, compare_rows, width)) for cells in ordered
                 ]
             ]
-        elif len(periods) > 1:
+        elif compared:
             ordered = [[*cells, None, None] for cells in ordered]
         run_ids = [run_id for _, _, _, (run_a, run_b) in per_period for run_id in (run_a, run_b)]
         book.add_table(
@@ -441,9 +472,18 @@ def _save_new_split(ctx, book, task, loaded, periods, per_period, seq, descripti
             ),
             proof=_proof(task, run_ids, metric, {}, period, None, "value"),
         )
-    if len(periods) == 2:
+    if len(periods) == 2 and compared:
         _save_new_movers(
             ctx, book, task, loaded, periods, per_period, title, metric, columns, width
+        )
+    elif len(periods) == 2:
+        book.add_finding(
+            title,
+            FindingValue(
+                type="couldnt_check",
+                text=f"Could not compare {description} across periods: the measures differ.",
+                task=task_signature(task),
+            ),
         )
 
 

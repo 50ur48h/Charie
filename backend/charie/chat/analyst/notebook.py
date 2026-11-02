@@ -249,6 +249,13 @@ class Notebook:
         """Save one labelled quote."""
         return self._save("quote", description, value, proof)
 
+    def has_quote(self, text: str) -> bool:
+        """Whether an ok card already keeps these exact words."""
+        return any(
+            item.kind == "quote" and QuoteValue.model_validate(item.value).text == text
+            for item in self.items()
+        )
+
     def add_finding(
         self, description: str, value: FindingValue, proof: dict | None = None
     ) -> NotebookItem:
@@ -364,6 +371,41 @@ class Notebook:
             else:
                 lines.append(self._short_finding(item))
         return "\n".join(lines)
+
+    def fallback_view(self) -> str:
+        """The user-facing fallback: kept evidence, never planner signals.
+
+        nothing_found and dropped_quote cards stay in the notebook for the
+        next round. They reach the user only when nothing was kept at all.
+        """
+        hidden = ("nothing_found", "dropped_quote")
+        cards = sorted(self.items(status="ok"), key=lambda card: card.seq)
+        kept = [item for item in cards if item.kind in ("number", "table", "period", "quote")]
+        seen: set[str] = set()
+        out: list[str] = []
+        shown = [item for item in cards if item.kind != "finding"]
+        shown.extend(
+            item
+            for item in cards
+            if item.kind == "finding"
+            and (not kept or FindingValue.model_validate(item.value).type not in hidden)
+        )
+        for item in sorted(shown, key=lambda card: card.seq):
+            if item.kind == "number":
+                out.append(self._short_number(item))
+            elif item.kind == "table":
+                out.extend(self._short_table(item))
+            elif item.kind == "period":
+                out.append(self._short_period(item))
+            elif item.kind == "quote":
+                text = QuoteValue.model_validate(item.value).text
+                if text in seen:
+                    continue
+                seen.add(text)
+                out.append(self._short_quote(item))
+            else:
+                out.append(FindingValue.model_validate(item.value).text)
+        return "\n".join(out)
 
     def labelled_view(self) -> str:
         """The short view with card labels in brackets, for labelled answers."""

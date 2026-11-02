@@ -247,3 +247,60 @@ def test_cards_read_back(db_session) -> None:
     assert card.proof == {"fact_key": {"metric": "x"}}
     with pytest.raises(NotebookError, match="There's no item n9 in this notebook."):
         book.get("n9")
+
+
+"""B022: fallback view hides planner signals, collapses dupes, stays honest."""
+
+
+def _quote_text(text: str) -> QuoteValue:
+    return QuoteValue(
+        text=text,
+        document_id=1,
+        document="Policy.docx",
+        section_id=2,
+        heading_path="",
+        location="page 1",
+    )
+
+
+def test_has_quote_matches_exact_words(db_session) -> None:
+    message = _message(db_session)
+    book = Notebook(db_session, message.id, message.chat_id)
+    assert book.has_quote("Use code MEGA0926 at checkout.") is False
+    book.add_quote("Policy", _quote_text("Use code MEGA0926 at checkout."))
+    assert book.has_quote("Use code MEGA0926 at checkout.") is True
+    assert book.has_quote("Use code MEGA0926.") is False
+
+
+def test_fallback_hides_planner_findings_when_evidence_exists(db_session) -> None:
+    message = _message(db_session)
+    book = Notebook(db_session, message.id, message.chat_id)
+    book.add_quote("Policy", _quote_text("Use code MEGA0926 at checkout."))
+    book.add_quote("Policy again", _quote_text("Use code MEGA0926 at checkout."))
+    book.add_finding(
+        "Policy document",
+        FindingValue(type="nothing_found", text="Nothing in the documents about policy document."),
+    )
+    book.add_finding(
+        "Repeat",
+        FindingValue(type="dropped_quote", text="Skipped a quote I already kept word for word."),
+    )
+    book.add_finding(
+        "Search",
+        FindingValue(type="failed", text="Could not search the documents for checkout."),
+    )
+    view = Notebook.load(db_session, message.id, message.chat_id).fallback_view()
+    assert view.count("Use code MEGA0926 at checkout.") == 1
+    assert "Nothing in the documents" not in view
+    assert "already kept" not in view
+    assert "Could not search the documents for checkout." in view
+
+
+def test_fallback_shows_honest_line_when_nothing_kept(db_session) -> None:
+    message = _message(db_session)
+    book = Notebook(db_session, message.id, message.chat_id)
+    book.add_finding(
+        "Policy document",
+        FindingValue(type="nothing_found", text="Nothing in the documents about policy document."),
+    )
+    assert book.fallback_view() == "Nothing in the documents about policy document."

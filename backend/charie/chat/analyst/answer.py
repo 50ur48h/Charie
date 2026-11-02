@@ -41,8 +41,8 @@ from charie.shared.tables.chat import Chat, Message, QueryRun, ThinkingEvent
 from charie.shared.tables.knowledge import KbVersion
 from charie.shared.tables.usage import AiCall
 
-#: One note sentence before the short view; the real writer replaces it.
-TEMP_NOTE = "Placeholder answer. Here's what I found:"
+#: One note sentence before the fallback view; the real writer replaces it.
+TEMP_NOTE = "Here's what I found:"
 
 
 #: The not-sure reply when a follow-up points at nothing shown.
@@ -343,7 +343,7 @@ def _save_fallback_answer(ctx: AnalystContext, tasks: list, blocks: list, shown:
 
 
 def _save_temp_answer(ctx: AnalystContext, tasks: list) -> None:
-    """One note sentence plus the notebook's short view, as real answers.
+    """One note sentence plus the notebook's fallback view, as real answers.
 
     The view reads through a fresh session: the notebook must never
     outlive its session, or its bare reads hold a transaction open and
@@ -351,21 +351,11 @@ def _save_temp_answer(ctx: AnalystContext, tasks: list) -> None:
     """
     with session_scope() as session:
         book = Notebook.load(session, ctx.message_id, ctx.chat_id)
-        short = book.short_view()
-    blocks = [
-        {
-            "type": "text",
-            "paragraphs": [
-                {
-                    "sentences": [
-                        {"kind": "note", "text": TEMP_NOTE},
-                        {"kind": "note", "text": short},
-                    ]
-                }
-            ],
-        }
-    ]
-    ctx.log.add("note", TEMP_NOTE, "Here's what I found.")
+        view = book.fallback_view()
+    sentences = [{"kind": "note", "text": TEMP_NOTE}]
+    sentences.extend({"kind": "note", "text": line} for line in view.splitlines() if line.strip())
+    blocks = [{"type": "text", "paragraphs": [{"sentences": sentences}]}]
+    ctx.log.add("note", TEMP_NOTE, "Here is what I found.")
     _save_blocks(ctx, blocks, [])
 
 
