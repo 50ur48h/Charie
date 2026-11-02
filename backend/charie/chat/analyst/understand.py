@@ -283,30 +283,68 @@ def _check_meanings(u: Understanding, kb: KbView, problems: list[str]) -> None:
             )
 
 
-def mismatched_asks(u: Understanding, kb: KbView, question: str) -> dict[int, str]:
-    """Asks keying a metric the question does not name, while it names another.
+def _metric_key_for_value(value: str, kb: KbView) -> str:
+    """The full metric key behind a default's short value, or empty.
 
-    Keys are 1-based ask positions, values the named metric title. Only
-    multi-word titles count: single words like "orders" are too ambiguous.
+    Default values are short ("net_sales"); real keys carry their kind
+    ("metric.net_sales"). Both shapes resolve to the same key.
+    """
+    for key in kb.metrics():
+        if key == value or key.endswith("." + value):
+            return key
+    return ""
+
+
+def _default_targets(u: Understanding, kb: KbView) -> set[str]:
+    """Metric keys the used defaults resolve to."""
+    targets = set()
+    for used in u.defaults_used:
+        word = used.removeprefix("default.")
+        details = kb.defaults().get(word)
+        if details is not None:
+            key = _metric_key_for_value(details.value, kb)
+            if key:
+                targets.add(key)
+    return targets
+
+
+def unjustified_asks(u: Understanding, kb: KbView, question: str) -> dict:
+    """Ask positions keying a metric nothing justifies; value names a known metric or None.
+
+    One ask is justified when the question or the reading names its metric title,
+    a used default resolves to it, or it answers a meaning or an inherited follow-up.
+    Only multi-word titles count as named: single words like "orders" stay ambiguous.
     An empty question disables the check, as do asks without a metric key.
     """
     if not question:
         return {}
-    lowered = question.lower()
+    if u.kind in ("follow_up", "about_answer"):
+        return {}
     titles = kb.titles()
     metric_titles = {key: titles[key] for key in kb.metrics() if key in titles}
-    out: dict[int, str] = {}
+    meanings_keys = {meaning.metric_key for meaning in u.meanings}
+    if u.kind != "two_meanings":
+        meanings_keys = set()
+    targets = _default_targets(u, kb)
+    lowered = question.lower()
+    reading = (u.reading or "").lower()
+    out: dict = {}
     for pos, ask in enumerate(u.asks, start=1):
         if not ask.metric_key or ask.metric_key not in metric_titles:
             continue
-        if metric_titles[ask.metric_key].lower() in lowered:
+        own = metric_titles[ask.metric_key]
+        if own.lower() in lowered or own.lower() in reading:
             continue
+        if ask.metric_key in targets or ask.metric_key in meanings_keys:
+            continue
+        named = None
         for key, title in metric_titles.items():
             if key == ask.metric_key or len(title.split()) < 2:
                 continue
             if title.lower() in lowered:
-                out[pos] = title
+                named = title
                 break
+        out[pos] = named
     return out
 
 
@@ -334,12 +372,19 @@ def check_understanding(
                 problems.append(
                     f"Unknown split {split!r}. Use one of: {', '.join(sorted(dimensions))}."
                 )
-    for pos, title in mismatched_asks(u, kb, question).items():
+    for pos, named in unjustified_asks(u, kb, question).items():
         key = u.asks[pos - 1].metric_key
-        problems.append(
-            f"Ask {pos} uses {key!r} but the question names {title!r}; "
-            "use the named metric instead."
-        )
+        if named is None:
+            problems.append(
+                f"Ask {pos} uses {key!r} but nothing in the question, defaults, "
+                "meanings, or reading justifies it; use new words (new_metric) "
+                "when no listed metric fits."
+            )
+        else:
+            problems.append(
+                f"Ask {pos} uses {key!r} but the question names {named!r}; "
+                "use the named metric instead."
+            )
     for filt in u.filters:
         if filt.dimension_key not in dimensions:
             problems.append(f"Unknown filter dimension {filt.dimension_key!r}.")
@@ -460,21 +505,23 @@ def apply_fallbacks(
     kept_asks: list[Ask] = []
     metrics = kb.metrics()
     dimensions = kb.dimensions()
-    mismatched = mismatched_asks(u, kb, question)
+    unjustified = unjustified_asks(u, kb, question)
     for pos, ask in enumerate(u.asks, start=1):
         if bool(ask.metric_key) == bool(ask.new_metric):
             continue
         if ask.metric_key and ask.metric_key not in metrics:
             continue
-        if pos in mismatched:
+        if pos in unjustified:
             own = kb.titles().get(ask.metric_key, ask.metric_key)
-            notes.append(f"Left out {own} because the question names {mismatched[pos]} instead.")
+            named = unjustified[pos]
+            if named is None:
+                notes.append(
+                    f"Left out {own}: nothing you said, chose, or read justifies it, "
+                    "so I did not guess."
+                )
+            else:
+                notes.append(f"Left out {own} because the question names {named} instead.")
             continue
-        if bool(ask.metric_key) == bool(ask.new_metric):
-            continue
-        if ask.metric_key and ask.metric_key not in metrics:
-            continue
-        ask.split_by = [split for split in ask.split_by if split in dimensions]
         kept_asks.append(ask)
     u.asks = kept_asks
     kept_filters: list[Filter] = []
@@ -519,8 +566,9 @@ def apply_fallbacks(
 def _default_meaning(word: str, kb: KbView) -> str:
     """The meaning behind a used default, in the owner's words."""
     value = kb.defaults()[word].value
-    if value in kb.titles():
-        return kb.titles()[value]
+    key = _metric_key_for_value(value, kb)
+    if key and key in kb.titles():
+        return kb.titles()[key]
     return value.replace("_", " ")
 
 

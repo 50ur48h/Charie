@@ -4,6 +4,7 @@ from datetime import date
 
 from charie.chat.analyst import understand as understand_module
 from charie.chat.analyst.dates import PeriodExpression
+from charie.chat.analyst.helpers.tasks import starter_tasks
 from charie.chat.analyst.kb_view import KbView
 from charie.chat.analyst.references import ListRef, PeriodShift
 from charie.chat.analyst.understand import (
@@ -376,3 +377,187 @@ def test_fallback_keeps_the_named_ask() -> None:
     )
     assert [ask.metric_key for ask in reply.asks] == ["net_sales"]
     assert notes == []
+
+
+"""B020 exact case: gross recipe exists, net recipe does not."""
+
+
+def _gross_only_kb() -> KbView:
+    entries = {
+        "metric": {"delivered_amount": {"kind": "sum"}},
+        "dimension": {},
+        "default": {},
+        "name": {},
+        "calendar": {"cal": {"week_start": "monday", "fiscal_year_start": 1}},
+    }
+    texts = {
+        "delivered_amount": {
+            "title": "Delivered order amount",
+            "meaning": "Order totals as charged.",
+        },
+        "cal": {"title": "Calendar", "meaning": "Business calendar."},
+    }
+    return KbView(entries, {}, date(2025, 12, 31), texts)
+
+
+def _kb_with_sales_default() -> KbView:
+    entries = {
+        "metric": {"net_sales": {"kind": "sum"}, "delivered_amount": {"kind": "sum"}},
+        "dimension": {},
+        "default": {"sales": {"word": "sales", "value": "net_sales"}},
+        "name": {},
+        "calendar": {"cal": {"week_start": "monday", "fiscal_year_start": 1}},
+    }
+    texts = {
+        "net_sales": {"title": "Net sales", "meaning": "Order totals minus tax and delivery fees."},
+        "delivered_amount": {
+            "title": "Delivered order amount",
+            "meaning": "Order totals as charged.",
+        },
+        "sales": {"title": "Sales", "meaning": "Completed orders."},
+        "cal": {"title": "Calendar", "meaning": "Business calendar."},
+    }
+    return KbView(entries, {}, date(2025, 12, 31), texts)
+
+
+def test_gross_key_for_unknown_net_term_is_unjustified() -> None:
+    reply = _clear_reply_for("delivered_amount")
+    problems = check_understanding(
+        reply, _gross_only_kb(), question="December orders and net sales"
+    )
+    assert any("nothing in the question" in problem for problem in problems)
+
+
+def test_gross_fallback_drops_without_guessing() -> None:
+    from charie.chat.analyst.dates import DateContext
+
+    kb = _gross_only_kb()
+    reply = _clear_reply_for("delivered_amount")
+    notes = apply_fallbacks(
+        reply,
+        kb,
+        DateContext(today=date(2025, 12, 31), data_through=date(2025, 12, 31), data_from=None),
+        ["Ask 1 uses the wrong metric."],
+        question="December orders and net sales",
+    )
+    assert reply.asks == []
+    assert any("did not guess" in note for note in notes)
+
+
+def test_new_words_for_unknown_term_are_allowed() -> None:
+    reply = Understanding(
+        kind="clear",
+        reading="I read this as net sales for [p1].",
+        periods=[PeriodExpression(kind="month", number=12)],
+        asks=[Ask(new_metric="net sales")],
+        filters=[],
+        defaults_used=[],
+        document_topics=[],
+    )
+    kb = _gross_only_kb()
+    assert check_understanding(reply, kb, question="December orders and net sales") == []
+    from charie.chat.analyst.dates import DateContext
+
+    notes = apply_fallbacks(
+        reply,
+        kb,
+        DateContext(today=date(2025, 12, 31), data_through=date(2025, 12, 31), data_from=None),
+        [],
+        question="December orders and net sales",
+    )
+    assert [ask.new_metric for ask in reply.asks] == ["net sales"]
+    assert notes == []
+
+
+def test_used_default_justifies_its_metric() -> None:
+    kb = _kb_with_sales_default()
+    reply = _clear_reply_for("net_sales")
+    reply.defaults_used = ["default.sales"]
+    assert understand_module._default_targets(reply, kb) == {"net_sales"}
+    assert check_understanding(reply, kb, question="How are we doing this month?") == []
+
+
+def test_reading_names_justify_the_metric() -> None:
+    reply = Understanding(
+        kind="clear",
+        reading="I read this as delivered order amount for [p1].",
+        periods=[PeriodExpression(kind="month", number=12)],
+        asks=[Ask(metric_key="delivered_amount")],
+        filters=[],
+        defaults_used=[],
+        document_topics=[],
+    )
+    assert check_understanding(reply, _gross_only_kb(), question="How are we doing?") == []
+
+
+def test_inherited_follow_up_skips_the_fit_check() -> None:
+    reply = Understanding(
+        kind="follow_up",
+        reading="I read this as delivered order amount.",
+        periods=[],
+        asks=[Ask(metric_key="delivered_amount")],
+        filters=[],
+        defaults_used=[],
+        document_topics=[],
+        inherit=["asks"],
+        refs=[],
+    )
+    assert check_understanding(reply, _gross_only_kb(), question="Same for last year?") == []
+
+
+def test_dropped_gross_starts_no_recipe_task() -> None:
+    """Exact B020 case end to end: dropped gross never becomes a recipe task."""
+    from charie.chat.analyst.dates import DateContext
+
+    kb = _gross_only_kb()
+    reply = _clear_reply_for("delivered_amount")
+    apply_fallbacks(
+        reply,
+        kb,
+        DateContext(today=date(2025, 12, 31), data_through=date(2025, 12, 31), data_from=None),
+        ["Ask 1 uses the wrong metric."],
+        question="December orders and net sales",
+    )
+    assert reply.asks == []
+    tasks = starter_tasks(reply, kb.titles())
+    assert tasks == []
+    assert all(task.kind != "recipe" for task in tasks)
+
+
+"""B020: short default values resolve to kind-prefixed metric keys."""
+
+
+def _prefixed_kb() -> KbView:
+    entries = {
+        "metric": {"metric.net_sales": {"kind": "sum"}},
+        "dimension": {},
+        "default": {"default.sales": {"word": "sales", "value": "net_sales"}},
+        "name": {},
+        "calendar": {"cal": {"week_start": "monday", "fiscal_year_start": 1}},
+    }
+    texts = {
+        "metric.net_sales": {
+            "title": "Net sales",
+            "meaning": "Order totals minus tax and delivery fees.",
+        },
+        "default.sales": {"title": "sales", "meaning": "net_sales"},
+        "cal": {"title": "Calendar", "meaning": "Business calendar."},
+    }
+    return KbView(entries, {}, date(2025, 12, 31), texts)
+
+
+def test_prefixed_default_value_justifies_its_metric() -> None:
+    """A used default justifies its metric even with kind-prefixed keys."""
+    reply = Understanding(
+        kind="vague_with_default",
+        reading="I read this as sales without delivery fees for [p1].",
+        periods=[PeriodExpression(kind="month", number=12)],
+        asks=[Ask(metric_key="metric.net_sales")],
+        filters=[],
+        defaults_used=["default.sales"],
+        document_topics=[],
+    )
+    assert (
+        check_understanding(reply, _prefixed_kb(), question="What were sales in December 2025?")
+        == []
+    )
