@@ -87,12 +87,13 @@ def _checked(loaded: _Loaded, ctx, form: RoundPlan, tasks: list[Task]) -> list[T
     meanings = getattr(loaded, "meanings", None) or {}
     recipes = getattr(loaded, "recipes", None) or {}
     units = {key: getattr(recipe, "unit", None) for key, recipe in recipes.items()}
+    titles = getattr(loaded, "titles", None) or {}
     labels = [f"p{num}" for num in range(1, len(ctx.periods.periods) + 1)]
     for planned in form.tasks[:MAX_TASKS_PER_ROUND]:
         if not planned.why or _has_digits(planned.why):
             continue
         if planned.kind == "recipe" and question:
-            reason = contradicted_recipe(question, planned.metric_key, meanings, units)
+            reason = contradicted_recipe(question, planned.metric_key, meanings, units, titles)
             if reason is not None:
                 if hasattr(ctx, "problems"):
                     ctx.problems.append(f"Planner pick {planned.metric_key} dropped: {reason}")

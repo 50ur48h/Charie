@@ -27,15 +27,18 @@ def _kb() -> SimpleNamespace:
     titles = {f"metric_{n}": f"Metric {n}" for n in range(6)}
     titles["metric.delivered_order_amount"] = "Delivered order amount"
     titles["metric.delivered_orders"] = "Delivered orders"
+    titles["metric.operating_expenses"] = "Operating expenses"
     return SimpleNamespace(
         titles=lambda: titles,
         meanings=lambda: {
             "metric.delivered_order_amount": "Total amount for delivered orders.",
             "metric.delivered_orders": "Number of delivered orders for an outlet.",
+            "metric.operating_expenses": "Simulated monthly overhead amount.",
         },
         metrics=lambda: {
             "metric.delivered_order_amount": {"unit": "money"},
             "metric.delivered_orders": {"unit": "count"},
+            "metric.operating_expenses": {"unit": "money"},
         },
     )
 
@@ -116,6 +119,19 @@ def test_starter_tasks_drops_net_sales_gross_recipe() -> None:
     assert len(dropped) == 1
     assert "metric.delivered_order_amount" in dropped[0]
     assert "net sales" in dropped[0]
+
+
+def test_starter_tasks_scopes_gate_per_task() -> None:
+    """Review finding: the named expenses recipe runs while gross stays out."""
+    understanding = _understanding(asks=0, periods=1)
+    understanding.asks = [
+        Ask(metric_key="metric.delivered_order_amount"),
+        Ask(metric_key="metric.operating_expenses"),
+    ]
+    tasks, dropped = _started(understanding, "Show net sales and operating expenses")
+    assert [task.metric_key for task in tasks] == ["metric.operating_expenses"]
+    assert len(dropped) == 1
+    assert "metric.delivered_order_amount" in dropped[0]
 
 
 def test_starter_tasks_keeps_gross_without_house_term() -> None:

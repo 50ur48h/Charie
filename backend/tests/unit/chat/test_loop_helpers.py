@@ -73,3 +73,48 @@ def test_evidence_signature_moves_with_new_items() -> None:
     after = evidence_signature([_item("p1", kind="period", description="in December"), _item("n1")])
     assert before == same
     assert before != after
+
+
+def _full_item(label, kind="finding", description="Nothing found.", value=None, proof=None):
+    from types import SimpleNamespace as NS
+
+    return NS(
+        label=label,
+        kind=kind,
+        status="ok",
+        description=description,
+        value=value if value is not None else {"text": description},
+        proof=proof if proof is not None else {"task": "documents|x"},
+    )
+
+
+def test_duplicate_findings_share_one_signature() -> None:
+    """Review finding: a re-added finding is the same evidence twice."""
+    from charie.chat.analyst.loop import evidence_signature
+
+    first = [_full_item("q1")]
+    again = [_full_item("q1"), _full_item("q2")]
+    assert evidence_signature(first) == evidence_signature(again)
+
+
+def test_period_cards_are_trace_not_evidence() -> None:
+    """Review finding: period cards never count as new evidence."""
+    from charie.chat.analyst.loop import evidence_signature
+
+    assert evidence_signature([_item("p1", kind="period")]) == evidence_signature([])
+    assert evidence_signature([_item("p1", kind="period")]) != evidence_signature([_item("n1")])
+
+
+def test_values_and_provenance_count() -> None:
+    """Review finding: changed numbers and sources change the signature."""
+    from charie.chat.analyst.loop import evidence_signature
+
+    base = [_full_item("n1", kind="number", value={"value": "5"}, proof={"recipe_key": "m"})]
+    changed_value = [
+        _full_item("n1", kind="number", value={"value": "6"}, proof={"recipe_key": "m"})
+    ]
+    changed_source = [
+        _full_item("n1", kind="number", value={"value": "5"}, proof={"recipe_key": "other"})
+    ]
+    assert evidence_signature(base) != evidence_signature(changed_value)
+    assert evidence_signature(base) != evidence_signature(changed_source)

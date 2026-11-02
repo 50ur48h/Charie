@@ -111,7 +111,9 @@ def starter_tasks(
             break
         if ask.metric_key:
             reason = (
-                contradicted_recipe(question, ask.metric_key, meanings, units) if question else None
+                contradicted_recipe(question, ask.metric_key, meanings, units, titles)
+                if question
+                else None
             )
             if reason is not None:
                 dropped.append(

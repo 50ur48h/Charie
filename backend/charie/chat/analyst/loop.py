@@ -8,6 +8,7 @@ and the check still decides.
 """
 
 import asyncio
+import json
 
 from charie.chat.analyst.enough import run_check_enough
 from charie.chat.analyst.helpers.data import add_period_items, run_recipe_task
@@ -66,6 +67,7 @@ async def run_rounds(ctx) -> list[Task]:
     ran: list[Task] = []
     current = list(planned)
     missing = ""
+    last_missing = ""
     prev_sig = _evidence_sig(ctx)
     for round_no in range(1, MAX_ROUNDS + 1):
         if ctx.state.finish_requested.is_set():
@@ -75,7 +77,8 @@ async def run_rounds(ctx) -> list[Task]:
         ran.extend(current)
         sig = _evidence_sig(ctx)
         if current and sig == prev_sig:
-            missing = run_check_enough(ctx, round_no)
+            fresh = run_check_enough(ctx, round_no)
+            missing = last_missing or fresh
             _finish_round(ctx, seq, current, round_no, missing)
             ctx.log.add(
                 "note",
@@ -85,6 +88,7 @@ async def run_rounds(ctx) -> list[Task]:
             break
         prev_sig = sig
         missing = run_check_enough(ctx, round_no)
+        last_missing = missing
         _finish_round(ctx, seq, current, round_no, missing)
         if not missing:
             break
@@ -183,19 +187,36 @@ def _top_up_why(ctx, planned: list[Task]) -> list[Task]:
     return [*planned, *_number_tasks(ctx, topics[:1])]
 
 
+def _canon(value) -> str:
+    """One stable string for a value or proof mapping."""
+    if not isinstance(value, dict):
+        value = {"value": value}
+    try:
+        return json.dumps(value, sort_keys=True, default=str)
+    except (TypeError, ValueError):
+        return str(value)
+
+
 def evidence_signature(items) -> tuple:
-    """One stable value per notebook item: new evidence changes it."""
-    return tuple(
-        sorted(
+    """Content identity: kind, status, description, values and provenance.
+
+    Labels never count, so a re-added duplicate finding is the same
+    evidence; period cards are trace, not evidence.
+    """
+    keys = set()
+    for item in items:
+        if item.kind == "period":
+            continue
+        keys.add(
             (
-                item.label,
                 item.kind,
                 getattr(item, "status", "") or "",
                 item.description or "",
+                _canon(getattr(item, "value", None)),
+                _canon(getattr(item, "proof", None)),
             )
-            for item in items
         )
-    )
+    return tuple(sorted(keys))
 
 
 def _evidence_sig(ctx) -> tuple:
