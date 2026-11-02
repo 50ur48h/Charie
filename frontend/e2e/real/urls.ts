@@ -1,28 +1,15 @@
-import { existsSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { expect, type Page } from "@playwright/test";
+import {
+  dumpPath,
+  recordingsPath,
+  recordingsReady,
+} from "../../shared/src/e2e-real/paths";
 
-const here = dirname(fileURLToPath(import.meta.url));
-const REPO = join(here, "..", "..");
+export { dumpPath, recordingsPath, recordingsReady };
 
 export const CHAT = "http://localhost:8001";
 export const LEARNER = "http://localhost:8002";
 export const E2E_PASSWORD = "e2e-password";
-
-// The journeys need the throwaway database; the AI ones also need the
-// saved replies from a --record run (P12.4 Task 6, needs your yes).
-export function dumpPath(): string {
-  return join(REPO, "backend", "tests", "replays", "e2e-db.dump");
-}
-
-export function recordingsPath(): string {
-  return join(REPO, "backend", "tests", "replays", "e2e-journeys.ready");
-}
-
-export function recordingsReady(): boolean {
-  return existsSync(recordingsPath()) || process.env.E2E_RECORDING === "1";
-}
 
 // Signs in through the real login form on the throwaway database. The
 // app decides where to land (the setup guide resolves ?step=n itself),

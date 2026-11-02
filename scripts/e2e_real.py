@@ -98,10 +98,24 @@ def compose(
         )
 
 
+def check_save_ready(published: list, drafts: list) -> None:
+    """Refuse the save unless exactly one version is published and no draft waits."""
+    if len(published) != 1 or drafts:
+        fail(
+            "save needs exactly one published version and no draft waiting: "
+            f"found {len(published)} published, {len(drafts)} draft."
+        )
+
+
 def server_url(raw: str) -> str:
-    """The bare server URL for one database URL (for CREATE/DROP DATABASE)."""
-    parts = urlparse(raw.replace("+psycopg", "").replace("+psycopg2", ""))
-    return f"{parts.scheme}://{parts.netloc}/postgres"
+    """The bare server URL for one database URL.
+
+    Maintenance use only (CREATE/DROP DATABASE). It keeps the configured
+    SQLAlchemy driver and swaps in the postgres maintenance database.
+    """
+    from sqlalchemy.engine.url import make_url
+
+    return make_url(raw).set(database="postgres").render_as_string(hide_password=False)
 
 
 def cmd_save() -> None:
@@ -111,7 +125,7 @@ def cmd_save() -> None:
     from sqlalchemy.orm import Session
 
     parts = parse_db_url(real_db_url())
-    engine = create_engine(server_url(real_db_url()))
+    engine = create_engine(real_db_url())
     with Session(engine) as session:
         published = session.scalars(
             select(KbVersion).where(KbVersion.status == "published")
@@ -120,11 +134,7 @@ def cmd_save() -> None:
             select(KbVersion).where(KbVersion.status == "draft")
         ).all()
     engine.dispose()
-    if len(published) != 1 or drafts:
-        fail(
-            "save needs exactly one published version and no draft waiting: "
-            f"found {len(published)} published, {len(drafts)} draft."
-        )
+    check_save_ready(published, drafts)
     env = dict(os.environ, PGPASSWORD=parts["password"])
     dump = subprocess.run(
         [
