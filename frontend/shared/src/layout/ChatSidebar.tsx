@@ -5,15 +5,16 @@ import {
   PanelLeft,
   Settings,
   SquarePen,
+  User,
   type LucideIcon,
 } from "lucide-react";
 import { RouterLink } from "./RouterLink";
 import { Button, IconButton } from "../components/Button";
+import { IconBox } from "../components/IconBox";
 import { Skeleton } from "../components/Skeleton";
 import { Brand } from "./Logo";
 import { chatRoutes } from "./appLinks";
 import {
-  avatarClass,
   badgeClass,
   chatGroupClass,
   chatItemClass,
@@ -169,9 +170,7 @@ export function ChatSidebar({
         </NavLink>
         {user && (
           <div className="flex items-center gap-2.5 px-2.5 pb-0.5 pt-2">
-            <span className={avatarClass} aria-hidden="true">
-              {user.name.charAt(0)}
-            </span>
+            <IconBox icon={User} />
             <div>
               <div className="text-[13.5px] font-semibold">{user.name}</div>
               <div className="text-xs text-muted">{user.detail}</div>

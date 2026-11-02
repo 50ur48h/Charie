@@ -22,8 +22,8 @@ const MONTHS = [
 ];
 
 export function formatDataThrough(isoDate: string): string {
-  const [year, month, day] = isoDate.split("-").map(Number);
-  if (year === undefined || month === undefined || day === undefined) return isoDate;
+  const [year, month, day] = isoDate.slice(0, 10).split("-").map(Number);
+  if (!year || !month || !day) return isoDate;
   return `${day} ${MONTHS[month - 1] ?? month}`;
 }
 
@@ -35,6 +35,8 @@ export interface QuestionComposerProps {
   dataThrough?: string | null;
   textareaRef?: Ref<HTMLTextAreaElement>;
   large?: boolean;
+  disabled?: boolean;
+  disabledPlaceholder?: string;
 }
 
 export function QuestionComposer({
@@ -45,6 +47,8 @@ export function QuestionComposer({
   dataThrough,
   textareaRef,
   large = false,
+  disabled = false,
+  disabledPlaceholder,
 }: QuestionComposerProps) {
   const blank = value.trim() === "";
 
@@ -53,10 +57,10 @@ export function QuestionComposer({
       // IME composition (e.g. CJK input) must not send mid-character.
       if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
         event.preventDefault();
-        if (!blank && !sending) onSubmit();
+        if (!blank && !sending && !disabled) onSubmit();
       }
     },
-    [blank, onSubmit, sending],
+    [blank, onSubmit, sending, disabled],
   );
 
   return (
@@ -66,17 +70,18 @@ export function QuestionComposer({
       )}
       onSubmit={(event) => {
         event.preventDefault();
-        if (!blank && !sending) onSubmit();
+        if (!blank && !sending && !disabled) onSubmit();
       }}
     >
       <Textarea
         ref={textareaRef}
         aria-label="Ask a question"
-        placeholder="For example: which restaurants grew the most this month, and why?"
+        placeholder={disabled && disabledPlaceholder ? disabledPlaceholder : "For example: which restaurants grew the most this month, and why?"}
         rows={large ? 2 : 2}
         value={value}
         onChange={(event) => onChange(event.target.value)}
         onKeyDown={onKeyDown}
+        disabled={disabled}
         className="border-0 bg-transparent p-0 text-[16.5px] shadow-none focus:shadow-none"
       />
       <div className="mt-2 flex flex-wrap items-center gap-x-1.5 gap-y-2 sm:gap-x-2">
@@ -92,17 +97,17 @@ export function QuestionComposer({
           <Zap size={14} aria-hidden="true" />
           Quick
         </span>
-        <span className="ml-1 inline-flex items-center gap-2 text-[12.5px] whitespace-nowrap text-muted sm:ml-2">
-          <span aria-hidden="true" className="inline-block size-2 rounded-full bg-good" />
-          {dataThrough === undefined || dataThrough === null
-            ? "Charie hasn't seen your data yet."
-            : `Data up to ${formatDataThrough(dataThrough)}`}
-        </span>
+        {dataThrough == null ? null : (
+          <span className="ml-1 inline-flex items-center gap-2 text-[12.5px] whitespace-nowrap text-muted sm:ml-2">
+            <span aria-hidden="true" className="inline-block size-2 rounded-full bg-good" />
+            {`Data up to ${formatDataThrough(dataThrough)}`}
+          </span>
+        )}
         <button
           type="submit"
           aria-label="Ask"
           title="Ask"
-          disabled={blank || sending}
+          disabled={blank || sending || disabled}
           className="ml-auto grid size-10 flex-none cursor-pointer place-items-center rounded-full bg-accent text-white shadow-button transition-transform duration-200 not-disabled:hover:-translate-y-px not-disabled:hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
         >
           <ArrowUp size={18} aria-hidden="true" />

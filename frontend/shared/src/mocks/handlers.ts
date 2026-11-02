@@ -41,7 +41,7 @@ import {
   mockUsage,
 } from "./sampleUsage";
 
-import { suggestMockChange } from "./sampleKnowledge";
+import { mockSuggestions, stillLearningOverride, suggestMockChange } from "./sampleKnowledge";
 
 import { getMockPassword, setMockPassword } from "./password";
 
@@ -611,7 +611,7 @@ http.get(KNOWLEDGE_URL, ({ request }) => {
         { status: 404 },
       );
     }
-    return HttpResponse.json({ ok: true });
+    return HttpResponse.json({ todo_id: mockSuggestions().length }, { status: 201 });
   }),
   http.get(USAGE_URL, ({ request }) => {
     const blocked = needSession();
@@ -841,6 +841,17 @@ http.get(KNOWLEDGE_URL, ({ request }) => {
         { status: 409 },
       );
     }
+    // Before the first knowledge version the mock refuses like the real API.
+    if (stillLearningOverride()) {
+      return HttpResponse.json(
+        {
+          error: "still_learning",
+          message:
+            "Charie is still learning. You can ask questions once the first version of its knowledge is published.",
+        },
+        { status: 409 },
+      );
+    }
     // At 100% the mock blocks new questions with the API shape.
     if (mockSpending(41.2).state === "paused") {
       return HttpResponse.json(
@@ -859,17 +870,31 @@ http.get(KNOWLEDGE_URL, ({ request }) => {
     const blocked = needSession();
     if (blocked) return blocked;
     const demoSpending = mockSpending(41.2);
+    const published = stillLearningOverride() ? undefined : liveVersion();
+    const learnerDocs = learner().documents.filter((doc) => doc.status !== "removed").length;
     return HttpResponse.json({
       questions_waiting: waitingOverride() ?? waitingMockCount(),
-      knowledge: { version: null, entries: 0, documents: 0, published_at: null },
+      knowledge:
+        published === undefined
+          ? { version: null, entries: 0, documents: 0, published_at: null }
+          : {
+              version: published.number,
+              entries: publishedBase().length,
+              documents: learnerDocs,
+              published_at: published.published_at,
+            },
       data: {
         name: "Bella Forno database",
         kind: "postgres",
         status: "connected",
         data_through: "2025-10-26",
       },
-      learning: null,
+      learning:
+        published === undefined
+          ? { status: "running", step_title: "Read your documents", percent: 38 }
+          : { status: "done", step_title: "Self-test", percent: 100 },
       spending: demoSpending,
+      learner_url: "http://localhost:5174",
     });
   }),
   http.post(MESSAGE_FINISH_URL, ({ params }) => {
@@ -930,7 +955,7 @@ http.get(KNOWLEDGE_URL, ({ request }) => {
       );
     }
     countMockPosts("feedback");
-    return HttpResponse.json({ ok: true });
+    return HttpResponse.json({ vote: vote ?? null });
   }),
   http.post(MESSAGE_WRONG_URL, async ({ request }) => {
     const blocked = needSession();
@@ -943,14 +968,12 @@ http.get(KNOWLEDGE_URL, ({ request }) => {
     }
     if (typeof correction !== "string" || correction.trim() === "") {
       return HttpResponse.json(
-        { error: "empty_correction", message: "Please describe what is wrong." },
+        { error: "empty_text", message: "Please describe what is wrong." },
         { status: 400 },
       );
     }
     countMockPosts("wrong");
-    // The learner to-do list itself ships later: the mock only proves the
-    // correction was sent once and kept verbatim.
-    return HttpResponse.json({ ok: true });
+    return HttpResponse.json({ todo_id: 1 }, { status: 201 });
   }),
   http.all(CATCH_ALL_URL, () => {
     const blocked = needSession();

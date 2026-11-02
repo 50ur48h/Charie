@@ -336,7 +336,29 @@ def resume_after_spending_raise(session: Session, run_id: int) -> bool:
     run.paused_by = None
     resume_jobs(session, run_id)
     advance_run(session, run_id)
+    add_event(session, run.id, "info", "Continuing paused run.", step=run.step)
     return True
+
+
+def resume_spending_paused(session: Session, old_limit: float) -> int:
+    """Resume spending-paused runs after the limit is raised; count them."""
+    new_limit = get_setting(session, "spend_limit_usd")
+    if new_limit <= old_limit or not _spending_ok(session):
+        return 0
+    paused = session.scalars(
+        select(LearningRun).where(
+            LearningRun.status == "paused", LearningRun.paused_by == "spending"
+        )
+    ).all()
+    resumed = 0
+    for run in paused:
+        try:
+            if resume_after_spending_raise(session, run.id):
+                resumed += 1
+        except RunActiveError:
+            break
+    session.commit()
+    return resumed
 
 
 def run_step_job(info: JobInfo) -> None:

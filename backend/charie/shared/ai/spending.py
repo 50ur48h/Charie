@@ -79,3 +79,11 @@ def spending_state(spent: float | Decimal, limit: float, warn_percent: float) ->
     if spent >= limit * warn_percent / 100:
         return "warn"
     return "ok"
+
+
+def check_can_start(spent, limit, warn_percent, *, allow_when_paused=False) -> None:
+    """Raise SpendingPaused unless the limit allows starting new AI work."""
+    from charie.shared.ai.errors import SpendingPaused
+
+    if not allow_when_paused and spending_state(spent, limit, warn_percent) == "paused":
+        raise SpendingPaused()

@@ -105,11 +105,15 @@ def test_status_learning(learner_client, db, two_steps) -> None:
     log_in(learner_client)
     status = learner_client.get("/api/status")
     assert status.status_code == 200, status.text
-    assert status.json()["learning"] == {"runs_today": 0, "questions_waiting": 0}
+    assert status.json()["learning"] == {"status": "none", "step_title": None, "percent": 0}
     _start(learner_client)
     status = learner_client.get("/api/status")
     assert status.status_code == 200, status.text
-    assert status.json()["learning"] == {"runs_today": 1, "questions_waiting": 0}
+    assert status.json()["learning"] == {
+        "status": "running",
+        "step_title": "Read your notes",
+        "percent": 0,
+    }
 
 
 def test_resume_failed_run_requeues_only_failed(learner_client, db, two_steps) -> None:
@@ -153,3 +157,33 @@ def test_resume_nothing_to_retry(learner_client, db) -> None:
     response = learner_client.post("/api/learning/resume")
     assert response.status_code == 404, response.text
     assert response.json()["error"] == "nothing_to_resume"
+
+
+def test_raising_limit_continues_spending_paused_run(learner_client, db, two_steps) -> None:
+    """Raising the limit resumes a spending-paused run and logs the message."""
+    from decimal import Decimal
+
+    from charie.shared.settings import set_setting
+    from charie.shared.tables.usage import AiCall
+
+    log_in(learner_client)
+    run_id = _start(learner_client)["id"]
+    with session_scope() as session:
+        session.add(
+            AiCall(
+                app="tests",
+                job="write_answer",
+                provider="meta",
+                model="muse-wonder-1.0",
+                cost_usd=Decimal("10"),
+            )
+        )
+        session.commit()
+        set_setting(session, "spend_limit_usd", 5)
+        assert runs.pause_run(session, run_id, "spending") is True
+        session.commit()
+    assert _run(run_id).status == "paused"
+    response = learner_client.patch("/api/settings", json={"spend_limit_usd": 150})
+    assert response.status_code == 200, response.text
+    assert _run(run_id).status == "running"
+    assert any("Continuing paused run." in message for message in _events(run_id))

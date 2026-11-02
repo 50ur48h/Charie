@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from charie.shared.ai.jobs import get_job_settings
 from charie.shared.ai.spending import as_utc, month_spent, month_window, spending_state
 from charie.shared.db import get_session
 from charie.shared.errors import ApiError
@@ -93,6 +94,7 @@ class UsageSummary(BaseModel):
     per_day: list[UsageDay]
     per_group: list[UsageGroup]
     top_questions: list[TopQuestion]
+    model: str
 
 
 def money(value: Decimal | float | int) -> float:
@@ -230,6 +232,7 @@ def build_usage(
         "per_day": per_day,
         "per_group": per_group,
         "top_questions": top_questions,
+        "model": get_job_settings("write_answer").model,
     }
 
 

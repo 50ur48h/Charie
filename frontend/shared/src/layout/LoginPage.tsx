@@ -160,7 +160,7 @@ export function LoginPage({ app }: { app: "chat" | "learner" }) {
               Sales are <mark className="bg-transparent font-semibold text-good-ink">up 6.2%</mark>{" "}
               at <b>$1.42M</b>. The one to watch is{" "}
               <mark className="bg-transparent font-semibold text-bad-ink">
-                Downtown Austin, down 18.2%
+                delivery, down 18.2%
               </mark>
               .
             </p>

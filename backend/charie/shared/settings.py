@@ -148,6 +148,11 @@ def get_settings(session: Session = Depends(get_session)) -> dict[str, Any]:
 def patch_settings(patch: SettingsPatch, session: Session = Depends(get_session)) -> dict[str, Any]:
     values = patch.values()
     check_patch(values)
+    old_limit = get_setting(session, "spend_limit_usd") if "spend_limit_usd" in values else None
     for key, value in values.items():
         set_setting(session, key, value)
+    if old_limit is not None:
+        from charie.learner.runs import resume_spending_paused
+
+        resume_spending_paused(session, old_limit)
     return read_settings(session)

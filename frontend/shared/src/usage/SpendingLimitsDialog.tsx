@@ -9,13 +9,17 @@ import {
 } from "../components/Dialog";
 import { Field } from "../components/Input";
 import { Input } from "../components/Input";
+import { nextLimit, validateLimit, validateWarn } from "../api/spending";
 
 // Spending limits dialog (architecture 09 PATCH /api/settings). The server
 // validates; the screen shows its error message. Shared by the banner and
-// the Usage page so both manage the same limits.
+// the Usage page so both manage the same limits. When paused, one click
+// raises straight to nextLimit and saves the warning level with it.
 export function SpendingLimitsDialog({
   limitUsd,
   warnPercent,
+  spentUsd,
+  paused = false,
   saving = false,
   serverError = null,
   onSave,
@@ -23,6 +27,8 @@ export function SpendingLimitsDialog({
 }: {
   limitUsd: number;
   warnPercent: number;
+  spentUsd?: number;
+  paused?: boolean;
   saving?: boolean;
   serverError?: string | null;
   onSave: (patch: { spend_limit_usd?: number; spend_warn_percent?: number }) => void;
@@ -33,18 +39,31 @@ export function SpendingLimitsDialog({
   const [blank, setBlank] = useState<string | null>(null);
 
   function save(): void {
-    const limitNum = Number(limit);
-    if (limit.trim() === "" || !Number.isFinite(limitNum) || limitNum <= 0) {
-      setBlank("The monthly credit must be more than $0.");
+    const limitError = validateLimit(limit);
+    if (limitError) {
+      setBlank(limitError);
       return;
     }
-    const warnNum = Number(warn);
-    if (warn.trim() === "" || !Number.isInteger(warnNum) || warnNum < 1 || warnNum > 99) {
-      setBlank("The warning level must be between 1 and 99 percent.");
+    const warnError = validateWarn(warn);
+    if (warnError) {
+      setBlank(warnError);
       return;
     }
     setBlank(null);
-    onSave({ spend_limit_usd: limitNum, spend_warn_percent: warnNum });
+    onSave({ spend_limit_usd: Number(limit), spend_warn_percent: Number(warn) });
+  }
+
+  function raise(): void {
+    const warnError = validateWarn(warn);
+    if (warnError) {
+      setBlank(warnError);
+      return;
+    }
+    setBlank(null);
+    onSave({
+      spend_limit_usd: nextLimit(spentUsd ?? limitUsd),
+      spend_warn_percent: Number(warn),
+    });
   }
 
   const error = blank ?? serverError;
@@ -98,6 +117,11 @@ export function SpendingLimitsDialog({
             </p>
           )}
           <DialogFooter>
+            {paused && spentUsd !== undefined && (
+              <Button type="button" disabled={saving} onClick={raise}>
+                Raise limit to ${nextLimit(spentUsd)}
+              </Button>
+            )}
             <Button variant="ghost" type="button" onClick={onClose}>
               Cancel
             </Button>

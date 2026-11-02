@@ -173,6 +173,7 @@ export interface AssistantMessage {
   status: MessageStatus;
   mode: MessageMode;
   answer: Answer | null;
+  feedback: "up" | "down" | null;
   thinking: ThinkingLine[];
   summary: ThinkingSummary | null;
 }

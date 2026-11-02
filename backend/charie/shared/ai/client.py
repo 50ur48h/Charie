@@ -33,7 +33,7 @@ from charie.shared.ai.provider import (
     short_reason,
 )
 from charie.shared.ai.replay import ReplayStore, default_dir, fingerprint
-from charie.shared.ai.spending import spending_state
+from charie.shared.ai.spending import check_can_start, spending_state
 
 MAX_RETRIES = 5
 BACKOFFS = (1, 2, 4, 8, 16)
@@ -94,8 +94,7 @@ class AiClient:
         settings = get_job_settings(job)
         limit, warn = self._cost_log.limits()
         spent = self._cost_log.month_spent(datetime.now(UTC))
-        if not already_running and spending_state(spent, limit, warn) == "paused":
-            raise SpendingPaused()
+        check_can_start(spent, limit, warn, allow_when_paused=already_running)
         prompt = load_prompt(job, self._prompts_dir)
         messages = build_messages(prompt, inputs, knowledge_summary)
         schema = form_schema(form)

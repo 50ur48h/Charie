@@ -159,6 +159,7 @@ export function mockUsage(month: string): UsageSummary {
     per_day: perDay,
     per_group: groups,
     top_questions: populated ? TOP_QUESTIONS : [],
+    model: "muse-wonder-1.0",
   };
 }
 

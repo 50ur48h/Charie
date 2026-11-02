@@ -54,6 +54,7 @@ export interface UsageSummary {
   per_day: UsageDay[];
   per_group: UsageGroup[];
   top_questions: TopQuestion[];
+  model: string;
 }
 
 import { useQuery } from "@tanstack/react-query";

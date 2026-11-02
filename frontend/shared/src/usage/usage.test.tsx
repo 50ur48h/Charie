@@ -53,15 +53,41 @@ describe("SpendingLimitsDialog", () => {
     await user.type(screen.getByLabelText("Monthly credit (USD)"), "-5");
     await user.click(screen.getByRole("button", { name: "Save limits" }));
     const alerts = () => screen.getAllByRole("alert").map((a) => a.textContent).join(" ");
-    expect(alerts()).toContain("more than $0");
+    expect(alerts()).toContain("between $0.01 and $100,000");
     expect(onSave).not.toHaveBeenCalled();
     await user.clear(screen.getByLabelText("Monthly credit (USD)"));
     await user.type(screen.getByLabelText("Monthly credit (USD)"), "200");
     await user.clear(screen.getByLabelText("Warn me at (percent)"));
     await user.type(screen.getByLabelText("Warn me at (percent)"), "150");
     await user.click(screen.getByRole("button", { name: "Save limits" }));
-    expect(alerts()).toContain("between 1 and 99");
+    expect(alerts()).toContain("from 1 to 99");
     expect(onSave).not.toHaveBeenCalled();
+    await user.clear(screen.getByLabelText("Monthly credit (USD)"));
+    await user.type(screen.getByLabelText("Monthly credit (USD)"), "200");
+    await user.clear(screen.getByLabelText("Warn me at (percent)"));
+    await user.type(screen.getByLabelText("Warn me at (percent)"), "70");
+    await user.click(screen.getByRole("button", { name: "Save limits" }));
+    expect(onSave).toHaveBeenCalledWith({ spend_limit_usd: 200, spend_warn_percent: 70 });
+  });
+
+  test("raise_limit: one click jumps straight to nextLimit", async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn();
+    const client = new QueryClient();
+    render(
+      <QueryClientProvider client={client}>
+        <SpendingLimitsDialog
+          limitUsd={150}
+          warnPercent={80}
+          spentUsd={150}
+          paused
+          onSave={onSave as never}
+          onClose={vi.fn()}
+        />
+      </QueryClientProvider>,
+    );
+    await user.click(screen.getByRole("button", { name: "Raise limit to $200" }));
+    expect(onSave).toHaveBeenCalledWith({ spend_limit_usd: 200, spend_warn_percent: 80 });
   });
 });
 

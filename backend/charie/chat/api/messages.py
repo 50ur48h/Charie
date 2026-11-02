@@ -3,6 +3,7 @@
 import json
 
 from fastapi import APIRouter, Depends, Request
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from sse_starlette.sse import EventSourceResponse
@@ -120,3 +121,80 @@ async def stream_message(message_id: int, request: Request) -> EventSourceRespon
         # the first event, so it is never applied here.
         events = _rebuilt_events(message_id, thinking, summary, done)
     return EventSourceResponse(events, ping=15)
+
+
+class FeedbackBody(BaseModel):
+    vote: str | None
+    note: str | None = None
+
+
+def _finished_answer(session: Session, message_id: int) -> Message:
+    """A finished assistant message, or the 404/409 the plan requires."""
+    message = session.get(Message, message_id)
+    if message is None:
+        raise ApiError(404, "not_found", "That message doesn't exist.")
+    if message.role != "assistant" or message.status != "done":
+        raise ApiError(409, "not_an_answer", "You can only rate a finished answer.")
+    return message
+
+
+@messages_router.post("/api/messages/{message_id}/feedback")
+def set_feedback(
+    message_id: int, body: FeedbackBody, session: Session = Depends(get_session)
+) -> dict:
+    """Save or clear a vote; the answer text never changes."""
+    message = _finished_answer(session, message_id)
+    if body.vote not in ("up", "down", None):
+        raise ApiError(400, "bad_vote", "Vote up, down or clear it.")
+    note = (body.note or "").strip() or None
+    if note is not None and len(note) > 500:
+        raise ApiError(400, "note_too_long", "The note is too long. Keep it under 500 characters.")
+    message.feedback = body.vote
+    # Clearing the vote clears its note too.
+    message.feedback_note = note if body.vote is not None else None
+    session.commit()
+    return {"vote": message.feedback}
+
+
+class WrongBody(BaseModel):
+    correction: str
+
+
+@messages_router.post("/api/messages/{message_id}/wrong", status_code=201)
+def report_wrong(message_id: int, body: WrongBody, session: Session = Depends(get_session)) -> dict:
+    """Queue a correction to-do; the saved vote never changes."""
+    from charie.shared.knowledge.todos import add_learner_todo
+
+    message = _finished_answer(session, message_id)
+    text = (body.correction or "").strip()
+    if not text:
+        raise ApiError(400, "empty_text", "Please write what's wrong.")
+    if len(text) > 2000:
+        raise ApiError(
+            400,
+            "correction_too_long",
+            "The correction is too long. Keep it under 2,000 characters.",
+        )
+    question = session.scalar(
+        select(Message.text_)
+        .where(
+            Message.chat_id == message.chat_id,
+            Message.role == "user",
+            Message.id < message.id,
+        )
+        .order_by(Message.id.desc())
+        .limit(1)
+    )
+    todo_id = add_learner_todo(
+        session,
+        "correction",
+        text,
+        {
+            "chat_id": message.chat_id,
+            "message_id": message.id,
+            "question": question or "",
+            "words": text,
+        },
+    )
+    session.commit()
+    return {"todo_id": todo_id}

@@ -28,11 +28,14 @@ const votedClass = "bg-accent-soft text-accent-ink";
 export function AnswerActions({
   messageId,
   answer,
+  initialVote,
 }: {
   messageId: number;
   answer: Answer;
+  initialVote: FeedbackVote;
 }) {
-  const [vote, setVote] = useState<FeedbackVote>(null);
+  // The saved vote from the last load; voting updates it optimistically.
+  const [vote, setVote] = useState<FeedbackVote>(initialVote);
   const [wrongOpen, setWrongOpen] = useState(false);
   const inflight = useRef(false);
   const feedback = useFeedback();

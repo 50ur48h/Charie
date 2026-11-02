@@ -52,7 +52,7 @@ function AnsweredRow({
 }
 
 const TABS: { value: QuestionStatus; label: string; empty: string }[] = [
-  { value: "waiting", label: "Waiting", empty: "No questions waiting for you." },
+  { value: "waiting", label: "Waiting", empty: "Nothing waiting. Charie will ask here when it finds something only you can answer." },
   { value: "answered", label: "Answered", empty: "No answers yet." },
   { value: "skipped", label: "Skipped", empty: "Nothing skipped." },
 ];
@@ -77,7 +77,7 @@ export function QuestionsPage() {
   const loading = TABS.some((tab) => queries[tab.value].isPending);
 
   function askAbout(question: OwnerQuestion): void {
-    navigate(`/?draft=${encodeURIComponent(question.title)}`);
+    navigate(`/?draft=${encodeURIComponent(`Help me decide: ${question.title}`)}`);
   }
 
   return (

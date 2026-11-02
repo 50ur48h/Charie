@@ -4,6 +4,9 @@ const ci = !!process.env.CI;
 
 export default defineConfig({
   testDir: "e2e",
+  // The real-mode journeys live here too but only run on the laptop
+  // through playwright.real.config.ts (scripts/e2e_real.py run).
+  testIgnore: ["real/**"],
   retries: ci ? 1 : 0,
   reporter: [["html", { open: "never" }]],
   use: {
