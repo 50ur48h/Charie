@@ -92,6 +92,11 @@ class MessageFeed:
                 last = item.id
                 yield item
             if self._closed:
+                # The snapshot above can predate the close: drain what
+                # landed after it, so no event goes missing.
+                for item in self.events_after(last):
+                    last = item.id
+                    yield item
                 return
             waiter = asyncio.Event()
             with self._guard:
