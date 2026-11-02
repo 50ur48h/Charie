@@ -25,6 +25,8 @@ def test_estimate_scales_to_spark() -> None:
 
 
 def test_apply_model_flags_pins_env_and_clears_cache(monkeypatch) -> None:
+    monkeypatch.setenv("AI_MODEL", "unused-before")
+    monkeypatch.setenv("AI_REASONING_EFFORT", "unused-before")
     args = argparse.Namespace(model="muse-spark-1.3-contributor", effort="high")
     _apply_model_flags(args)
     try:
