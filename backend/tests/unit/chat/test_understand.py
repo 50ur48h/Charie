@@ -523,7 +523,7 @@ def test_dropped_gross_starts_no_recipe_task() -> None:
         question="December orders and net sales",
     )
     assert reply.asks == []
-    tasks = starter_tasks(reply, kb.titles())
+    tasks, _dropped = starter_tasks(reply, kb, "December orders and net sales")
     assert tasks == []
     assert all(task.kind != "recipe" for task in tasks)
 

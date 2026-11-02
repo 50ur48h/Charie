@@ -128,7 +128,8 @@ def test_documents_question(db_session, case_id) -> None:
     ctx = shop._ctx(db_session, version_id, question=question.question)
     understand(ctx)
     kb = KbView.load(db_session, version_id)
-    for task in starter_tasks(ctx.understanding, kb.titles()):
+    tasks, _dropped = starter_tasks(ctx.understanding, kb, question.question)
+    for task in tasks:
         if task.kind == "documents":
             run_document_task(task, ctx)
     book = shop._notebook(db_session, ctx)

@@ -8,12 +8,19 @@ and the check still decides.
 """
 
 import asyncio
+import json
 
 from charie.chat.analyst.enough import run_check_enough
 from charie.chat.analyst.helpers.data import add_period_items, run_recipe_task
 from charie.chat.analyst.helpers.documents import run_document_task
 from charie.chat.analyst.helpers.new_number import run_new_number_task
-from charie.chat.analyst.helpers.tasks import Task, documents_why, starter_tasks
+from charie.chat.analyst.helpers.tasks import (
+    MAX_TASKS,
+    Task,
+    _new_number_why,
+    documents_why,
+    starter_tasks,
+)
 from charie.chat.analyst.kb_view import KbView
 from charie.chat.analyst.notebook import FindingValue, Notebook
 from charie.chat.analyst.plan import plan_round
@@ -40,7 +47,7 @@ async def run_rounds(ctx) -> list[Task]:
     if kind == "about_answer":
         _remember_stop(ctx, "about_answer", "")
         return []
-    if kind == "not_in_data":
+    if kind == "not_in_data" and not _periods(ctx):
         return await _run_single_document(ctx)
     if ctx.state.finish_requested.is_set():
         _remember_stop(ctx, "finished", "")
@@ -48,17 +55,40 @@ async def run_rounds(ctx) -> list[Task]:
     add_period_items(ctx)
     with session_scope() as session:
         kb = KbView.load(session, ctx.kb_version_id)
-    planned = starter_tasks(ctx.understanding, kb.titles())
+    if kind == "not_in_data":
+        planned = _not_in_data_start(ctx)
+        if planned is None:
+            return await _run_single_document(ctx)
+        dropped = []
+    else:
+        planned, dropped = starter_tasks(ctx.understanding, kb, ctx.question)
+        planned = _top_up_why(ctx, planned)
+    ctx.problems.extend(dropped)
     ran: list[Task] = []
     current = list(planned)
     missing = ""
+    last_missing = ""
+    prev_sig = _evidence_sig(ctx)
     for round_no in range(1, MAX_ROUNDS + 1):
         if ctx.state.finish_requested.is_set():
             break
         seq = _start_round(ctx, current, round_no)
         await _run_tasks(current, ctx, round_no)
         ran.extend(current)
+        sig = _evidence_sig(ctx)
+        if current and sig == prev_sig:
+            fresh = run_check_enough(ctx, round_no)
+            missing = last_missing or fresh
+            _finish_round(ctx, seq, current, round_no, missing)
+            ctx.log.add(
+                "note",
+                "The rounds stalled: a round added no new evidence, so they stop here.",
+                missing or "Nothing new to try.",
+            )
+            break
+        prev_sig = sig
         missing = run_check_enough(ctx, round_no)
+        last_missing = missing
         _finish_round(ctx, seq, current, round_no, missing)
         if not missing:
             break
@@ -109,6 +139,93 @@ async def _run_single_document(ctx) -> list[Task]:
     return current
 
 
+def _periods(ctx) -> list:
+    """The resolved periods, or empty when the question names none."""
+    return list(getattr(ctx.periods, "periods", None) or [])
+
+
+def _task_labels(ctx) -> list[str]:
+    """Period labels like p1 for this question."""
+    return [f"p{num}" for num in range(1, len(_periods(ctx)) + 1)]
+
+
+def _number_tasks(ctx, topics: list[str]) -> list[Task]:
+    """One new-number task per topic: worked out two ways, never guessed."""
+    labels = _task_labels(ctx)
+    tasks = []
+    for topic in topics[:MAX_TASKS]:
+        tasks.append(
+            Task(
+                kind="new_number",
+                why=_new_number_why(len(labels)),
+                new_metric=topic,
+                filters=list(ctx.understanding.filters),
+                periods=labels[:3],
+            )
+        )
+    return tasks
+
+
+def _not_in_data_start(ctx) -> list[Task] | None:
+    """Number tasks when periods and topics exist, else None for one doc task."""
+    if not _periods(ctx):
+        return None
+    tasks = _number_tasks(ctx, list(ctx.understanding.document_topics or []))
+    return tasks or None
+
+
+def _top_up_why(ctx, planned: list[Task]) -> list[Task]:
+    """Why over 2+ periods needs per-period numbers, not quotes alone."""
+    kind = ctx.understanding.kind if ctx.understanding is not None else ""
+    if kind != "why" or len(_periods(ctx)) < 2:
+        return planned
+    if any(task.kind in ("recipe", "new_number") for task in planned):
+        return planned
+    topics = list(ctx.understanding.document_topics or [])
+    if not topics:
+        return planned
+    return [*planned, *_number_tasks(ctx, topics[:1])]
+
+
+def _canon(value) -> str:
+    """One stable string for a value or proof mapping."""
+    if not isinstance(value, dict):
+        value = {"value": value}
+    try:
+        return json.dumps(value, sort_keys=True, default=str)
+    except (TypeError, ValueError):
+        return str(value)
+
+
+def evidence_signature(items) -> tuple:
+    """Content identity: kind, status, description, values and provenance.
+
+    Labels never count, so a re-added duplicate finding is the same
+    evidence; period cards are trace, not evidence.
+    """
+    keys = set()
+    for item in items:
+        if item.kind == "period":
+            continue
+        keys.add(
+            (
+                item.kind,
+                getattr(item, "status", "") or "",
+                item.description or "",
+                _canon(getattr(item, "value", None)),
+                _canon(getattr(item, "proof", None)),
+            )
+        )
+    return tuple(sorted(keys))
+
+
+def _evidence_sig(ctx) -> tuple:
+    """The notebook evidence signature, read without changing it."""
+    with session_scope() as session:
+        book = Notebook.load(session, ctx.message_id, ctx.chat_id)
+        return evidence_signature(book.items())
+
+
 def _remember_stop(ctx, reason: str, missing: str) -> None:
     """What the writer needs: why the rounds stopped and what is still open."""
     ctx.stop_reason = reason
@@ -121,6 +238,12 @@ def _remember_stop(ctx, reason: str, missing: str) -> None:
             if item.kind == "finding"
             and FindingValue.model_validate(item.value).type in ("nothing_found", "couldnt_check")
         ]
+        kind = ctx.understanding.kind if ctx.understanding is not None else ""
+        no_numbers = not any(item.kind == "number" for item in book.items())
+        if kind in ("why", "clear") and _periods(ctx) and no_numbers:
+            note = "verified values for the periods"
+            if note not in ctx.still_open:
+                ctx.still_open.append(note)
 
 
 def _start_round(ctx, current: list[Task], round_no: int) -> int:

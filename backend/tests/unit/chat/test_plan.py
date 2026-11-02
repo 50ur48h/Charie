@@ -110,3 +110,115 @@ def test_new_number_and_documents_picks_keep_their_fields() -> None:
         ("documents", "net sales"),
     ]
     assert all(task.filters == [] for task in picked)
+
+
+def _loaded_money():
+    from types import SimpleNamespace as NS
+
+    return NS(
+        usable={
+            "orders",
+            "metric.delivered_order_amount",
+            "metric.gross_including",
+            "metric.true_net",
+            "metric.operating_expenses",
+        },
+        dimensions={},
+        meanings={
+            "metric.delivered_order_amount": "Total amount for delivered orders.",
+            "metric.gross_including": "Total charged, including tax and delivery fees.",
+            "metric.true_net": "Sales minus refunds for delivered orders.",
+            "metric.operating_expenses": "Simulated monthly overhead amount.",
+        },
+        recipes={
+            "orders": NS(unit="count"),
+            "metric.delivered_order_amount": NS(unit="money"),
+            "metric.gross_including": NS(unit="money"),
+            "metric.true_net": NS(unit="money"),
+            "metric.operating_expenses": NS(unit="money"),
+        },
+        titles={
+            "orders": "Orders",
+            "metric.delivered_order_amount": "Delivered order amount",
+            "metric.gross_including": "Gross including tax and fees",
+            "metric.true_net": "True net sales",
+            "metric.operating_expenses": "Operating expenses",
+        },
+    )
+
+
+def _ctx_question(question):
+    return SimpleNamespace(
+        understanding=SimpleNamespace(filters=[]),
+        periods=SimpleNamespace(periods=["p1"]),
+        question=question,
+        problems=[],
+    )
+
+
+def test_plan_drops_contradicted_recipe_pick() -> None:
+    """Net sales never runs the delivered-amount recipe, with a note."""
+    ctx = _ctx_question("What were net sales in December?")
+    picked = _checked(
+        _loaded_money(),
+        ctx,
+        _form(_recipe(metric="metric.delivered_order_amount", why="Get the amount.")),
+        [],
+    )
+    assert picked == []
+    assert any("metric.delivered_order_amount" in note for note in ctx.problems)
+
+
+def test_plan_keeps_compatible_recipe_pick() -> None:
+    """A count recipe for an undocumented term still runs."""
+    ctx = _ctx_question("What were net sales in December?")
+    picked = _checked(
+        _loaded_money(),
+        ctx,
+        _form(_recipe(metric="orders", why="Get the orders.")),
+        [],
+    )
+    assert [task.metric_key for task in picked] == ["orders"]
+    assert ctx.problems == []
+
+
+def test_plan_blocks_including_tax_meaning() -> None:
+    """Review finding: "including tax and fees" is not a subtraction."""
+    ctx = _ctx_question("What were net sales in December?")
+    picked = _checked(
+        _loaded_money(),
+        ctx,
+        _form(_recipe(metric="metric.gross_including", why="Get the gross.")),
+        [],
+    )
+    assert picked == []
+    assert any("metric.gross_including" in note for note in ctx.problems)
+
+
+def test_plan_allows_stated_subtraction() -> None:
+    """A meaning that states minus refunds is compatible."""
+    ctx = _ctx_question("What were net sales in December?")
+    picked = _checked(
+        _loaded_money(),
+        ctx,
+        _form(_recipe(metric="metric.true_net", why="Get net sales.")),
+        [],
+    )
+    assert [task.metric_key for task in picked] == ["metric.true_net"]
+    assert ctx.problems == []
+
+
+def test_plan_allows_named_title_for_its_task() -> None:
+    """Review finding: the named operating-expenses pick still runs."""
+    ctx = _ctx_question("Show net sales and operating expenses")
+    picked = _checked(
+        _loaded_money(),
+        ctx,
+        _form(
+            _recipe(metric="metric.delivered_order_amount", why="Get the amount."),
+            _recipe(metric="metric.operating_expenses", why="Get expenses."),
+        ),
+        [],
+    )
+    assert [task.metric_key for task in picked] == ["metric.operating_expenses"]
+    assert len(ctx.problems) == 1

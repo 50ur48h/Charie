@@ -21,6 +21,7 @@ from charie.chat.analyst.chat_context import (
     update_context,
 )
 from charie.chat.analyst.checks import (
+    CheckFailure,
     check_body,
     check_inputs,
     correction_note_text,
@@ -30,7 +31,7 @@ from charie.chat.analyst.checks import (
 from charie.chat.analyst.context import AnalystContext
 from charie.chat.analyst.loop import run_extra_round, run_rounds
 from charie.chat.analyst.notebook import Notebook, QuoteValue
-from charie.chat.analyst.render import fallback_blocks, render_answer
+from charie.chat.analyst.render import fallback_blocks, render_answer, render_problems
 from charie.chat.analyst.review import review_answer
 from charie.chat.analyst.stream import finish_feed, send_choice, stream_answer
 from charie.chat.analyst.write import write_answer
@@ -239,6 +240,7 @@ async def write_checked_answer(
     rounds = _round_count(ctx)
     fixes: list[str] = [instruction] if instruction else []
     fixes_left = 2
+    prev_sig: tuple | None = None
     while True:
         if ctx.state.finish_requested.is_set():
             return _stopped_fallback(ctx)
@@ -246,21 +248,33 @@ async def write_checked_answer(
         if ctx.state.finish_requested.is_set():
             return _stopped_fallback(ctx)
         rendered = render_answer(draft, ctx)
-        if rendered is None:
-            return None
-        blocks, shown = rendered
-        ctx.draft = draft
-        review = await asyncio.to_thread(review_answer, ctx, blocks)
-        if ctx.state.finish_requested.is_set():
-            return _stopped_fallback(ctx)
-        _review_line(ctx, review)
         inputs = check_inputs(ctx)
-        blocks, inputs = _add_correction_notes(ctx, blocks, shown, inputs)
-        failures = run_checks(draft, blocks, inputs)
-        _check_line(ctx, failures, review, inputs)
+        if rendered is None:
+            blocks, shown, review = [], [], None
+            failures = [
+                CheckFailure(check=0, name="unrenderable_draft", message=problem, where="writer")
+                for problem in render_problems(draft, ctx)
+            ] or [
+                CheckFailure(
+                    check=0,
+                    name="unrenderable_draft",
+                    message="The draft names nothing the notebook shows.",
+                    where="writer",
+                )
+            ]
+        else:
+            blocks, shown = rendered
+            ctx.draft = draft
+            review = await asyncio.to_thread(review_answer, ctx, blocks)
+            if ctx.state.finish_requested.is_set():
+                return _stopped_fallback(ctx)
+            _review_line(ctx, review)
+            blocks, inputs = _add_correction_notes(ctx, blocks, shown, inputs)
+            failures = run_checks(draft, blocks, inputs)
         if ctx.state.finish_requested.is_set():
             return _stopped_fallback(ctx)
-        if review.verdict == "good" and not failures:
+        _check_line(ctx, failures, review, inputs)
+        if review is not None and review.verdict == "good" and not failures:
             return blocks, shown, False, False
         if fixes_left == 0:
             if failures:
@@ -269,15 +283,28 @@ async def write_checked_answer(
         fixes_left -= 1
         attempt = 2 - fixes_left
         fix_seq = ctx.log.start("step", f"Fixing the answer (try {attempt} of 2)")
-        if review.needs_more_data and _extra_round_allowed(ctx, rounds):
+        if (
+            review is not None
+            and review.needs_more_data
+            and _extra_round_allowed(ctx, rounds)
+            and (review.missing_data or "") not in ctx.extra_focuses
+        ):
+            ctx.extra_focuses.append(review.missing_data or "")
             current = await run_extra_round(ctx, ran, rounds + 1, review.missing_data or "")
             ran.extend(current)
             rounds += 1
             fixes = [instruction] if instruction else []
         else:
-            fixes = [instruction] if instruction else []
-            fixes.extend(f"{fix.problem}: {fix.how_to_fix}" for fix in review.fixes)
-            fixes.extend(failure.message for failure in failures)
+            next_fixes = [instruction] if instruction else []
+            if review is not None:
+                next_fixes.extend(f"{fix.problem}: {fix.how_to_fix}" for fix in review.fixes)
+            next_fixes.extend(failure.message for failure in failures)
+            sig = tuple(sorted(next_fixes))
+            if next_fixes and sig == prev_sig:
+                ctx.log.finish(fix_seq, status="done")
+                return *fallback_blocks(ctx, failures), True, False
+            prev_sig = sig
+            fixes = next_fixes
         ctx.log.finish(fix_seq, status="done")
 
 
@@ -317,7 +344,7 @@ def _check_line(ctx: AnalystContext, failures: list, review, inputs) -> None:
     """Every number, claim, quote and chart; failures stay in the details."""
     seq = ctx.log.start("check", "Checking every number, claim, quote and chart")
     details: dict = {"failures": [asdict(failure) for failure in failures]}
-    if review.fixes:
+    if review is not None and review.fixes:
         details["review_fixes"] = [fix.model_dump() for fix in review.fixes]
     if not failures:
         ctx.log.finish(seq, status="done", title="Checks passed", details=details)
@@ -352,9 +379,14 @@ def _save_temp_answer(ctx: AnalystContext, tasks: list) -> None:
     with session_scope() as session:
         book = Notebook.load(session, ctx.message_id, ctx.chat_id)
         view = book.fallback_view()
+    warn = {
+        "type": "callout",
+        "tone": "warn",
+        "text": "The full explanation failed, so here is the checked notebook.",
+    }
     sentences = [{"kind": "note", "text": TEMP_NOTE}]
     sentences.extend({"kind": "note", "text": line} for line in view.splitlines() if line.strip())
-    blocks = [{"type": "text", "paragraphs": [{"sentences": sentences}]}]
+    blocks = [{"type": "text", "paragraphs": [{"sentences": sentences}]}, warn]
     ctx.log.add("note", TEMP_NOTE, "Here is what I found.")
     _save_blocks(ctx, blocks, [])
 

@@ -11,6 +11,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from charie.chat.analyst.helpers.compatibility import contradicted_recipe
 from charie.chat.analyst.understand import Filter, Understanding
 
 #: One question's tasks share a lock so notebook labels stay unique.
@@ -78,10 +79,22 @@ def documents_why() -> str:
     return "Look through the documents."
 
 
-def starter_tasks(understanding: Understanding, titles: dict[str, str]) -> list[Task]:
-    """Documents first, then one task per ask; at most 4 in all."""
+def starter_tasks(
+    understanding: Understanding, kb, question: str = ""
+) -> tuple[list[Task], list[str]]:
+    """Documents first, then one task per ask; at most 4 in all.
+
+    Returns the tasks and the dropped-recipe notes: an ask whose recipe
+    contradicts a documented business term never runs, so gross can no
+    longer answer for net. The writer sees the notes and stays honest.
+    """
+    titles = kb.titles() if hasattr(kb, "titles") else kb
+    meanings = kb.meanings() if hasattr(kb, "meanings") else {}
+    metrics = kb.metrics() if hasattr(kb, "metrics") else {}
+    units = {key: (details or {}).get("unit") for key, details in metrics.items()}
     labels = [f"p{num}" for num in range(1, len(understanding.periods) + 1)]
     tasks: list[Task] = []
+    dropped: list[str] = []
     for topic in understanding.document_topics:
         if len(tasks) >= MAX_TASKS:
             break
@@ -93,10 +106,21 @@ def starter_tasks(understanding: Understanding, titles: dict[str, str]) -> list[
                 filters=list(understanding.filters),
             )
         )
-    for ask in understanding.asks:
+    for pos, ask in enumerate(understanding.asks, start=1):
         if len(tasks) >= MAX_TASKS:
             break
         if ask.metric_key:
+            reason = (
+                contradicted_recipe(question, ask.metric_key, meanings, units, titles)
+                if question
+                else None
+            )
+            if reason is not None:
+                dropped.append(
+                    f"Ask {pos} needs a worked-out number, not the "
+                    f"{ask.metric_key} recipe: {reason}"
+                )
+                continue
             split_titles = [titles.get(key, key) for key in ask.split_by]
             tasks.append(
                 Task(
@@ -121,4 +145,4 @@ def starter_tasks(understanding: Understanding, titles: dict[str, str]) -> list[
                     top_n=ask.top_n,
                 )
             )
-    return tasks
+    return tasks, dropped

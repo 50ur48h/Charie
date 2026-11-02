@@ -870,6 +870,27 @@ def render_answer(draft, ctx) -> tuple[list[dict], list[str]] | None:
         return _assemble(g, _render_ai(draft, g), used_labels(draft))
 
 
+def render_problems(draft, ctx) -> list[str]:
+    """Why render_answer refuses this draft, in plain words."""
+    with session_scope() as session:
+        g = _load_inputs(session, ctx)
+    problems = []
+    for label in used_labels(draft):
+        if label not in g.cards:
+            problems.append(
+                f"The draft names [{label}], which the notebook does not show. "
+                "Use a shown label or drop it."
+            )
+    for text in ai_texts(draft):
+        if not check_matches(text, g.view):
+            problems.append(
+                "The draft says something the notebook does not show. "
+                "Copy the notebook's words exactly."
+            )
+            break
+    return problems
+
+
 def fallback_blocks(ctx, failures=None) -> tuple[list[dict], list[str]]:  # noqa: ARG001
     """The checked numbers and tables when no draft passes, all marked shown."""
     with session_scope() as session:

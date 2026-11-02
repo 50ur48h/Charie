@@ -219,7 +219,7 @@ def test_review_input_has_filled_numbers(db_session, loop_shop, monkeypatch) -> 
 
 
 def test_two_fixes_then_fallback(db_session, loop_shop, monkeypatch) -> None:
-    """An unhappy reviewer twice means the fallback, not a third rewrite."""
+    """Two identical fixes mean the fallback, not a third rewrite."""
     ctx = _seeded(shop._ctx(db_session, loop_shop), db_session)
     fix = {
         "verdict": "fix",
@@ -234,7 +234,7 @@ def test_two_fixes_then_fallback(db_session, loop_shop, monkeypatch) -> None:
     assert saved.status == "done"
     assert saved.answer["blocks"][1]["type"] == "callout"
     titles = [line.title for line in _lines(db_session, ctx.message_id)]
-    assert titles.count("Review: 1 thing to fix") == 3
+    assert titles.count("Review: 1 thing to fix") == 2
     assert "Fixing the answer (try 2 of 2)" in titles
 
 
@@ -379,3 +379,53 @@ def test_stray_digits_left_out_of_check_body(db_session, loop_shop, monkeypatch)
     assert any(
         "30 orders total now" in failure["message"] for failure in checks[-1].details["failures"]
     )
+
+
+def test_same_focus_extra_round_runs_once(db_session, loop_shop, monkeypatch) -> None:
+    """The reviewer asking twice for the same data gets one more round, then a rewrite."""
+    ctx = _seeded(shop._ctx(db_session, loop_shop), db_session)
+    need = {
+        "verdict": "fix",
+        "fixes": [],
+        "needs_more_data": True,
+        "missing_data": "sales by restaurant",
+    }
+    _ready(
+        monkeypatch,
+        [_good_draft(), _good_draft(), _good_draft()],
+        [need, need, _good_review()],
+        enough=2,
+        plans=1,
+    )
+    asyncio.run(answer_question(ctx))
+    saved = db_session.get(Message, ctx.message_id)
+    assert saved.status == "done"
+    titles = [line.title for line in _lines(db_session, ctx.message_id)]
+    assert sum(1 for title in titles if title.startswith("Round 2")) == 1
+    assert not any(title.startswith("Round 3") for title in titles)
+
+
+def test_render_problem_names_unknown_label(db_session, loop_shop) -> None:
+    """A draft naming a label outside the notebook explains the refusal."""
+    from charie.chat.analyst.render import render_problems
+
+    ctx = _seeded(shop._ctx(db_session, loop_shop), db_session)
+    draft = AnswerDraft.model_validate(
+        {
+            "blocks": [
+                {
+                    "type": "text",
+                    "sentences": [
+                        {
+                            "kind": "fact",
+                            "text": "Mystery [n9].",
+                            "proof": ["n9"],
+                            "starts_paragraph": True,
+                        }
+                    ],
+                }
+            ]
+        }
+    )
+    problems = render_problems(draft, ctx)
+    assert any("[n9]" in problem for problem in problems)
