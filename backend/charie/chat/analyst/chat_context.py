@@ -36,7 +36,11 @@ class ShownList(BaseModel):
 
 
 class SaidFact(BaseModel):
-    """One number the owner saw, in the words it was shown in."""
+    """One number the owner saw, in the words it was shown in.
+
+    `ref` is the message id and label, like `812:n1`, so two
+    messages can use n1 for different facts.
+    """
 
     ref: str = ""
     key: str = "{}"
@@ -271,19 +275,21 @@ def update_context(context: ChatContext, finished: FinishedAnswer) -> ChatContex
         )
     lists = lists[-3:]
     said = list(context.said)
-    old_keys = {fact.ref: fact.key for fact in said}
+    # A rerun without proof keeps the newest same-label key.
+    old_keys = {fact.ref.split(":", 1)[-1]: fact.key for fact in said}
     for label in finished.used_labels:
         item = items.get(label)
         if item is None or item.get("kind") != "number":
             continue
+        ref = f"{finished.message_id}:{label}"
         value = item.get("value") or {}
         key = fact_key_text(item)
         if key == "{}" and label in old_keys:
             key = old_keys[label]
-        said = [fact for fact in said if fact.ref != label]
+        said = [fact for fact in said if fact.ref != ref]
         said.append(
             SaidFact(
-                ref=label,
+                ref=ref,
                 key=key,
                 description=str(item.get("description", "")),
                 text=str(values.get(label, "")),

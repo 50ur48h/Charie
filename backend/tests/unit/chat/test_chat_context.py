@@ -183,8 +183,39 @@ def test_proof_key_carries_over_without_fact_key() -> None:
     rerun.used_labels = ["n1", "n3"]
     second = update_context(first, rerun)
     by_ref = {fact.ref: fact for fact in second.said}
-    assert by_ref["n1"].key == fact_key_text(_december().items[0])
-    assert by_ref["n3"].key != "{}"
+    assert by_ref["8:n1"].key == fact_key_text(_december().items[0])
+    assert by_ref["8:n3"].key != "{}"
+
+
+def test_two_answers_keep_their_own_n1() -> None:
+    """Two messages using n1 for different facts both stay available."""
+    from charie.chat.analyst.about import _parse_about_refs
+    from charie.chat.analyst.checks import _said_numbers
+
+    first = update_context(ChatContext(), _december())
+    rerun = _december()
+    rerun.message_id = 8
+    rerun.used_labels = ["n1"]
+    net_sales = dict(rerun.items[1])
+    net_sales["label"] = "n1"
+    rerun.items = [net_sales]
+    context = update_context(first, rerun)
+    assert [fact.ref for fact in context.said] == ["7:n1", "7:n2", "8:n1"]
+    by_ref = {fact.ref: fact for fact in context.said}
+    assert by_ref["7:n1"].description == "Shop orders in 1-31 Dec 2025"
+    assert by_ref["8:n1"].description == "Net sales in 1-31 Dec 2025"
+    assert by_ref["7:n1"].key != by_ref["8:n1"].key
+    numbers = _said_numbers(context.said)
+    assert [entry["fact_key"]["metric"] for entry in numbers] == [
+        "order_count",
+        "net_sales",
+        "net_sales",
+    ]
+    assert [entry["message_id"] for entry in numbers] == [7, 7, 8]
+    view = context_for_prompt(context)
+    assert "[7:n1] Shop orders in 1-31 Dec 2025 = 25.1K;" in view
+    assert "[8:n1] Net sales in 1-31 Dec 2025 = $1.35M;" in view
+    assert _parse_about_refs(["7:n1", "8:n1"]) == [(7, "n1"), (8, "n1")]
 
 
 def test_lists_keep_newest_three_and_find_dimension() -> None:
@@ -199,8 +230,19 @@ def test_lists_keep_newest_three_and_find_dimension() -> None:
         f"Orders by restaurant, run {turn}" for turn in (2, 3, 4)
     ]
     assert all(shown.dimension == "restaurant" for shown in context.lists)
-    assert len(context.said) == 2
-    assert [fact.ref for fact in context.said] == ["n1", "n2"]
+    assert len(context.said) == 10
+    assert [fact.ref for fact in context.said] == [
+        "10:n1",
+        "10:n2",
+        "11:n1",
+        "11:n2",
+        "12:n1",
+        "12:n2",
+        "13:n1",
+        "13:n2",
+        "14:n1",
+        "14:n2",
+    ]
 
 
 def test_save_and_reload_agree(db_session) -> None:
@@ -251,7 +293,7 @@ def test_context_view_numbers_the_newest_list_first() -> None:
         ],
         said=[
             SaidFact(
-                ref="n1",
+                ref="7:n1",
                 key="{}",
                 description="Net sales",
                 text="$1.3M",
@@ -270,5 +312,5 @@ def test_context_view_numbers_the_newest_list_first() -> None:
     second = view.index('List 2, "Older list"')
     assert first < second
     assert "1. Downtown Austin 2. Rice, Miller and Gutmann" in view
-    assert "Already said: [n1] Net sales = $1.3M;" in view
+    assert "Already said: [7:n1] Net sales = $1.3M;" in view
     assert "Possible reasons still open: The south branch closed." in view

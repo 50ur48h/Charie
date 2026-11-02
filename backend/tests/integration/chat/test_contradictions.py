@@ -58,7 +58,7 @@ def _seed(db_session):
         ChatContext(
             said=[
                 SaidFact(
-                    ref="n1",
+                    ref="7:n1",
                     key=json.dumps(fact),
                     description="Net sales",
                     text="$355.00",
@@ -67,7 +67,6 @@ def _seed(db_session):
                     currency="USD",
                     data_through="2025-12-31",
                     kb_version=version.id,
-                    message_id=7,
                 )
             ]
         ),

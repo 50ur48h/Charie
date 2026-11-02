@@ -935,6 +935,7 @@ def _said_numbers(said) -> list[dict]:
     earlier = []
     for fact in said or []:
         key = getattr(fact, "key", "") or ""
+        mid, _, _ = (getattr(fact, "ref", "") or "").partition(":")
         try:
             parsed = json.loads(key) if key else {}
         except ValueError:
@@ -949,7 +950,7 @@ def _said_numbers(said) -> list[dict]:
                 "description": getattr(fact, "description", ""),
                 "data_through": getattr(fact, "data_through", None),
                 "kb_version": getattr(fact, "kb_version", None),
-                "message_id": getattr(fact, "message_id", None),
+                "message_id": int(mid) if mid.isdigit() else None,
             }
         )
     return earlier

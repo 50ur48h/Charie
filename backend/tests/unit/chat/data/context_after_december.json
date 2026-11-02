@@ -47,7 +47,7 @@
   ],
   "said": [
     {
-      "ref": "n1",
+      "ref": "7:n1",
       "key": "{\"compare_period\":\"\",\"filters\":[],\"measure\":\"value\",\"metric\":\"order_count\",\"period\":\"2025-12-01/2025-12-31\",\"split\":{}}",
       "description": "Shop orders in 1-31 Dec 2025",
       "text": "25.1K",
@@ -58,7 +58,7 @@
       "kb_version": 2
     },
     {
-      "ref": "n2",
+      "ref": "7:n2",
       "key": "{\"compare_period\":\"\",\"filters\":[],\"measure\":\"value\",\"metric\":\"net_sales\",\"period\":\"2025-12-01/2025-12-31\",\"split\":{}}",
       "description": "Net sales in 1-31 Dec 2025",
       "text": "$1.35M",

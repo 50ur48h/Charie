@@ -254,7 +254,7 @@ Earlier:
 ["What was the delivered order amount in December 2025?"]
 Chat context:
 Looking at: delivered order amount; 1-31 Dec 2025
-Already said: [n1] Delivered order amount in 1-31 Dec 2025 = $1.52M;
+Already said: [812:n1] Delivered order amount in 1-31 Dec 2025 = $1.52M;
 Memories:
 []
 
