@@ -14,7 +14,7 @@ Rules at the top, always:
 - The skill runs and reports. It doesn't fix answers; fixing is planned work (Phase 13).
 
 1. **Read the arguments.** The set is `smoke`, `public` (the default) or `hidden`. Filters: `kind=<kind>` and `ids=<id,id>`. The mode is `--dry-run`, `fresh`, or neither (replay). Or the whole command is `override <id> <points> "<reason>"`.
-2. **Build the command,** run in `backend/`: `uv run python -m tests.questions.run --set <set>`, plus `--kind`, `--ids` and `--dry-run` as asked.
+2. **Build the command,** run in `backend/`: `uv run python -m tests.questions.run --set <set>`, plus `--kind`, `--ids` and `--dry-run` as asked. Model flags: `--model` (default `muse-spark-1.3-contributor`, practice tests) and `--effort` (default `high`); pass `--model muse-wonder-1.0` only to explicitly re-run on Wonder. Never add a fallback model.
 3. **Fresh runs:**
    1. Run the command with `--fresh --estimate`.
    2. Ask the owner, in these words: "This fresh run will cost about $X–Y. Type yes to go on."

@@ -1,4 +1,4 @@
-"""Prices: dollars per 1M tokens, checked 27 Oct 2026 (03, meta-api.md); Azure embeddings list price
+"""Prices: dollars per 1M tokens, Wonder checked 27 Oct 2026, Spark Contributor checked 2 Nov 2026
 checked 31 Oct 2026 (08, azure.md; confirm in portal at deployment)."""
 
 from decimal import Decimal
@@ -8,6 +8,7 @@ from charie.shared.ai.errors import AiError
 # (input, cached input, output) dollars per 1M tokens.
 PRICES: dict[str, tuple[str, str, str]] = {
     "muse-wonder-1.0": ("4.00", "0.20", "20.00"),
+    "muse-spark-1.3-contributor": ("0.10", "0.002", "0.20"),
     "text-embedding-3-large": ("0.13", "0.00", "0.00"),
 }
 

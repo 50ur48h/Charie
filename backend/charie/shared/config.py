@@ -40,6 +40,8 @@ class Settings(BaseSettings):
     azure_openai_api_version: str | None = None
     ai_replay: Literal["off", "record", "replay"] = "off"
     ai_replay_dir: str = "backend/tests/replays/"
+    ai_model: str | None = None
+    ai_reasoning_effort: str | None = None
     app_env: Literal["local", "azure"] = "local"
 
 
