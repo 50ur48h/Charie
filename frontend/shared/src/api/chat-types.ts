@@ -142,11 +142,17 @@ export type AnswerBlock =
   | MethodBlock
   | FollowUpsBlock;
 
+export interface QuickChoiceAnswer {
+  text: string;
+  options: { id: string; label: string }[];
+}
+
 export interface Answer {
   message_id: number;
   kb_version: number;
   data_through: string;
   blocks: AnswerBlock[];
+  choice?: QuickChoiceAnswer;
 }
 
 // Message shapes from the P10.1 contract: the user message carries

@@ -8,6 +8,7 @@ from sqlalchemy import select
 
 from charie.chat import chat_store
 from charie.chat.api.chats import chats_router
+from charie.chat.api.memories import memories_router
 from charie.chat.api.messages import messages_router
 from charie.chat.api.usage import usage_router
 from charie.shared.auth import auth_router, login_router
@@ -46,6 +47,7 @@ def build_app() -> FastAPI:
             usage_router,
             questions_router,
             chats_router,
+            memories_router,
             messages_router,
             make_knowledge_router(allow_draft=False),
         ),

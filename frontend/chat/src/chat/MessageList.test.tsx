@@ -40,7 +40,7 @@ function setMetrics(el: HTMLElement, scrollHeight: number, clientHeight: number)
 }
 
 function list(messages: ChatMessage[]) {
-  return <MessageList messages={messages} onFollowUp={vi.fn()} />;
+  return <MessageList messages={messages} onFollowUp={vi.fn()} onChoose={vi.fn()} running={false} />;
 }
 
 describe("MessageList", () => {
@@ -123,6 +123,8 @@ describe("MessageList", () => {
           assistantMessage(4, "thinking", []),
         ]}
         onFollowUp={vi.fn()}
+        onChoose={vi.fn()}
+        running={false}
         live={{ messageId: 2, feed }}
       />,
     );

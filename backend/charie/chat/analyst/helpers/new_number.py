@@ -115,6 +115,7 @@ def _proof(
     """Where a new number came from: both queries, never a recipe."""
     return {
         "task": task_signature(task),
+        "split_by": list(task.split_by),
         "recipe_key": "",
         "query_run_ids": run_ids,
         "way": "A+B",

@@ -27,7 +27,8 @@ from charie.chat.analyst.notebook import (
 from charie.shared.calc.core import ResultTable
 from charie.shared.db import session_scope
 from charie.shared.settings import get_setting
-from charie.shared.tables.chat import QueryRun
+from charie.shared.tables.chat import QueryRun, ThinkingEvent
+from charie.shared.tables.knowledge import KbVersion
 
 #: Columns that carry numbers a chart or spark line can draw.
 NUMBER_UNITS = ("money", "count", "percent", "ratio")
@@ -511,6 +512,73 @@ def code_notes(
             }
         )
     return notes
+
+
+def limited_method(session, message_id, chat_id, kb_version, labels, style="short"):
+    """One earlier answer's method block, limited to labels (or all)."""
+    stored = kb_version
+    row = session.scalar(select(KbVersion.id).where(KbVersion.number == stored))
+    kb = KbView.load(session, row if row is not None else stored)
+    book = Notebook.load(session, message_id, chat_id)
+    numbers = [
+        item
+        for item in book.items()
+        if item.kind == "number" and (labels is None or item.label in labels)
+    ]
+    titles, meanings = kb.titles(), kb.meanings()
+    used = []
+    for card in numbers:
+        key = (card.proof or {}).get("recipe_key")
+        if key and key not in used:
+            used.append(key)
+    definitions = [
+        f"{titles[key]}: {meanings[key]}" for key in used if key in titles and key in meanings
+    ]
+    definitions.extend(
+        f"{card.description}: not a standard measure yet, worked out two ways that agree."
+        for card in numbers
+        if (card.proof or {}).get("way") == "A+B" and not (card.proof or {}).get("recipe_key")
+    )
+    steps = [
+        row.title
+        for row in session.scalars(
+            select(ThinkingEvent)
+            .where(ThinkingEvent.message_id == message_id, ThinkingEvent.kind == "step")
+            .order_by(ThinkingEvent.seq)
+        ).all()
+        if (row.title or "").startswith("Round ")
+    ]
+    wanted: set[int] | None = None
+    if labels is not None:
+        wanted = set()
+        for card in numbers:
+            for run_id in (card.proof or {}).get("query_run_ids") or []:
+                wanted.add(run_id)
+    queries = []
+    for row in session.scalars(
+        select(QueryRun).where(QueryRun.message_id == message_id, QueryRun.status == "ok")
+    ).all():
+        if wanted is not None and row.id not in wanted:
+            continue
+        queries.append({"purpose": row.purpose, "sql": row.sql_text or ""})
+    sources = []
+    for card in book.items():
+        if card.kind != "quote":
+            continue
+        quote = QuoteValue.model_validate(card.value)
+        sources.append(
+            {"document": quote.document, "quote": quote.text, "location": quote.location}
+        )
+    values = values_for(numbers, style)
+    shown = [
+        {
+            "label": card.label,
+            "text": values.get(card.label, ""),
+            "description": card.description,
+        }
+        for card in numbers
+    ]
+    return method_block(definitions, steps, queries, sources), shown
 
 
 def method_block(

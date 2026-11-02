@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router";
-import { Check, Database, Layers, MessageSquare } from "lucide-react";
+import { Check, Database, Layers } from "lucide-react";
 import {
   Button,
   Card,
@@ -28,6 +28,7 @@ import {
   type ThemeKey,
 } from "@charie/shared";
 import { ChangePasswordDialog } from "./ChangePasswordDialog";
+import { MemorySection } from "./MemorySection";
 
 // Preview swatches for the six approved themes (Calm settings design).
 const PALETTES: Record<ThemeKey, { bg: string; side: string; accent: string; bubble: string; soft: string }> = {
@@ -325,63 +326,16 @@ export function SettingsPage() {
                   />
                 }
               />
-              <div className="mt-3">
-                {memories.isError ? (
-                  <p className="text-[13.5px] text-muted" role="alert">
-                    Couldn&apos;t load memories.{" "}
-                    <button
-                      type="button"
-                      className="font-medium text-accent-ink underline-offset-2 hover:underline"
-                      onClick={() => void memories.refetch()}
-                    >
-                      Try again
-                    </button>
-                  </p>
-                ) : memories.data ? (
-                  memories.data.length === 0 ? (
-                    <p className="text-[13.5px] text-muted">Nothing remembered yet.</p>
-                  ) : (
-                    <ul className="grid gap-2">
-                      {memories.data.map((memory) => (
-                        <li
-                          key={memory.id}
-                          className="flex items-start gap-3 rounded-[12px] bg-surface-2 p-[12px_14px]"
-                        >
-                          <IconBox icon={MessageSquare} />
-                          <div className="min-w-0">
-                            <div className="font-serif text-[14.5px]">{memory.text}</div>
-                            <div className="mt-0.5 text-[12.5px] text-muted">{memory.source}</div>
-                          </div>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="ml-auto flex-none"
-                            aria-label={`Forget: ${memory.text}`}
-                            disabled={removeMemory.isPending}
-                            onClick={() => setForgetId(memory.id)}
-                          >
-                            Forget
-                          </Button>
-                        </li>
-                      ))}
-                    </ul>
-                  )
-                ) : (
-                  <p className="text-[13.5px] text-muted" role="status">
-                    Loading memories…
-                  </p>
-                )}
-              </div>
-              {(memories.data?.length ?? 0) > 0 && (
-                <Button
-                  variant="ghost"
-                  className="mt-3 text-bad-ink"
-                  disabled={clearMemories.isPending}
-                  onClick={() => setForgetAll(true)}
-                >
-                  Forget everything
-                </Button>
-              )}
+              <MemorySection
+                memories={memories.data}
+                isError={memories.isError}
+                onRetry={() => void memories.refetch()}
+                memoryOn={data.memory_on}
+                onForget={(id) => setForgetId(id)}
+                onForgetAll={() => setForgetAll(true)}
+                forgetting={removeMemory.isPending}
+                forgettingAll={clearMemories.isPending}
+              />
             </Card>
           </section>
 
@@ -480,7 +434,11 @@ export function SettingsPage() {
         confirmLabel={removeMemory.isPending ? "Forgetting…" : "Forget"}
         tone="danger"
         onConfirm={() => {
-          if (forgetId !== null) removeMemory.mutate(forgetId);
+          if (forgetId !== null) {
+            removeMemory.mutate(forgetId, {
+              onSuccess: () => toast("Forgotten. Charie won't use this anymore."),
+            });
+          }
         }}
       />
       <ConfirmDialog

@@ -13,7 +13,7 @@ def test_public_file_is_valid(capsys) -> None:
     code = check.run(["--set", "public"])
     assert code == 0
     out = capsys.readouterr().out
-    assert "public.yaml is valid: 28 questions " in out
+    assert "public.yaml is valid: 30 questions " in out
     assert "Smoke: 10." in out
 
 
@@ -23,7 +23,7 @@ def test_public_mix() -> None:
         "clear": 4,
         "vague": 4,
         "trap": 4,
-        "follow_up": 4,
+        "follow_up": 6,
         "why": 3,
         "not_in_data": 2,
         "new_kind": 2,

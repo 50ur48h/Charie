@@ -12,7 +12,12 @@
 // end, there is nothing live to stream for them.
 import type { Answer } from "../api/chat-types";
 import type { ThinkingLine, ThinkingSummary } from "../answer/thinking";
-import { findMockAssistant, isMockMessageRunning, storeMockAnswer } from "./sampleChat";
+import {
+  findMockAssistant,
+  isMockMessageRunning,
+  setPendingMockChoice,
+  storeMockAnswer,
+} from "./sampleChat";
 
 const FAULT_KEY = "charie-mock-stream-fault";
 const OPENS_KEY = "charie-mock-stream-opens";
@@ -77,7 +82,61 @@ export function readStreamOpens(): number {
   }
 }
 
+const CHOICE_QUESTION = "Which are our best restaurants?";
+const CHOICE_TEXT = "How should I rank them?";
+const CHOICE_OPTIONS = [
+  { id: "by_net_sales", label: "By net sales" },
+  { id: "by_growth", label: "By growth" },
+  { id: "by_average_order", label: "By average order" },
+];
+
+function buildChoiceScript(messageId: number): Script {
+  const at = new Date().toISOString();
+  const line1: ThinkingLine = { seq: 1, kind: "step", status: "done", title: "Reading your question", at };
+  const line2: ThinkingLine = {
+    seq: 2,
+    kind: "decision",
+    status: "done",
+    title: "Asked you one quick question",
+    body: "This can be read a few ways, so I'd rather ask than guess.",
+    at,
+  };
+  const summary: ThinkingSummary = { seconds: 2, steps: 1, queries: 0, documents: 0 };
+  const raw: { name: string; data: unknown; holdMs?: number }[] = [
+    { name: "thinking", data: { ...line1, status: "running" } },
+    { name: "thinking", data: line1 },
+    { name: "thinking", data: line2 },
+    { name: "choice", data: { text: CHOICE_TEXT, options: CHOICE_OPTIONS } },
+    { name: "summary", data: summary },
+    { name: "done", data: { message_id: messageId, status: "needs_choice" } },
+  ];
+  const events: ScriptEvent[] = raw.map((event, atIndex) => ({
+    id: atIndex + 1,
+    name: event.name,
+    data: event.data,
+    holdMs: event.holdMs ?? EVENT_GAP_MS,
+  }));
+  const answer: Answer = {
+    message_id: messageId,
+    kb_version: 14,
+    data_through: "2025-10-26",
+    blocks: [],
+    choice: { text: CHOICE_TEXT, options: CHOICE_OPTIONS },
+  };
+  return {
+    events,
+    dropAfter: null,
+    dropped: false,
+    stallAfter: null,
+    stalled: false,
+    answer,
+    thinking: [line1, line2],
+    summary,
+  };
+}
+
 function buildScript(messageId: number, question: string): Script {
+  if (question === CHOICE_QUESTION) return buildChoiceScript(messageId);
   const at = new Date().toISOString();
   const line1: ThinkingLine = { seq: 1, kind: "step", status: "done", title: "Reading your question", at };
   const line2: ThinkingLine = {
@@ -153,7 +212,7 @@ function buildScript(messageId: number, question: string): Script {
 function doneStream(messageId: number, signal: AbortSignal): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
   const body = encoder.encode(
-    `id: 0\nevent: done\ndata: ${JSON.stringify({ message_id: messageId, status: "done" })}\n\n`,
+    `id: 0\nevent: done\ndata: ${JSON.stringify({ message_id: messageId, status: savedStatus(messageId) })}\n\n`,
   );
   let sent = false;
   return new ReadableStream<Uint8Array>({
@@ -191,6 +250,12 @@ function doneStream(messageId: number, signal: AbortSignal): ReadableStream<Uint
  * Open a fake SSE body for an assistant message. Null when the message
  * is unknown. The caller closes on abort; timers are cleaned up.
  */
+function savedStatus(messageId: number): string {
+  const ref = findMockAssistant(messageId);
+  if (ref === undefined) return "done";
+  return ref.message.status;
+}
+
 export function openMockStream(
   messageId: number,
   lastEventId: string | null,
@@ -206,6 +271,9 @@ export function openMockStream(
   const built = scripts.get(messageId) ?? buildScript(messageId, question);
   scripts.set(messageId, built);
   const script = built;
+  if (script.answer.choice !== undefined) {
+    setPendingMockChoice(ref.chat.id, { messageId, options: script.answer.choice.options });
+  }
   let from = 0;
   if (lastEventId !== null) {
     const seen = Number(lastEventId);
@@ -245,7 +313,13 @@ export function openMockStream(
           return;
         }
         if (at >= script.events.length) {
-          storeMockAnswer(messageId, script.answer, script.thinking, script.summary);
+          storeMockAnswer(
+            messageId,
+            script.answer,
+            script.thinking,
+            script.summary,
+            script.answer.choice === undefined ? "done" : "needs_choice",
+          );
           finish(controller);
           return;
         }

@@ -212,6 +212,77 @@ function finishedSeed(summary: ChatSummary): Chat {
   };
 }
 
+// Chat 9: a finished about-answer (P11.6) under its new title.
+function aboutAnswer(): Answer {
+  return {
+    message_id: 22,
+    kb_version: 3,
+    data_through: "2025-12-31",
+    blocks: [
+      {
+        type: "text",
+        paragraphs: [
+          {
+            sentences: [
+              {
+                kind: "note",
+                text: "Here's how I worked out 25,064, Delivered orders in 1-31 Dec 2025.",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        type: "method",
+        definitions: ["Delivered orders: Orders handed to the customer."],
+        steps: ["Round 1: Get delivered orders."],
+        queries: [{ purpose: "Get delivered orders.", sql: "SELECT SUM(orders) AS value" }],
+        sources: [],
+      },
+    ],
+  };
+}
+
+function aboutSeed(summary: ChatSummary): Chat {
+  const started = summary.created_at;
+  const firstUser: UserMessage = {
+    id: 19,
+    role: "user",
+    text: "What was the delivered order amount in December 2025?",
+    status: "done",
+    started_at: started,
+  };
+  const firstAssistant: AssistantMessage = {
+    id: 20,
+    role: "assistant",
+    status: "done",
+    mode: "thinking",
+    answer: sampleAnswer(20),
+    thinking: finishedThinking,
+    summary: finishedSummary,
+  };
+  const secondUser: UserMessage = {
+    id: 21,
+    role: "user",
+    text: "How did you get that?",
+    status: "done",
+    started_at: started,
+  };
+  const secondAssistant: AssistantMessage = {
+    id: 22,
+    role: "assistant",
+    status: "done",
+    mode: "thinking",
+    answer: aboutAnswer(),
+    thinking: finishedThinking,
+    summary: finishedSummary,
+  };
+  return {
+    ...summary,
+    messages: [firstUser, firstAssistant, secondUser, secondAssistant],
+  };
+}
+
 function thinkingSeed(summary: ChatSummary): Chat {
   return {
     ...summary,
@@ -266,6 +337,7 @@ const COUNT_FINISH_KEY = "charie-mock-count-finish";
 
 let nextChatId = 100;
 let nextMessageId = 1000;
+const pendingChoices = new Map<number, { messageId: number; options: { id: string; label: string }[] }>();
 let created = new Map<number, Chat>();
 let rehydrated = false;
 // Assistant messages with a genuinely running answer: created by POST and
@@ -399,6 +471,7 @@ function seedDetail(summary: ChatSummary): Chat {
   if (summary.id === 1) return finishedSeed(summary);
   if (summary.id === 2) return thinkingSeed(summary);
   if (summary.id === 4) return failedSeed(summary);
+  if (summary.id === 9) return aboutSeed(summary);
   return { ...summary, messages: [] };
 }
 
@@ -501,7 +574,8 @@ export function finishMockMessage(messageId: number): "ok" | "done" | "not_found
       if (
         message.status === "done" ||
         message.status === "failed" ||
-        message.status === "stopped"
+        message.status === "stopped" ||
+        message.status === "needs_choice"
       ) {
         return "done";
       }
@@ -518,12 +592,45 @@ export function finishMockMessage(messageId: number): "ok" | "done" | "not_found
   return "not_found";
 }
 
+export interface PendingMockChoice {
+  messageId: number;
+  options: { id: string; label: string }[];
+}
+
+export function pendingMockChoice(chatId: number): PendingMockChoice | undefined {
+  rehydrate();
+  return pendingChoices.get(chatId);
+}
+
+export function setPendingMockChoice(
+  chatId: number,
+  choice: PendingMockChoice,
+): void {
+  pendingChoices.set(chatId, choice);
+  persist();
+}
+
+export function clearPendingMockChoice(chatId: number): void {
+  pendingChoices.delete(chatId);
+  persist();
+}
+
 export function addMockMessage(
   chatId: number,
   text: string,
-): { user_message_id: number; assistant_message_id: number } | undefined {
+  choice?: string,
+): { user_message_id: number; assistant_message_id: number } | "choice_not_waiting" | "unknown_choice" | undefined {
   const chat = storedChat(chatId);
   if (chat === undefined) return undefined;
+  let question = text;
+  if (choice !== undefined) {
+    const pending = pendingChoices.get(chatId);
+    if (pending === undefined) return "choice_not_waiting";
+    const picked = pending.options.find((option) => option.id === choice);
+    if (picked === undefined) return "unknown_choice";
+    question = picked.label;
+    pendingChoices.delete(chatId);
+  }
   if (chat.messages.length === 0) {
     const cut = text.slice(0, 60);
     chat.title =
@@ -536,7 +643,7 @@ export function addMockMessage(
   nextMessageId += 2;
   const now = new Date().toISOString();
   chat.messages.push(
-    { id: userId, role: "user", text, status: "done", started_at: now },
+    { id: userId, role: "user", text: question, status: "done", started_at: now },
     {
       id: assistantId,
       role: "assistant",
@@ -608,11 +715,12 @@ export function storeMockAnswer(
   answer: Answer,
   thinking: AssistantMessage["thinking"],
   summary: AssistantMessage["summary"],
+  status: AssistantMessage["status"] = "done",
 ): boolean {
   const ref = findMockAssistant(messageId);
   if (ref === undefined) return false;
   if (ref.message.status === "stopped") return false;
-  ref.message.status = "done";
+  ref.message.status = status;
   running.delete(messageId);
   ref.message.answer = answer;
   ref.message.thinking = thinking;
@@ -625,6 +733,7 @@ export function storeMockAnswer(
 export function resetMockChats(): void {
   nextChatId = 100;
   nextMessageId = 1000;
+  pendingChoices.clear();
   created = new Map();
   running = new Set();
   deleted = new Set();

@@ -6,6 +6,7 @@ from decimal import Decimal
 
 from sqlalchemy import func, select, update
 
+from charie.chat.analyst.context import RunState
 from charie.chat.analyst.runner import run_now
 from charie.chat.chat_store import (
     ask_question,
@@ -108,7 +109,7 @@ def _turn_costs(session, chat_id: int, final_id: int) -> tuple[Decimal, Decimal]
     return final, total - final
 
 
-async def _ask_turn(chat_id: int, text: str, private: bool, choice: dict | None = None) -> int:
+async def _ask_turn(chat_id: int, text: str, private: bool, choice: str | None = None) -> int:
     """Ask one line and run it to a terminal status; returns the message id."""
     try:
         async with chat_lock(chat_id):
@@ -119,7 +120,7 @@ async def _ask_turn(chat_id: int, text: str, private: bool, choice: dict | None 
         if err.code == "not_ready":
             raise NotReadyError(err.message) from err
         raise
-    await run_now(message_id, private=private)
+    await run_now(message_id, RunState(remember=False, name_chat=False), private=private)
     return message_id
 
 
@@ -208,10 +209,11 @@ def charie_answer(question: Question, private: bool) -> TestAnswer:
                 with session_scope() as session:
                     message = _read_turn(session, final_id)
                     if message.status == "needs_choice" and pos < len(turns) - 1:
-                        options = (message.answer or {}).get("options", [])
+                        options = (message.answer or {}).get("choice", {}).get("options", [])
                         if not options:
                             raise ValueError("The analyst needs a choice to continue.")
-                        final_id = await _ask_turn(chat_id, text, private, options[0])
+                        picked = options[0].get("id", "")
+                        final_id = await _ask_turn(chat_id, text, private, picked)
             return final_id
 
         final_id = asyncio.run(_run())

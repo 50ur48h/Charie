@@ -30,6 +30,15 @@ describe("MethodBlock", () => {
     expect(document.querySelector("blockquote")).toBeTruthy();
   });
 
+  test("startOpen shows every section without a click", () => {
+    render(<MethodBlock block={BLOCK} startOpen />);
+    const onScreen = () => within(document.querySelector(".method-screen") as HTMLElement);
+    expect(screen.getByRole("button", { name: /Steps/ }).getAttribute("aria-expanded")).toBe(
+      "true",
+    );
+    expect(onScreen().getByText(BLOCK.steps[0])).toBeTruthy();
+  });
+
   test("sections expand with a keyboard-operated button", () => {
     render(<MethodBlock block={BLOCK} />);
     const onScreen = () => within(document.querySelector(".method-screen") as HTMLElement);

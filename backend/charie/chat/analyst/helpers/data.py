@@ -248,6 +248,7 @@ def _proof(task: Task, loaded: _Loaded, run_ids: list[int], fact: dict) -> dict:
     """Where a notebook number came from."""
     return {
         "task": task_signature(task),
+        "split_by": list(task.split_by),
         "recipe_key": task.metric_key,
         "query_run_ids": run_ids,
         "way": "recipe",

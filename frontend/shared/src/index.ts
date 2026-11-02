@@ -100,6 +100,7 @@ export { MethodBlock } from "./answer/MethodBlock";
 export { tableCsv, tableFileName } from "./answer/exportCsv";
 export { buildChartOption, chartSummary, CHART_HEIGHTS } from "./charts/chartBlockOption";
 export { AnswerView } from "./answer/AnswerView";
+export { QuickChoice } from "./answer/QuickChoice";
 export { AnswerActions } from "./answer/AnswerActions";
 export { WrongAnswerDialog } from "./answer/WrongAnswerDialog";
 export { MessageStatus } from "./answer/MessageStatus";

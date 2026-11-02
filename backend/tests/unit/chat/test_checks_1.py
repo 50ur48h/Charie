@@ -271,6 +271,28 @@ def test_vague_without_reading_fails() -> None:
     )
 
 
+def _meanings_inputs(*items):
+    meanings = [
+        {"label": "Net sales", "metric_key": "net_sales"},
+        {"label": "Gross sales", "metric_key": "gross_sales"},
+    ]
+    inputs = _inputs(*items, kind="two_meanings")
+    inputs.meanings = meanings
+    return inputs
+
+
+def test_two_meanings_need_a_number_for_each() -> None:
+    """Each meaning's metric needs a shown number."""
+    draft = _draft()
+    blocks = [{"type": "reading", "text": "I read this as both."}]
+    one = _number("n1", proof={"fact_key": {"metric": "net_sales"}})
+    (failure,) = run_checks(draft, blocks, _meanings_inputs(one))
+    assert failure.check == 10
+    assert failure.message == "Show a number for both meanings: Net sales and Gross sales."
+    two = _number("n2", proof={"fact_key": {"metric": "gross_sales"}})
+    assert run_checks(draft, blocks, _meanings_inputs(one, two)) == []
+
+
 def test_messages_are_plain_english() -> None:
     """Every failure message, word for word."""
     table = _table(rows=[["2025-11-01", "10"], ["2025-12-01", "12"]], total=2, timed=True)

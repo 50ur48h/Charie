@@ -6,6 +6,7 @@ never the AI, never the database. A check only reports; it never fixes.
 
 import re
 from dataclasses import dataclass, field
+from decimal import Decimal, InvalidOperation
 
 from charie.chat.analyst.labels import labels_in, mixed_tokens, stray_digits
 from charie.chat.analyst.notebook import TableValue
@@ -38,11 +39,94 @@ class CheckFailure:
 
 
 @dataclass
+class ChangedNumber:
+    """A used number whose said fact from an earlier message differs."""
+
+    label: str = ""
+    description: str = ""
+    old_text: str = ""
+    new_raw: str = ""
+    reason: str = "unknown"
+
+
+def _same_decimal(left: str, right: str) -> bool:
+    """Exact decimals; formatting doesn't matter."""
+    try:
+        return Decimal(left) == Decimal(right)
+    except (InvalidOperation, ValueError, TypeError):
+        return str(left) == str(right)
+
+
+def find_changed_numbers(used_items, said, data_through, kb_version) -> list[ChangedNumber]:
+    """Used numbers that changed since they were shown, with the reason.
+
+    Only said facts from earlier messages count; an exact decimal match
+    is not a change. Reasons, in order: later data, another knowledge
+    version, otherwise unknown.
+    """
+    current = _day(data_through)
+    changed: list[ChangedNumber] = []
+    for card in used_items or []:
+        if getattr(card, "kind", "") != "number":
+            continue
+        proof = getattr(card, "proof", None) or {}
+        fact = proof.get("fact_key", {}) if isinstance(proof, dict) else {}
+        if not fact:
+            continue
+        value = card.value if isinstance(getattr(card, "value", None), dict) else {}
+        for entry in said or []:
+            if not isinstance(entry, dict):
+                continue
+            if entry.get("fact_key") != fact:
+                continue
+            if _same_decimal(str(value.get("value")), str(entry.get("raw"))):
+                continue
+            reason = "unknown"
+            said_day = _day(entry.get("data_through"))
+            if current is not None and said_day is not None and current > said_day:
+                reason = "data_updated"
+            if reason == "unknown" and kb_version != entry.get("kb_version"):
+                reason = "knowledge_updated"
+            changed.append(
+                ChangedNumber(
+                    label=getattr(card, "label", ""),
+                    description=getattr(card, "description", ""),
+                    old_text=str(entry.get("text", "")),
+                    new_raw=str(value.get("value", "")),
+                    reason=reason,
+                )
+            )
+    return changed
+
+
+def _day(moment):
+    """An ISO day string, or None."""
+    text = _iso(moment)
+    if not text:
+        return None
+    return str(text)[:10] or None
+
+
+def correction_note_text(changed: ChangedNumber, new_text: str, data_through) -> str:
+    """The code-written correction note, with formatted numbers."""
+    if changed.reason == "knowledge_updated":
+        why = "because my knowledge was updated since then"
+    else:
+        why = f"because more data has come in (it now goes up to {_display_date(data_through)})"
+    return (
+        f"Correction: earlier in this chat I said {changed.description} was "
+        f"{changed.old_text}. It's now {new_text}, {why}."
+    )
+
+
+@dataclass
 class CheckInputs:
     """Everything the checks read: the cards, the kind, the known words."""
 
     items: list = field(default_factory=list)
     kind: str = ""
+    meanings: list = field(default_factory=list)
+    corrected: list = field(default_factory=list)
     allowed_tokens: list[str] = field(default_factory=list)
     required_notes: list = field(default_factory=list)
     section_texts: list = field(default_factory=list)
@@ -351,15 +435,42 @@ def _check_10_reading(draft, blocks, inputs: CheckInputs) -> list[CheckFailure]:
     """A vague question must start with the reading block."""
     if inputs.kind not in VAGUE_KINDS:
         return []
+    failures: list[CheckFailure] = []
     first = blocks[0].get("type") if blocks else ""
-    if first == "reading":
+    if first != "reading":
+        failures.append(
+            CheckFailure(
+                check=10,
+                name="missing_reading",
+                message="Block 1: The question was vague, so the answer must start "
+                'with "I read this as…".',
+                where="Block 1",
+            )
+        )
+    failures.extend(_check_10_meanings(inputs))
+    return failures
+
+
+def _check_10_meanings(inputs: CheckInputs) -> list[CheckFailure]:
+    """Two meanings need a shown number for each meaning."""
+    if inputs.kind != "two_meanings" or not inputs.meanings:
         return []
+    have: set[str] = set()
+    for item in inputs.items or []:
+        proof = getattr(item, "proof", None) or {}
+        fact = proof.get("fact_key", {}) if isinstance(proof, dict) else {}
+        metric = fact.get("metric") if isinstance(fact, dict) else None
+        if getattr(item, "kind", "") == "number" and metric:
+            have.add(metric)
+    missing = [m for m in inputs.meanings if m.get("metric_key") not in have]
+    if not missing:
+        return []
+    labels = " and ".join(str(m.get("label", "each meaning")) for m in inputs.meanings)
     return [
         CheckFailure(
             check=10,
-            name="missing_reading",
-            message="Block 1: The question was vague, so the answer must start "
-            'with "I read this as…".',
+            name="meaning_without_number",
+            message=f"Show a number for both meanings: {labels}.",
             where="Block 1",
         )
     ]
@@ -607,57 +718,56 @@ def _check_9_no_contradictions(draft, blocks, inputs: CheckInputs) -> list[Check
         for label in (kpi.value, kpi.change)
         if label and label.startswith("n")
     )
+    used = [
+        cards[label]
+        for label in dict.fromkeys(shown)
+        if cards.get(label) is not None and cards[label].kind == "number"
+    ]
+    changed = find_changed_numbers(
+        used, inputs.earlier_numbers, inputs.data_through, inputs.kb_version_id
+    )
+    corrected = set(inputs.corrected or [])
     failures = []
-    for label in dict.fromkeys(shown):
-        card = cards.get(label)
-        if card is None or card.kind != "number":
+    for item in changed:
+        if item.reason == "unknown":
+            failures.append(
+                CheckFailure(
+                    check=9,
+                    name="contradiction",
+                    message=(
+                        f"Leave [{item.label}] out of the answer: earlier in this chat "
+                        f"I said {item.old_text} for the same number, place and period, "
+                        "and I can't explain why it changed."
+                    ),
+                    where=_first_use(draft, item.label),
+                )
+            )
             continue
-        for earlier in inputs.earlier_numbers:
-            if earlier.get("fact_key") != (card.proof or {}).get("fact_key"):
-                continue
-            if not _differs(str(card.value.get("value")), str(earlier.get("raw"))):
-                continue
-            through = earlier.get("data_through")
-            changed_data = _iso(inputs.data_through) != through
-            changed_kb = inputs.kb_version_id != earlier.get("kb_version")
-            if not changed_data and not changed_kb:
-                failures.append(
-                    CheckFailure(
-                        check=9,
-                        name="contradiction",
-                        message=(
-                            f"This says {inputs.values.get(label, card.value.get('value'))} "
-                            f"for {card.description}, but an earlier answer in this chat "
-                            f"said {earlier.get('text')}."
-                        ),
-                        where=_first_use(draft, label),
-                    )
-                )
-                continue
-            if not _note_cites(draft, label):
-                if changed_data:
-                    date = _display_date(inputs.data_through or through)
-                    reason = (
-                        " Explain the change in a note sentence that cites "
-                        f"[{label}]: the data now goes up to {date}."
-                    )
-                else:
-                    reason = (
-                        " Explain the change in a note sentence that cites "
-                        f"[{label}]: the knowledge base changed since then."
-                    )
-                failures.append(
-                    CheckFailure(
-                        check=9,
-                        name="unexplained_change",
-                        message=(
-                            f"This says {inputs.values.get(label, card.value.get('value'))} "
-                            f"for {card.description}, but an earlier answer in this chat "
-                            f"said {earlier.get('text')}.{reason}"
-                        ),
-                        where=_first_use(draft, label),
-                    )
-                )
+        if item.label in corrected or _note_cites(draft, item.label):
+            continue
+        if item.reason == "data_updated":
+            date = _display_date(inputs.data_through)
+            reason = (
+                " Explain the change in a note sentence that cites "
+                f"[{item.label}]: the data now goes up to {date}."
+            )
+        else:
+            reason = (
+                " Explain the change in a note sentence that cites "
+                f"[{item.label}]: the knowledge base changed since then."
+            )
+        failures.append(
+            CheckFailure(
+                check=9,
+                name="unexplained_change",
+                message=(
+                    f"This says {inputs.values.get(item.label, item.new_raw)} "
+                    f"for {item.description}, but an earlier answer in this chat "
+                    f"said {item.old_text}.{reason}"
+                ),
+                where=_first_use(draft, item.label),
+            )
+        )
     return failures
 
 
@@ -745,6 +855,7 @@ def check_inputs(ctx) -> CheckInputs:
     """The cards, the kind and the known words for this question."""
     from sqlalchemy import select
 
+    from charie.chat.analyst.chat_context import load_context
     from charie.chat.analyst.kb_view import KbView
     from charie.chat.analyst.notebook import Notebook, QuoteValue
     from charie.chat.analyst.render import values_for
@@ -787,7 +898,7 @@ def check_inputs(ctx) -> CheckInputs:
                 )
             ).all()
         ]
-        earlier = _earlier_numbers(session, ctx, values)
+        earlier = _said_numbers(load_context(session, ctx.chat_id).said)
     texts = list(titles) + list(meanings) + names
     for item in items:
         texts.append(item.description)
@@ -796,9 +907,15 @@ def check_inputs(ctx) -> CheckInputs:
         elif item.kind == "table":
             for row in TableValue.model_validate(item.value).rows:
                 texts.extend("" if cell is None else str(cell) for cell in row)
+    understanding = ctx.understanding
+    raw_meanings = getattr(understanding, "meanings", None) or []
+    meanings = [
+        meaning if isinstance(meaning, dict) else meaning.model_dump() for meaning in raw_meanings
+    ]
     return CheckInputs(
         items=items,
-        kind=ctx.understanding.kind if ctx.understanding is not None else "",
+        kind=understanding.kind if understanding is not None else "",
+        meanings=meanings,
         allowed_tokens=mixed_tokens(texts),
         required_notes=required,
         section_texts=sections,
@@ -811,42 +928,29 @@ def check_inputs(ctx) -> CheckInputs:
     )
 
 
-def _earlier_numbers(session, ctx, values: dict[str, str]) -> list[dict]:
-    """Done earlier answers' ok numbers with their facts, in chat order."""
-    from sqlalchemy import select
-
-    from charie.chat.analyst.notebook import Notebook
-    from charie.shared.tables.chat import Message
+def _said_numbers(said) -> list[dict]:
+    """The numbers actually shown, in chat order, with their facts."""
+    import json
 
     earlier = []
-    messages = session.scalars(
-        select(Message)
-        .where(
-            Message.chat_id == ctx.chat_id,
-            Message.role == "assistant",
-            Message.status == "done",
-            Message.id != ctx.message_id,
+    for fact in said or []:
+        key = getattr(fact, "key", "") or ""
+        mid, _, _ = (getattr(fact, "ref", "") or "").partition(":")
+        try:
+            parsed = json.loads(key) if key else {}
+        except ValueError:
+            parsed = {}
+        if not isinstance(parsed, dict):
+            parsed = {}
+        earlier.append(
+            {
+                "fact_key": parsed,
+                "raw": getattr(fact, "value", ""),
+                "text": getattr(fact, "text", ""),
+                "description": getattr(fact, "description", ""),
+                "data_through": getattr(fact, "data_through", None),
+                "kb_version": getattr(fact, "kb_version", None),
+                "message_id": int(mid) if mid.isdigit() else None,
+            }
         )
-        .order_by(Message.id)
-    ).all()
-    for message in messages:
-        if not message.answer:
-            continue
-        book = Notebook.load(session, message.id, ctx.chat_id)
-        for card in book.items():
-            fact = (card.proof or {}).get("fact_key")
-            if card.kind != "number" or not fact:
-                continue
-            raw = str(card.value.get("value"))
-            earlier.append(
-                {
-                    "fact_key": fact,
-                    "raw": raw,
-                    "text": values.get(card.label, raw),
-                    "description": card.description,
-                    "data_through": _iso(message.data_through),
-                    "kb_version": message.kb_version_id,
-                    "message_id": message.id,
-                }
-            )
     return earlier

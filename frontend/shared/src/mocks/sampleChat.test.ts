@@ -111,7 +111,7 @@ describe("sample chat", () => {
       "done",
       "stopped",
     ]);
-    expect(listMockChats()).toHaveLength(9);
+    expect(listMockChats()).toHaveLength(10);
   });
 
   test("finishing stops the running answer without duplicating the list", () => {
@@ -123,6 +123,6 @@ describe("sample chat", () => {
       "done",
     ]);
     expect(finishMockMessage(999)).toBe("not_found");
-    expect(listMockChats()).toHaveLength(8);
+    expect(listMockChats()).toHaveLength(9);
   });
 });

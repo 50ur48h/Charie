@@ -274,7 +274,8 @@ def test_contradiction_without_reason_fails() -> None:
     (failure,) = run_checks(draft, [], inputs)
     assert failure.check == 9
     assert failure.message == (
-        "This says $360.00 for Net sales, but an earlier answer in this chat said $355.00."
+        "Leave [n1] out of the answer: earlier in this chat I said $355.00 "
+        "for the same number, place and period, and I can't explain why it changed."
     )
 
 

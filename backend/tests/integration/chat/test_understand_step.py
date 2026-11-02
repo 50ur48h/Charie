@@ -1,9 +1,12 @@
 """The understand step on the real database with queued AI replies (P10.4)."""
 
+import asyncio
 from datetime import UTC, datetime
 
 from sqlalchemy import select
 
+from charie.chat.analyst.answer import NOT_SURE_TEXT, answer_question
+from charie.chat.analyst.chat_context import ChatContext, ShownList, save_context
 from charie.chat.analyst.understand import understand
 from charie.shared.ai.client import AiClient
 from charie.shared.tables.chat import Chat, Message
@@ -123,6 +126,78 @@ def test_first_call_not_already_running(db_session, kb_mini, monkeypatch) -> Non
     understand(ctx)
     assert seen != []
     assert all(call.get("already_running") is False for call in seen)
+
+
+def _seed_list(db_session, chat_id) -> None:
+    """A chat that just saw a two-restaurant comparison."""
+    save_context(
+        db_session,
+        chat_id,
+        ChatContext(
+            lists=[
+                ShownList(
+                    message_id=1,
+                    title="Delivered orders by restaurant",
+                    dimension="dimension.restaurant_id",
+                    items=["Downtown", "Uptown"],
+                )
+            ]
+        ),
+    )
+    db_session.commit()
+
+
+def _follow_up_reply(**overrides):
+    reply = _reply(
+        kind="follow_up",
+        reading="I read this as **delivered orders** for {ref1} for [p1].",
+        asks=[{"metric_key": "metric.delivered_orders"}],
+        list_refs=[
+            {
+                "words": "the second one",
+                "position": 2,
+                "dimension": "dimension.restaurant_id",
+            }
+        ],
+    )
+    reply.update(overrides)
+    return reply
+
+
+def test_thinking_line_names_the_item_and_its_list(db_session, kb_mini, monkeypatch) -> None:
+    """A resolved follow-up filters to the listed restaurant and says so."""
+    ctx = _ctx_for(db_session, kb_mini, "How did the second one do in December 2025?")
+    _seed_list(db_session, ctx.chat_id)
+    fake_understanding(monkeypatch, _follow_up_reply())
+    understand(ctx)
+    assert ctx.unresolved_follow_up is None
+    assert ctx.understanding.filters[0].values == ["Uptown"]
+    assert "for **Uptown**" in ctx.understanding.reading
+    bodies = _bodies(db_session, ctx.message_id)
+    assert bodies[-1] == (
+        '"the second one" is Uptown, number 2 in "Delivered orders by restaurant".'
+    )
+
+
+def test_unresolved_reference_gives_the_not_sure_reply(db_session, kb_mini, monkeypatch) -> None:
+    """A pointer at nothing shown answers not-sure, with status done and no rounds."""
+    from charie.shared.tables.chat import Message, ThinkingEvent
+
+    ctx = _ctx_for(db_session, kb_mini, "How did the ninth one do in December 2025?")
+    _seed_list(db_session, ctx.chat_id)
+    fake_understanding(
+        monkeypatch, _follow_up_reply(list_refs=[{"words": "the ninth one", "position": 9}])
+    )
+    asyncio.run(answer_question(ctx))
+    db_session.refresh(db_session.get(Message, ctx.message_id))
+    message = db_session.get(Message, ctx.message_id)
+    assert message.status == "done"
+    assert message.answer["blocks"] == [{"type": "callout", "tone": "note", "text": NOT_SURE_TEXT}]
+    titles = db_session.scalars(
+        select(ThinkingEvent.title).where(ThinkingEvent.message_id == ctx.message_id)
+    ).all()
+    assert "Couldn't match the follow-up" in titles
+    assert not any(title.startswith("Round ") for title in titles)
 
 
 def test_empty_version_falls_back_without_ai_help(db_session, monkeypatch) -> None:

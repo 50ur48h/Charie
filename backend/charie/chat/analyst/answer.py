@@ -11,18 +11,33 @@ from datetime import UTC, datetime
 
 from sqlalchemy import func, select
 
-from charie.chat.analyst.checks import check_body, check_inputs, run_checks
+from charie.chat import chat_store
+from charie.chat.analyst.about import answer_about, answer_not_in_data
+from charie.chat.analyst.chat_context import (
+    FinishedAnswer,
+    PendingChoice,
+    load_context,
+    save_context,
+    update_context,
+)
+from charie.chat.analyst.checks import (
+    check_body,
+    check_inputs,
+    correction_note_text,
+    find_changed_numbers,
+    run_checks,
+)
 from charie.chat.analyst.context import AnalystContext
 from charie.chat.analyst.loop import run_extra_round, run_rounds
 from charie.chat.analyst.notebook import Notebook, QuoteValue
 from charie.chat.analyst.render import fallback_blocks, render_answer
 from charie.chat.analyst.review import review_answer
-from charie.chat.analyst.stream import finish_feed, stream_answer
+from charie.chat.analyst.stream import finish_feed, send_choice, stream_answer
 from charie.chat.analyst.write import write_answer
 from charie.shared.ai.errors import AiError
 from charie.shared.ai.spending import as_utc
 from charie.shared.db import session_scope
-from charie.shared.tables.chat import Message, QueryRun, ThinkingEvent
+from charie.shared.tables.chat import Chat, Message, QueryRun, ThinkingEvent
 from charie.shared.tables.knowledge import KbVersion
 from charie.shared.tables.usage import AiCall
 
@@ -30,11 +45,68 @@ from charie.shared.tables.usage import AiCall
 TEMP_NOTE = "Placeholder answer. Here's what I found:"
 
 
+#: The not-sure reply when a follow-up points at nothing shown.
+NOT_SURE_TEXT = (
+    "I'm not sure what you're pointing to in this chat. Please name it, and I'll answer right away."
+)
+
+
+def _deliver_not_sure(ctx: AnalystContext) -> None:
+    """One note callout as the whole answer; no rounds ran."""
+    ctx.log.add("note", "Asked what to point at instead.")
+    blocks = [{"type": "callout", "tone": "note", "text": NOT_SURE_TEXT}]
+    _save_blocks(ctx, blocks, [])
+
+
+#: The failed second choice, in the owner's words.
+SETTLE_FAILED_TEXT = "I couldn't settle what you meant. Please ask again in your own words."
+
+
+def _deliver_choice(ctx: AnalystContext) -> None:
+    """One quick question as the whole answer: no rounds, status needs_choice."""
+    choice = ctx.understanding.choice
+    options = [{"id": option.id, "label": option.label} for option in choice.options]
+    saved = {"text": choice.text, "options": options}
+    ctx.log.add(
+        "decision",
+        "Asked you one quick question",
+        "This can be read a few ways, so I'd rather ask than guess.",
+    )
+    send_choice(ctx.message_id, saved)
+    _save_blocks(ctx, [], [], status="needs_choice")
+    with session_scope() as session:
+        message = session.get(Message, ctx.message_id)
+        if message is not None and isinstance(message.answer, dict):
+            message.answer = {**message.answer, "choice": saved}
+        pending = PendingChoice(
+            message_id=ctx.message_id, question=ctx.question, text=choice.text, options=options
+        )
+        pending_context = load_context(session, ctx.chat_id)
+        pending_context.pending_choice = pending
+        save_context(session, ctx.chat_id, pending_context)
+        session.commit()
+
+
 async def answer_question(ctx: AnalystContext) -> None:
     """Understand once, run the rounds, then write the answer."""
     tasks = await run_rounds(ctx)
+    if ctx.choice_failed:
+        chat_store.mark_failed(ctx.message_id, SETTLE_FAILED_TEXT)
+        return
+    if ctx.stop_reason == "needs_choice":
+        _deliver_choice(ctx)
+        return
+    if ctx.unresolved_follow_up:
+        _deliver_not_sure(ctx)
+        return
     if ctx.state.finish_requested.is_set():
         _deliver_stopped(ctx)
+        return
+    if ctx.stop_reason == "about_answer":
+        answer_about(ctx)
+        return
+    if ctx.stop_reason == "not_in_data":
+        await answer_not_in_data(ctx, tasks)
         return
     await _save_answer(ctx, tasks)
 
@@ -78,7 +150,7 @@ def _deliver_stopped(ctx: AnalystContext) -> None:
     _save_blocks(ctx, blocks, shown, status="stopped")
 
 
-async def _save_answer(ctx: AnalystContext, tasks: list) -> None:
+async def _save_answer(ctx: AnalystContext, tasks: list, instruction: str | None = None) -> None:
     """Write, render and save; the notebook view is the fallback."""
     with session_scope() as session:
         message = session.get(Message, ctx.message_id)
@@ -87,7 +159,7 @@ async def _save_answer(ctx: AnalystContext, tasks: list) -> None:
             session.commit()
     seq = ctx.log.start("step", "Writing the answer")
     try:
-        result = await write_checked_answer(ctx, tasks)
+        result = await write_checked_answer(ctx, tasks, instruction)
     except AiError:
         result = None
     if result is None:
@@ -122,7 +194,38 @@ def _stopped_fallback(ctx: AnalystContext) -> tuple:
     return *fallback_blocks(ctx, []), True, True
 
 
-async def write_checked_answer(ctx: AnalystContext, tasks: list) -> tuple | None:
+def _add_correction_notes(ctx, blocks, shown, inputs):
+    """Code-written corrections for changed numbers with a known reason."""
+    used = [
+        item for item in inputs.items or [] if item.label in (shown or []) and item.kind == "number"
+    ]
+    changed = find_changed_numbers(
+        used, inputs.earlier_numbers, inputs.data_through, inputs.kb_version_id
+    )
+    if not changed:
+        return blocks, inputs
+    notes = []
+    for item in changed:
+        if item.reason == "unknown":
+            continue
+        notes.append(
+            {
+                "type": "callout",
+                "tone": "note",
+                "text": correction_note_text(
+                    item, inputs.values.get(item.label, item.new_raw), inputs.data_through
+                ),
+            }
+        )
+    if notes:
+        blocks = list(blocks) + notes
+    inputs.corrected = [item.label for item in changed if item.reason != "unknown"]
+    return blocks, inputs
+
+
+async def write_checked_answer(
+    ctx: AnalystContext, tasks: list, instruction: str | None = None
+) -> tuple | None:
     """Write, review, check, and fix twice; None when the writer fails.
 
     The two AI calls run in threads, so Finish stays responsive while
@@ -134,7 +237,7 @@ async def write_checked_answer(ctx: AnalystContext, tasks: list) -> tuple | None
     """
     ran = list(tasks)
     rounds = _round_count(ctx)
-    fixes: list[str] = []
+    fixes: list[str] = [instruction] if instruction else []
     fixes_left = 2
     while True:
         if ctx.state.finish_requested.is_set():
@@ -146,11 +249,13 @@ async def write_checked_answer(ctx: AnalystContext, tasks: list) -> tuple | None
         if rendered is None:
             return None
         blocks, shown = rendered
+        ctx.draft = draft
         review = await asyncio.to_thread(review_answer, ctx, blocks)
         if ctx.state.finish_requested.is_set():
             return _stopped_fallback(ctx)
         _review_line(ctx, review)
         inputs = check_inputs(ctx)
+        blocks, inputs = _add_correction_notes(ctx, blocks, shown, inputs)
         failures = run_checks(draft, blocks, inputs)
         _check_line(ctx, failures, review, inputs)
         if ctx.state.finish_requested.is_set():
@@ -168,9 +273,10 @@ async def write_checked_answer(ctx: AnalystContext, tasks: list) -> tuple | None
             current = await run_extra_round(ctx, ran, rounds + 1, review.missing_data or "")
             ran.extend(current)
             rounds += 1
-            fixes = []
+            fixes = [instruction] if instruction else []
         else:
-            fixes = [f"{fix.problem}: {fix.how_to_fix}" for fix in review.fixes]
+            fixes = [instruction] if instruction else []
+            fixes.extend(f"{fix.problem}: {fix.how_to_fix}" for fix in review.fixes)
             fixes.extend(failure.message for failure in failures)
         ctx.log.finish(fix_seq, status="done")
 
@@ -294,19 +400,30 @@ def _save_blocks(
     blocks: list[dict],
     shown: list[str],
     status: str = "done",
+    keep_context: bool = True,
+    kb_version: int | None = None,
+    data_through=None,
 ) -> None:
     """Save the answer, its real totals and terminal status, then stream.
 
     The save lands before any stream event: reload and streamed
     completion always show the same answer and totals.
     """
+    if data_through is None:
+        data_through = ctx.data_through
+    if hasattr(data_through, "isoformat"):
+        data_through = data_through.isoformat()
     answer = {
         "message_id": ctx.message_id,
-        "kb_version": _kb_number(ctx),
-        "data_through": ctx.data_through.isoformat() if ctx.data_through is not None else None,
+        "kb_version": kb_version if kb_version is not None else _kb_number(ctx),
+        "data_through": data_through,
         "blocks": blocks,
     }
     with session_scope() as session:
+        cleared = load_context(session, ctx.chat_id)
+        if cleared.pending_choice is not None:
+            cleared.pending_choice = None
+            save_context(session, ctx.chat_id, cleared)
         message = session.get(Message, ctx.message_id)
         if message is None:
             return
@@ -339,5 +456,71 @@ def _save_blocks(
         saved_cost = float(message.cost_usd or 0)
         if shown:
             Notebook.load(session, ctx.message_id, ctx.chat_id).mark_shown(shown)
+        if status == "done":
+            if keep_context:
+                try:
+                    _save_chat_context(session, ctx, message.id, blocks, shown)
+                except Exception as err:
+                    ctx.log.add("note", "The chat memory did not save.", str(err))
+            if getattr(ctx, "name_chat", False):
+                try:
+                    from charie.chat.titles import name_chat_if_new
+
+                    chat = session.get(Chat, ctx.chat_id)
+                    if chat is not None:
+                        name_chat_if_new(session, chat, message)
+                except Exception as err:
+                    ctx.log.add("note", "The chat title did not save.", str(err))
     stream_answer(ctx.message_id, blocks, summary)
     finish_feed(ctx.message_id, status=status, cost_usd=saved_cost)
+
+
+def _save_chat_context(
+    session, ctx: AnalystContext, message_id: int, blocks: list, shown: list[str]
+) -> None:
+    """Fold this done answer into the chat memory, in the same transaction."""
+    book = Notebook.load(session, ctx.message_id, ctx.chat_id)
+    understanding = ctx.understanding
+    style = (ctx.settings or {}).get("number_format", "short")
+    data_through = ctx.data_through
+    if hasattr(data_through, "isoformat"):
+        data_through = data_through.isoformat()
+    draft = getattr(ctx, "draft", None)
+    resolved = getattr(ctx.periods, "periods", None)
+    if resolved is None:
+        resolved = ctx.periods or []
+    finished = FinishedAnswer(
+        message_id=message_id,
+        question=ctx.question,
+        kind=getattr(understanding, "kind", "") or "",
+        asks=[ask.model_dump(mode="json") for ask in getattr(understanding, "asks", []) or []],
+        filters=[
+            filt.model_dump(mode="json") for filt in getattr(understanding, "filters", []) or []
+        ],
+        periods=[
+            {
+                "label": period.label,
+                "expression": period.expression.model_dump(mode="json")
+                if hasattr(period.expression, "model_dump")
+                else str(period.expression),
+                "start": period.start.isoformat()
+                if hasattr(period.start, "isoformat")
+                else str(period.start),
+                "end": period.end.isoformat()
+                if hasattr(period.end, "isoformat")
+                else str(period.end),
+                "text": period.text,
+            }
+            for period in resolved
+        ],
+        used_labels=list(shown),
+        items=[item.model_dump(mode="json") for item in book.items()],
+        draft=draft.model_dump(mode="json")
+        if draft is not None and hasattr(draft, "model_dump")
+        else {"blocks": []},
+        blocks=list(blocks),
+        data_through=str(data_through or ""),
+        kb_version=ctx.kb_version_id,
+        style=style,
+    )
+    save_context(session, ctx.chat_id, update_context(load_context(session, ctx.chat_id), finished))

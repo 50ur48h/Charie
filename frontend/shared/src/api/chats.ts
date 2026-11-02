@@ -20,14 +20,24 @@ export interface SentMessages {
   assistant_message_id: number;
 }
 
-// POST /api/chats/{id}/messages { text, mode } (architecture 09).
+// POST /api/chats/{id}/messages { text, mode, choice? } (architecture 09).
+// Answering Charie's quick question sends the option's label as the text
+// with its id as the choice.
 export function useSendMessage() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: ({ chatId, text }: { chatId: number; text: string }) =>
+    mutationFn: ({
+      chatId,
+      text,
+      choice,
+    }: {
+      chatId: number;
+      text: string;
+      choice?: string;
+    }) =>
       apiFetch<SentMessages>(`/api/chats/${chatId}/messages`, {
         method: "POST",
-        body: { text, mode: "thinking" },
+        body: { text, mode: "thinking", choice },
       }),
     onSuccess: (_data, { chatId }) => {
       void client.invalidateQueries({ queryKey: ["chat", chatId] });

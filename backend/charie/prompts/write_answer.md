@@ -8,6 +8,7 @@ Code fills in every label and checks the copy.
 5. Mention every couldn't-check finding and every still-open point in a `note` sentence. Follow the style rules.
 6. Answer length: `short` means at most 4 sentences and 1 chart; `normal` a few short paragraphs and up to 2 charts; `detailed` up to 4 charts.
 7. The reply is the form only, never an explanation.
+8. When Kind is `two_meanings`, show both meanings side by side: one number for each, then the comparison.
 
 ## Examples
 Question: How are we doing?

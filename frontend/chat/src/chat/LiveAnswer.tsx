@@ -5,6 +5,7 @@ import {
   FollowUpsBlock,
   KpisBlock,
   MethodBlock,
+  QuickChoice,
   SuggestionsBlock,
   TableBlock,
   TreeBlock,
@@ -87,21 +88,13 @@ export function LiveAnswer({
           ),
       )}
       {feed.choice !== null && (
-        <div className="mb-4">
-          <p className="m-0 mb-2 text-[15.5px] leading-relaxed">{feed.choice.text}</p>
-          <div className="flex flex-wrap gap-2">
-            {feed.choice.options.map((option) => (
-              <button
-                key={option.id}
-                type="button"
-                onClick={() => onFollowUp(option.label)}
-                className="inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-border bg-surface px-4 py-2 text-[13.5px] font-medium text-text-2 transition-[border-color,color] duration-200 hover:border-focus hover:text-text"
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
-        </div>
+        <QuickChoice
+          text={feed.choice.text}
+          options={feed.choice.options}
+          chosenLabel={null}
+          disabled
+          onChoose={() => {}}
+        />
       )}
     </div>
   );

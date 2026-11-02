@@ -71,6 +71,29 @@ async def test_feed_follow_waits_for_new_events() -> None:
     assert seen == [(1, "thinking"), (2, "done")]
 
 
+@pytest.mark.asyncio
+async def test_feed_follow_drains_events_added_before_close() -> None:
+    """Events that land after the replay snapshot still reach a follower."""
+    feed = MessageFeed()
+    feed.add("thinking", {"seq": 1})
+    seen: list = []
+    gen = feed.follow(0)
+    try:
+        seen.append(await gen.__anext__())
+        feed.add("thinking", {"seq": 2})
+        feed.add("done", {})
+        feed.close()
+        async for item in gen:
+            seen.append(item)
+    finally:
+        await gen.aclose()
+    assert [(item.id, item.event) for item in seen] == [
+        (1, "thinking"),
+        (2, "thinking"),
+        (3, "done"),
+    ]
+
+
 def test_stream_sends_thinking_summary_blocks_done(chat_client, db_session, monkeypatch) -> None:
     fake_understanding(monkeypatch)
     log_in(chat_client)
