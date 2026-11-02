@@ -72,7 +72,7 @@ test("ask_about_question fills a new-chat draft", async ({ page }) => {
   await first.getByRole("button", { name: "Ask Charie about this" }).click();
   await expect(page).toHaveURL(/\?draft=/);
   await expect(page.getByRole("textbox", { name: "Ask a question" })).toHaveValue(
-    'What should "sales" mean by default?',
+    'Help me decide: What should "sales" mean by default?',
   );
 });
 test("answer_refresh_badge follows the waiting count", async ({ page }) => {
