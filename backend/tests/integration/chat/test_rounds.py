@@ -142,3 +142,29 @@ def test_empty_round_still_checks(db_session, shop_rounds, monkeypatch) -> None:
         "Round 1 done: still needs the split by status.",
         "Round 2 done: no new tasks, so no new answers.",
     ]
+
+
+def test_stalled_round_stops_with_missing(db_session, shop_rounds, monkeypatch) -> None:
+    """A round that adds no evidence stops the loop with the missing text."""
+    import charie.chat.analyst.loop as loop_module
+
+    _understand(monkeypatch, [{"metric_key": "orders"}])
+    check = _patch(
+        monkeypatch,
+        enough_module,
+        "check_enough",
+        [{"enough": False, "missing": "the split"}],
+    )
+
+    async def _nothing(tasks, ctx, round_no):
+        return None
+
+    monkeypatch.setattr(loop_module, "_run_tasks", _nothing)
+    ctx = _ctx(db_session, shop_rounds)
+    ran = asyncio.run(run_rounds(ctx))
+    assert len(ran) == 1
+    assert len(check.calls) == 1
+    assert [line.title for line in _rounds(db_session, ctx)] == [
+        "Round 1 done: still needs the split."
+    ]
+    assert ctx.still_open == ["the split", "verified values for the periods"]

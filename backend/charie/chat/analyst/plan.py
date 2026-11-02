@@ -10,6 +10,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from charie.chat.analyst.helpers.compatibility import contradicted_recipe
 from charie.chat.analyst.helpers.data import _Loaded
 from charie.chat.analyst.helpers.tasks import Task, task_signature
 from charie.chat.analyst.kb_view import KbView
@@ -82,10 +83,20 @@ def _checked(loaded: _Loaded, ctx, form: RoundPlan, tasks: list[Task]) -> list[T
     """The picks code can run: known fields, plain whys, never run before."""
     seen = {task_signature(task) for task in tasks}
     picked: list[Task] = []
+    question = getattr(ctx, "question", "")
+    meanings = getattr(loaded, "meanings", None) or {}
+    recipes = getattr(loaded, "recipes", None) or {}
+    units = {key: getattr(recipe, "unit", None) for key, recipe in recipes.items()}
     labels = [f"p{num}" for num in range(1, len(ctx.periods.periods) + 1)]
     for planned in form.tasks[:MAX_TASKS_PER_ROUND]:
         if not planned.why or _has_digits(planned.why):
             continue
+        if planned.kind == "recipe" and question:
+            reason = contradicted_recipe(question, planned.metric_key, meanings, units)
+            if reason is not None:
+                if hasattr(ctx, "problems"):
+                    ctx.problems.append(f"Planner pick {planned.metric_key} dropped: {reason}")
+                continue
         splits = [key for key in planned.split_by if key in loaded.dimensions]
         top_n = planned.top_n if isinstance(planned.top_n, int) and planned.top_n > 0 else None
         try:

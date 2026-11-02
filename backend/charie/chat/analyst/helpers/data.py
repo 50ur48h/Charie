@@ -60,11 +60,13 @@ class _Loaded:
     def __init__(self, session, version_id: int) -> None:
         details_by_key: dict[str, dict] = {}
         self.titles: dict[str, str] = {}
+        self.meanings: dict[str, str] = {}
         self.dimensions: dict[str, dict] = {}
         self.names: list[dict] = []
         for entry in list_entries(session, version_id):
             details = entry.details if isinstance(entry.details, dict) else {}
             self.titles[entry.key] = entry.title or entry.key
+            self.meanings[entry.key] = entry.meaning or ""
             if entry.kind == "metric":
                 details_by_key[entry.key] = details
             elif entry.kind == "dimension":

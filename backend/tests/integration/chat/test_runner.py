@@ -100,7 +100,7 @@ def test_finish_now_marks_stopped_and_allows_next_question(db, db_session, monke
         return real_add(*args, **kwargs)
 
     monkeypatch.setattr(loop_module, "add_period_items", _finish_early)
-    monkeypatch.setattr(loop_module, "starter_tasks", lambda *args, **kwargs: [])
+    monkeypatch.setattr(loop_module, "starter_tasks", lambda *args, **kwargs: ([], []))
     asyncio.run(run_now(assistant.id))
     db_session.expire_all()
     saved = db_session.get(Message, assistant.id)

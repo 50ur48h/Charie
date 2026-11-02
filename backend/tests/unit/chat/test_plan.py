@@ -110,3 +110,52 @@ def test_new_number_and_documents_picks_keep_their_fields() -> None:
         ("documents", "net sales"),
     ]
     assert all(task.filters == [] for task in picked)
+
+
+def _loaded_money():
+    from types import SimpleNamespace as NS
+
+    return NS(
+        usable={"orders", "metric.delivered_order_amount"},
+        dimensions={},
+        meanings={"metric.delivered_order_amount": "Total amount for delivered orders."},
+        recipes={
+            "orders": NS(unit="count"),
+            "metric.delivered_order_amount": NS(unit="money"),
+        },
+    )
+
+
+def _ctx_question(question):
+    return SimpleNamespace(
+        understanding=SimpleNamespace(filters=[]),
+        periods=SimpleNamespace(periods=["p1"]),
+        question=question,
+        problems=[],
+    )
+
+
+def test_plan_drops_contradicted_recipe_pick() -> None:
+    """Net sales never runs the delivered-amount recipe, with a note."""
+    ctx = _ctx_question("What were net sales in December?")
+    picked = _checked(
+        _loaded_money(),
+        ctx,
+        _form(_recipe(metric="metric.delivered_order_amount", why="Get the amount.")),
+        [],
+    )
+    assert picked == []
+    assert any("metric.delivered_order_amount" in note for note in ctx.problems)
+
+
+def test_plan_keeps_compatible_recipe_pick() -> None:
+    """A count recipe for an undocumented term still runs."""
+    ctx = _ctx_question("What were net sales in December?")
+    picked = _checked(
+        _loaded_money(),
+        ctx,
+        _form(_recipe(metric="orders", why="Get the orders.")),
+        [],
+    )
+    assert [task.metric_key for task in picked] == ["orders"]
+    assert ctx.problems == []
