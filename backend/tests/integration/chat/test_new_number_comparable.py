@@ -47,9 +47,11 @@ MONEY_CATALOG = {
 }
 
 
-def _measures_for(per_period):
+def _measures_for(per_period, periods):
+    boundaries = new_number_module._period_boundaries(periods)
     return [
-        new_number_module._measure_descriptor(pair[0].sql, MONEY_CATALOG) for pair in per_period
+        new_number_module._measure_descriptor(pair[0].sql, MONEY_CATALOG, boundaries)
+        for pair in per_period
     ]
 
 
@@ -78,18 +80,19 @@ def test_mismatched_periods_save_no_change(db_session) -> None:
     """Different 2025/2024 measures: per-period numbers stay, no comparison."""
     message = _message(db_session)
     book = Notebook(db_session, message.id, message.chat_id)
+    periods = _periods()
     per_period = [_pair(SQL_CENTS, "39475.2", 11, 12), _pair(SQL_2024, "71.72", 13, 14)]
     new_number_module._save_new_totals(
         None,
         book,
         _task(),
         None,
-        _periods(),
+        periods,
         per_period,
         1,
         "average order value",
         "new:average order value",
-        _measures_for(per_period),
+        _measures_for(per_period, periods),
     )
     items = book.items()
     assert not any(item.kind == "number" and item.value.get("style") == "change" for item in items)
@@ -104,18 +107,19 @@ def test_matching_periods_save_change(db_session) -> None:
     message = _message(db_session)
     book = Notebook(db_session, message.id, message.chat_id)
     ctx = SimpleNamespace(log=SimpleNamespace(add=lambda *args, **kwargs: None))
+    periods = _periods()
     per_period = [_pair(SQL_2025, "200", 11, 12), _pair(SQL_2024, "100", 13, 14)]
     new_number_module._save_new_totals(
         ctx,
         book,
         _task(),
         None,
-        _periods(),
+        periods,
         per_period,
         1,
         "average order value",
         "new:average order value",
-        _measures_for(per_period),
+        _measures_for(per_period, periods),
     )
     items = book.items()
     assert any(item.kind == "number" and item.value.get("style") == "change" for item in items)

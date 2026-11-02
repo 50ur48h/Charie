@@ -9,6 +9,8 @@ gets a to-do; if they disagree, no number is used.
 
 import re
 import time
+from collections.abc import Collection
+from datetime import timedelta
 from decimal import Decimal
 from typing import NamedTuple
 
@@ -61,12 +63,17 @@ def _number_unit(unit: str) -> str:
     return unit if unit in _STAMPABLE_UNITS else NEW_UNIT
 
 
-_DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2})?)?")
+def _normalized_measure_sql(sql: str, boundaries: Collection[str] = ()) -> str:
+    """Way-A SQL with only the verified period boundaries blanked.
 
-
-def _normalized_measure_sql(sql: str) -> str:
-    """Way-A SQL with only the period dates blanked, for cross-period comparison."""
-    return " ".join(_DATE_RE.sub("DATE", sql).lower().split())
+    Dates inside calculations and unrelated filters stay literal, so a
+    shifted CASE threshold or extra filter can never compare equal.
+    """
+    normalized = " ".join(sql.lower().split())
+    for day in boundaries:
+        day_re = re.compile(r"\b" + re.escape(day) + r"(?:[T ]\d{2}:\d{2}(?::\d{2})?)?")
+        normalized = day_re.sub("DATE", normalized)
+    return normalized
 
 
 class MeasureDef(NamedTuple):
@@ -161,9 +168,26 @@ def _resolve_unit(columns, agg, catalog_columns):
     return (unit, currency)
 
 
-def _measure_descriptor(sql, catalog_columns) -> MeasureDef:
+def _period_boundaries(periods) -> set[str]:
+    """Every date literal a period-bound filter may spell: the bounds ± 1 day.
+
+    Queries express a period as `>= start AND < end + 1 day` (or the mirrored
+    exclusive-lower shape); those spellings are verified boundaries too.
+    Anything else stays literal and breaks equivalence.
+    """
+    days = set()
+    for period in periods:
+        for day in (period.start, period.end):
+            if day is None:
+                continue
+            for shift in (-1, 0, 1):
+                days.add((day + timedelta(days=shift)).isoformat())
+    return days
+
+
+def _measure_descriptor(sql, catalog_columns, boundaries: Collection[str] = ()) -> MeasureDef:
     """The verified measure definition behind one way-A query."""
-    normalized = _normalized_measure_sql(sql)
+    normalized = _normalized_measure_sql(sql, boundaries)
     parsed = _value_refs(sql)
     if parsed is None:
         return MeasureDef(normalized, (), (), "", "", "")
@@ -173,14 +197,22 @@ def _measure_descriptor(sql, catalog_columns) -> MeasureDef:
 
 
 def _measures_comparable(measures) -> bool:
-    """Every period shares one verified measure with a known unit."""
+    """Every period shares one verified measure with a known unit and currency."""
     if not measures:
         return False
     first = measures[0]
-    key = (first.normalized, first.tables, first.columns, first.agg, first.unit)
+    key = (first.normalized, first.tables, first.columns, first.agg, first.unit, first.currency)
     return (
         all(
-            (item.normalized, item.tables, item.columns, item.agg, item.unit) == key
+            (
+                item.normalized,
+                item.tables,
+                item.columns,
+                item.agg,
+                item.unit,
+                item.currency,
+            )
+            == key
             for item in measures[1:]
         )
         and first.unit != ""
@@ -314,7 +346,10 @@ def _run_new_number_task(task: Task, ctx, round_no: int = 1) -> None:
             _disagree(ctx, book, task, seq, description, metric, periods, per_period)
             return
         catalog_columns = _catalog_column_units(session, ctx.kb_version_id)
-        measures = [_measure_descriptor(pair[0].sql, catalog_columns) for pair in per_period]
+        boundaries = _period_boundaries(periods)
+        measures = [
+            _measure_descriptor(pair[0].sql, catalog_columns, boundaries) for pair in per_period
+        ]
         if task.split_by:
             _save_new_split(
                 ctx, book, task, loaded, periods, per_period, seq, description, metric, measures
