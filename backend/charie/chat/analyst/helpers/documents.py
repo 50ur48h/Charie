@@ -169,6 +169,9 @@ def _save_picks(ctx, book, session, task, seq, search, hits, picks: QuotePicks) 
                 f"Dropped a quote I couldn't find word for word in {found.file_name}.",
             )
             continue
+        if book.has_quote(choice.quote):
+            _drop(ctx, book, task, search, "Skipped a quote I already kept word for word.")
+            continue
         location = _location(found.page_from, found.page_to)
         book.add_quote(
             f"{search}: {found.file_name}",
@@ -180,6 +183,7 @@ def _save_picks(ctx, book, session, task, seq, search, hits, picks: QuotePicks) 
                 heading_path=found.heading_path or "",
                 location=location,
             ),
+            proof={"task": task_signature(task)},
         )
         kept.append((choice, found))
     if not kept:

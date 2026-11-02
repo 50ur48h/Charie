@@ -71,8 +71,7 @@ def test_placeholder_answer_saved(db, db_session, monkeypatch) -> None:
     assert saved.status == "done"
     assert saved.finished_at is not None
     assert (
-        "Placeholder answer. Here's what I found:"
-        in saved.answer["blocks"][0]["paragraphs"][0]["sentences"][0]["text"]
+        "Here's what I found:" in saved.answer["blocks"][0]["paragraphs"][0]["sentences"][0]["text"]
     )
     titles = db_session.scalars(
         select(ThinkingEvent.title)
@@ -84,7 +83,7 @@ def test_placeholder_answer_saved(db, db_session, monkeypatch) -> None:
         "Round 1 done: no new tasks, so no new answers.",
         "Checking whether the rounds so far answer the question.",
         "Wrote the answer from the notebook.",
-        "Placeholder answer. Here's what I found:",
+        "Here's what I found:",
     ]
 
 

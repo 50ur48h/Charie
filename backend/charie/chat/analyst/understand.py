@@ -283,7 +283,75 @@ def _check_meanings(u: Understanding, kb: KbView, problems: list[str]) -> None:
             )
 
 
-def check_understanding(u: Understanding, kb: KbView, choice_answered: bool = False) -> list[str]:
+def _metric_key_for_value(value: str, kb: KbView) -> str:
+    """The full metric key behind a default's short value, or empty.
+
+    Default values are short ("net_sales"); real keys carry their kind
+    ("metric.net_sales"). Both shapes resolve to the same key.
+    """
+    for key in kb.metrics():
+        if key == value or key.endswith("." + value):
+            return key
+    return ""
+
+
+def _default_targets(u: Understanding, kb: KbView) -> set[str]:
+    """Metric keys the used defaults resolve to."""
+    targets = set()
+    for used in u.defaults_used:
+        word = used.removeprefix("default.")
+        details = kb.defaults().get(word)
+        if details is not None:
+            key = _metric_key_for_value(details.value, kb)
+            if key:
+                targets.add(key)
+    return targets
+
+
+def unjustified_asks(u: Understanding, kb: KbView, question: str) -> dict:
+    """Ask positions keying a metric nothing justifies; value names a known metric or None.
+
+    One ask is justified when the question names its metric title, a used
+    default resolves to it, or it answers a meaning or an inherited
+    follow-up. The AI reading alone never justifies an ask: explicit
+    user meaning takes precedence over generated words.
+    Only multi-word titles count as named: single words like "orders" stay ambiguous.
+    An empty question disables the check, as do asks without a metric key.
+    """
+    if not question:
+        return {}
+    if u.kind in ("follow_up", "about_answer"):
+        return {}
+    titles = kb.titles()
+    metric_titles = {key: titles[key] for key in kb.metrics() if key in titles}
+    meanings_keys = {meaning.metric_key for meaning in u.meanings}
+    if u.kind != "two_meanings":
+        meanings_keys = set()
+    targets = _default_targets(u, kb)
+    lowered = question.lower()
+    out: dict = {}
+    for pos, ask in enumerate(u.asks, start=1):
+        if not ask.metric_key or ask.metric_key not in metric_titles:
+            continue
+        own = metric_titles[ask.metric_key]
+        if own.lower() in lowered:
+            continue
+        if ask.metric_key in targets or ask.metric_key in meanings_keys:
+            continue
+        named = None
+        for key, title in metric_titles.items():
+            if key == ask.metric_key or len(title.split()) < 2:
+                continue
+            if title.lower() in lowered:
+                named = title
+                break
+        out[pos] = named
+    return out
+
+
+def check_understanding(
+    u: Understanding, kb: KbView, choice_answered: bool = False, question: str = ""
+) -> list[str]:
     """Every problem with the AI's reply, in words it can act on.
 
     Matching filter spellings are fixed in place; the reply keeps no
@@ -305,6 +373,19 @@ def check_understanding(u: Understanding, kb: KbView, choice_answered: bool = Fa
                 problems.append(
                     f"Unknown split {split!r}. Use one of: {', '.join(sorted(dimensions))}."
                 )
+    for pos, named in unjustified_asks(u, kb, question).items():
+        key = u.asks[pos - 1].metric_key
+        if named is None:
+            problems.append(
+                f"Ask {pos} uses {key!r} but nothing in the question, defaults, "
+                "meanings, or reading justifies it; use new words (new_metric) "
+                "when no listed metric fits."
+            )
+        else:
+            problems.append(
+                f"Ask {pos} uses {key!r} but the question names {named!r}; "
+                "use the named metric instead."
+            )
     for filt in u.filters:
         if filt.dimension_key not in dimensions:
             problems.append(f"Unknown filter dimension {filt.dimension_key!r}.")
@@ -411,7 +492,11 @@ def _fallback_periods() -> list[PeriodExpression]:
 
 
 def apply_fallbacks(
-    u: Understanding, kb: KbView, date_ctx: DateContext, problems: list[str]
+    u: Understanding,
+    kb: KbView,
+    date_ctx: DateContext,
+    problems: list[str],
+    question: str = "",
 ) -> list[str]:
     """Fix what the retry couldn't; every fix is saved for the writer.
 
@@ -421,12 +506,23 @@ def apply_fallbacks(
     kept_asks: list[Ask] = []
     metrics = kb.metrics()
     dimensions = kb.dimensions()
-    for ask in u.asks:
+    unjustified = unjustified_asks(u, kb, question)
+    for pos, ask in enumerate(u.asks, start=1):
         if bool(ask.metric_key) == bool(ask.new_metric):
             continue
         if ask.metric_key and ask.metric_key not in metrics:
             continue
-        ask.split_by = [split for split in ask.split_by if split in dimensions]
+        if pos in unjustified:
+            own = kb.titles().get(ask.metric_key, ask.metric_key)
+            named = unjustified[pos]
+            if named is None:
+                notes.append(
+                    f"Left out {own}: nothing you said, chose, or read justifies it, "
+                    "so I did not guess."
+                )
+            else:
+                notes.append(f"Left out {own} because the question names {named} instead.")
+            continue
         kept_asks.append(ask)
     u.asks = kept_asks
     kept_filters: list[Filter] = []
@@ -471,8 +567,9 @@ def apply_fallbacks(
 def _default_meaning(word: str, kb: KbView) -> str:
     """The meaning behind a used default, in the owner's words."""
     value = kb.defaults()[word].value
-    if value in kb.titles():
-        return kb.titles()[value]
+    key = _metric_key_for_value(value, kb)
+    if key and key in kb.titles():
+        return kb.titles()[key]
     return value.replace("_", " ")
 
 
@@ -541,7 +638,7 @@ def understand(ctx) -> None:
             knowledge_version=ctx.kb_version_id,
             already_running=False,
         )
-        problems = check_understanding(first, kb, answered_choice)
+        problems = check_understanding(first, kb, answered_choice, inputs["question"])
         if problems:
             second_inputs = dict(inputs, repair="; ".join(problems))
             second = ai.run(
@@ -554,7 +651,7 @@ def understand(ctx) -> None:
                 knowledge_version=ctx.kb_version_id,
                 already_running=False,
             )
-            problems = check_understanding(second, kb, answered_choice)
+            problems = check_understanding(second, kb, answered_choice, inputs["question"])
             u = second
         else:
             u = first
@@ -562,7 +659,7 @@ def understand(ctx) -> None:
         u = _blank_understanding()
         problems = [str(err)]
     _add_meaning_asks(u)
-    notes = apply_fallbacks(u, kb, date_ctx, problems)
+    notes = apply_fallbacks(u, kb, date_ctx, problems, inputs["question"])
     if answered_choice and u.choice is not None:
         ctx.choice_failed = True
         ctx.understanding = u

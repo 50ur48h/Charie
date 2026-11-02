@@ -22,9 +22,9 @@ and the test date; you never write SQL.
 
 ## Examples
 Terms:
-[{"key": "term.net_sales", "name": "Net sales", "meaning": "Completed order totals without delivery fees.", "unit": "money"}]
+[{"key": "term.net_sales", "name": "Net sales", "meaning": "Completed order totals without delivery fees or tax.", "unit": "money"}]
 Columns:
-[{"name": "shop.orders.total_amount", "type": "numeric"}, {"name": "shop.orders.created_at", "type": "timestamp with time zone"}, {"name": "shop.orders.status", "type": "text"}]
+[{"name": "shop.orders.total_amount", "type": "numeric"}, {"name": "shop.orders.delivery_fee", "type": "numeric"}, {"name": "shop.orders.tax_amount", "type": "numeric"}, {"name": "shop.orders.created_at", "type": "timestamp with time zone"}, {"name": "shop.orders.status", "type": "text"}]
 Splits:
 [{"term": "term.net_sales", "key": "dimension.month"}]
 
@@ -34,12 +34,12 @@ Recipes:
   title: "Net sales"
   table: "shop.orders"
   aggregate: "sum"
-  expression: "orders.total_amount"
+  expression: "orders.total_amount - orders.delivery_fee - orders.tax_amount"
   filters: ["orders.status = 'completed'"]
   time_column: "orders.created_at"
   unit: "money"
   currency: "USD"
-  steps_in_words: ["Add up every completed order total.", "Leave out delivery fees."]
+  steps_in_words: ["Add up every completed order total.", "Subtract the delivery fee and the tax on each order."]
   dimensions: ["dimension.month"]
 
 ## Task

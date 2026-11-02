@@ -247,3 +247,157 @@ def test_cards_read_back(db_session) -> None:
     assert card.proof == {"fact_key": {"metric": "x"}}
     with pytest.raises(NotebookError, match="There's no item n9 in this notebook."):
         book.get("n9")
+
+
+"""B022: fallback view hides planner signals, collapses dupes, stays honest."""
+
+
+def _quote_text(text: str) -> QuoteValue:
+    return QuoteValue(
+        text=text,
+        document_id=1,
+        document="Policy.docx",
+        section_id=2,
+        heading_path="",
+        location="page 1",
+    )
+
+
+def test_has_quote_matches_exact_words(db_session) -> None:
+    message = _message(db_session)
+    book = Notebook(db_session, message.id, message.chat_id)
+    assert book.has_quote("Use code MEGA0926 at checkout.") is False
+    book.add_quote("Policy", _quote_text("Use code MEGA0926 at checkout."))
+    assert book.has_quote("Use code MEGA0926 at checkout.") is True
+    assert book.has_quote("Use code MEGA0926.") is False
+
+
+def test_fallback_hides_planner_findings_when_evidence_exists(db_session) -> None:
+    message = _message(db_session)
+    book = Notebook(db_session, message.id, message.chat_id)
+    book.add_quote("Policy", _quote_text("Use code MEGA0926 at checkout."))
+    book.add_quote("Policy again", _quote_text("Use code MEGA0926 at checkout."))
+    book.add_finding(
+        "Policy document",
+        FindingValue(type="nothing_found", text="Nothing in the documents about policy document."),
+    )
+    book.add_finding(
+        "Repeat",
+        FindingValue(type="dropped_quote", text="Skipped a quote I already kept word for word."),
+    )
+    book.add_finding(
+        "Search",
+        FindingValue(type="failed", text="Could not search the documents for checkout."),
+    )
+    view = Notebook.load(db_session, message.id, message.chat_id).fallback_view()
+    assert view.count("Use code MEGA0926 at checkout.") == 1
+    assert "Nothing in the documents" not in view
+    assert "already kept" not in view
+    assert "Could not search the documents for checkout." in view
+
+
+def test_fallback_shows_honest_line_when_nothing_kept(db_session) -> None:
+    message = _message(db_session)
+    book = Notebook(db_session, message.id, message.chat_id)
+    book.add_finding(
+        "Policy document",
+        FindingValue(type="nothing_found", text="Nothing in the documents about policy document."),
+    )
+    assert book.fallback_view() == "Nothing in the documents about policy document."
+
+
+"""B022 acceptance: topic scope, provenance, no card labels in the view."""
+
+
+def test_checkout_quote_does_not_hide_refund_missing(db_session) -> None:
+    """Same-task evidence hides its finding; other topics and periods don't."""
+    from charie.chat.analyst.helpers.tasks import Task, task_signature
+
+    checkout = task_signature(Task(kind="documents", search="checkout code"))
+    refund = task_signature(Task(kind="documents", search="refund policy"))
+    message = _message(db_session)
+    book = Notebook(db_session, message.id, message.chat_id)
+    book.add_quote(
+        "checkout code: Policy.docx",
+        _quote_text("Use code MEGA0926 at checkout."),
+        proof={"task": checkout},
+    )
+    book.add_period("December 2025", _period())
+    book.add_finding(
+        "checkout code",
+        FindingValue(
+            type="nothing_found",
+            text="Nothing in the documents about checkout code.",
+            task=checkout,
+        ),
+    )
+    book.add_finding(
+        "refund policy",
+        FindingValue(
+            type="nothing_found",
+            text="Nothing in the documents about refund policy.",
+            task=refund,
+        ),
+    )
+    view = book.fallback_view()
+    assert "Use code MEGA0926 at checkout." in view
+    assert "Nothing in the documents about checkout code." not in view
+    assert "Nothing in the documents about refund policy." in view
+
+
+def test_period_alone_hides_no_missing_document(db_session) -> None:
+    """A period card is dates, not evidence: the missing finding still shows."""
+    from charie.chat.analyst.helpers.tasks import Task, task_signature
+
+    refund = task_signature(Task(kind="documents", search="refund policy"))
+    message = _message(db_session)
+    book = Notebook(db_session, message.id, message.chat_id)
+    book.add_period("December 2025", _period())
+    book.add_finding(
+        "refund policy",
+        FindingValue(
+            type="nothing_found",
+            text="Nothing in the documents about refund policy.",
+            task=refund,
+        ),
+    )
+    assert "Nothing in the documents about refund policy." in book.fallback_view()
+
+
+def test_same_words_name_every_source(db_session) -> None:
+    """Word-for-word quotes from two documents read once, naming both."""
+    message = _message(db_session)
+    book = Notebook(db_session, message.id, message.chat_id)
+    book.add_quote("checkout code: Policy.docx", _quote_text("Use code MEGA0926 at checkout."))
+    book.add_quote(
+        "checkout code: Terms.docx",
+        QuoteValue(
+            text="Use code MEGA0926 at checkout.",
+            document_id=2,
+            document="Terms.docx",
+            section_id=3,
+            heading_path="",
+            location="page 4",
+        ),
+    )
+    view = book.fallback_view()
+    assert view.count("Use code MEGA0926 at checkout.") == 1
+    assert "Policy.docx" in view
+    assert "Terms.docx" in view
+
+
+def test_fallback_view_shows_no_card_labels(db_session) -> None:
+    """The user-facing view reads plain: no n1/q1/t1/p1 prefixes."""
+    message = _message(db_session)
+    book = Notebook(db_session, message.id, message.chat_id)
+    book.add_number("Net sales", _number())
+    book.add_table("Net sales by restaurant", _table(rows_total=2))
+    book.add_period("December 2025", _period())
+    book.add_quote("Definition", _quote())
+    view = book.fallback_view()
+    assert "n1 = " not in view
+    assert "t1 = " not in view
+    assert "p1 = " not in view
+    assert "q1 = " not in view
+    assert "$1.42M" in view
+    assert "Net sales are order totals minus discounts." in view
