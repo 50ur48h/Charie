@@ -57,3 +57,18 @@ def test_default_efforts_match_03():
 def test_unknown_job():
     with pytest.raises(AiError, match="Unknown AI job: `no_such_job`."):
         get_job_settings("no_such_job")
+
+
+def test_model_override_selects_spark(monkeypatch) -> None:
+    """AI_MODEL/AI_REASONING_EFFORT override the per-job defaults."""
+    monkeypatch.setenv("AI_MODEL", "muse-spark-1.3-contributor")
+    monkeypatch.setenv("AI_REASONING_EFFORT", "high")
+    settings = get_job_settings("name_chat")
+    assert settings.model == "muse-spark-1.3-contributor"
+    assert settings.reasoning_effort == "high"
+
+
+def test_override_passes_through_verbatim_without_fallback(monkeypatch) -> None:
+    """An unknown override ID is kept, not silently swapped for Wonder."""
+    monkeypatch.setenv("AI_MODEL", "muse-spark-9.9")
+    assert get_job_settings("write_sql").model == "muse-spark-9.9"

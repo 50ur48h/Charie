@@ -165,3 +165,29 @@ def test_store_round_trip(tmp_path) -> None:
     assert store.load("name_chat", "abc123") == record
     with pytest.raises(AiReplayMissing):
         store.load("name_chat", "nope")
+
+
+def test_spark_and_wonder_fingerprints_differ() -> None:
+    """The model ID is part of the digest: separate replays per model."""
+    wonder = _parts(model="muse-wonder-1.0", reasoning_effort="medium")
+    spark = _parts(model="muse-spark-1.3-contributor", reasoning_effort="high")
+    assert fingerprint(wonder) != fingerprint(spark)
+
+
+def test_spark_request_misses_wonder_replay(tmp_path, monkeypatch) -> None:
+    """A Spark run never reuses a Wonder recording as evidence."""
+    monkeypatch.setenv("AI_REPLAY_DIR", str(tmp_path / "replays"))
+    get_settings.cache_clear()
+    prompts = tmp_path / "prompts"
+    prompts.mkdir()
+    _write_prompt(prompts)
+    _client(FakeTransport(), prompts, MemoryCostLog(), "record").run(
+        "name_chat", {"topic": "hi"}, ChatTitle, app="chat"
+    )
+    monkeypatch.setenv("AI_MODEL", "muse-spark-1.3-contributor")
+    monkeypatch.setenv("AI_REASONING_EFFORT", "high")
+    get_settings.cache_clear()
+    with pytest.raises(AiReplayMissing):
+        _client(FakeTransport(), prompts, MemoryCostLog(), "replay").run(
+            "name_chat", {"topic": "hi"}, ChatTitle, app="chat"
+        )

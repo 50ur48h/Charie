@@ -16,3 +16,8 @@ def test_cost_formula() -> None:
 def test_unknown_model_refused() -> None:
     with pytest.raises(AiError):
         call_cost("gpt-99", 10, 0, 0)
+
+
+def test_spark_contributor_exact_cost() -> None:
+    cost = call_cost("muse-spark-1.3-contributor", 1_000_000, 200_000, 100_000)
+    assert cost == Decimal("0.1004")
