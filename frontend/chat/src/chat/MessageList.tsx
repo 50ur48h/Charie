@@ -151,7 +151,7 @@ export function MessageList({
                         />
                       )}
                       {message.status === "done" && message.answer !== null && (
-                        <AnswerActions messageId={message.id} answer={message.answer} />
+                        <AnswerActions messageId={message.id} answer={message.answer} initialVote={message.feedback} />
                       )}
                     </>
                   )}

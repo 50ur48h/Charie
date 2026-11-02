@@ -17,7 +17,7 @@ function json(data: unknown, status = 200): Response {
   });
 }
 
-function renderActions(failPaths: string[] = []) {
+function renderActions(failPaths: string[] = [], initialVote: "up" | "down" | null = null) {
   const calls: { url: string; body: unknown }[] = [];
   vi.stubGlobal(
     "fetch",
@@ -40,7 +40,7 @@ function renderActions(failPaths: string[] = []) {
   });
   render(
     <QueryClientProvider client={client}>
-      <AnswerActions messageId={2} answer={sampleAnswer(2)} />
+      <AnswerActions messageId={2} answer={sampleAnswer(2)} initialVote={initialVote} />
     </QueryClientProvider>,
   );
   return { calls, written };
@@ -98,6 +98,17 @@ describe("AnswerActions", () => {
     await vi.waitFor(() =>
       expect(screen.queryByPlaceholderText(/sales should not include/)).toBeNull(),
     );
+  });
+
+  test("shows the saved vote after a reload", async () => {
+    renderActions([], "up");
+    // No fetch needed: the saved vote renders pressed on load.
+    expect(screen.getByRole("button", { name: "Good answer" }).getAttribute("aria-pressed")).toBe(
+      "true",
+    );
+    expect(
+      screen.getByRole("button", { name: "Not helpful" }).getAttribute("aria-pressed"),
+    ).toBe("false");
   });
 
   test("a failed correction keeps the text", async () => {

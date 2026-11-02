@@ -227,7 +227,7 @@ def test_ask_refused_without_published_version(chat_client, db_session) -> None:
     chat_id = chat_client.post("/api/chats", json={}).json()["id"]
     response = chat_client.post(f"/api/chats/{chat_id}/messages", json={"text": "Net sales?"})
     assert response.status_code == 409
-    assert response.json()["error"] == "not_ready"
+    assert response.json()["error"] == "still_learning"
 
 
 def test_ask_rejects_empty_and_long_text(chat_client, db_session) -> None:

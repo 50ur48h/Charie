@@ -88,6 +88,8 @@ export function ChatPage() {
     await client.refetchQueries({ queryKey: ["chat", id] });
     // A new title lands with the first done answer; the sidebar shows it.
     await client.refetchQueries({ queryKey: ["chats"] });
+    // A finished answer can resolve a waiting question: refresh the status.
+    await client.refetchQueries({ queryKey: ["status"] });
     // Clear only this chat's scope: a completion racing a sidebar switch
     // must not kill the new chat's stream.
     setScope((current) => (current !== null && current.chatId === id ? null : current));

@@ -3,7 +3,7 @@ import { apiFetch } from "./client";
 import type { Spending } from "./usage";
 
 export interface StatusKnowledge {
-  version: string | null;
+  version: number | null;
   entries: number;
   documents: number;
   published_at: string | null;
@@ -17,8 +17,9 @@ export interface StatusData {
 }
 
 export interface StatusLearning {
-  runs_today: number;
-  questions_waiting: number;
+  status: string;
+  step_title: string | null;
+  percent: number;
 }
 
 export interface Status {
@@ -27,12 +28,14 @@ export interface Status {
   learning: StatusLearning | null;
   spending: Spending | null;
   questions_waiting: number;
+  learner_url: string | null;
 }
 
 export function useStatus() {
   return useQuery({
     queryKey: ["status"],
     queryFn: ({ signal }) => apiFetch<Status>("/api/status", { signal }),
-    refetchInterval: 60000,
+    refetchInterval: 30000,
+    refetchOnWindowFocus: true,
   });
 }

@@ -53,6 +53,7 @@ export function ChatLayout() {
       onShowSidebar={() => setHidden(false)}
       sidebar={(place) => (
         <ChatSidebar
+          user={{ name: "You", detail: "Signed in" }}
           active={pageFromPath(pathname)}
           activeChatId={chatId === undefined ? undefined : Number(chatId)}
           questionCount={statusQuery.data?.questions_waiting}
@@ -73,6 +74,8 @@ export function ChatLayout() {
         <SpendingLimitsDialog
           limitUsd={budgetQuery.data.spend_limit_usd}
           warnPercent={budgetQuery.data.spend_warn_percent}
+          spentUsd={spending?.spent_usd}
+          paused={spending?.state === "paused"}
           saving={updateBudget.isPending}
           serverError={saveError}
           onSave={(patch) => {

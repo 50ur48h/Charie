@@ -32,7 +32,7 @@ function stubFetch(mode: "ok" | "send-fails") {
       if (url.includes("/api/status")) {
         return Promise.resolve(json({
             questions_waiting: 3,
-            knowledge: { version: null, entries: 0, documents: 0, published_at: null },
+            knowledge: { version: 2, entries: 248, documents: 1, published_at: "2026-11-20T10:00:00Z" },
             data: {
               name: "Bella Forno database",
               kind: "postgres",
@@ -109,8 +109,8 @@ describe("NewChatPage", () => {
     stubFetch("ok");
     renderPage();
     await screen.findByText("Pick up where you left off");
-    fireEvent.click(screen.getByRole("button", { name: /Which dishes make us the most profit\?/ }));
-    expect(composer().value).toBe("Which dishes make us the most profit?");
+    fireEvent.click(screen.getByRole("button", { name: /How are we doing this month\?/ }));
+    expect(composer().value).toBe("How are we doing this month?");
   });
 
   test("an empty question keeps Ask disabled without calling the API", async () => {
