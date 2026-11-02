@@ -73,7 +73,10 @@ class _Session:
 
 def test_save_reads_versions_from_the_application_database(monkeypatch, tmp_path) -> None:
     """cmd_save opens DATABASE_URL itself, never the /postgres connection."""
+    from charie.shared.config import get_settings
+
     monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://u:pw@localhost:5433/charie")
+    get_settings.cache_clear()
     seen: dict = {}
 
     def fake_create_engine(url: str, **kwargs: object) -> object:
@@ -97,7 +100,10 @@ def test_save_reads_versions_from_the_application_database(monkeypatch, tmp_path
     monkeypatch.setattr(e2e_real, "DUMP_PATH", tmp_path / "e2e-db.dump")
     _Session.calls = 0
 
-    e2e_real.cmd_save()
+    try:
+        e2e_real.cmd_save()
 
-    assert seen["url"] == "postgresql+psycopg://u:pw@localhost:5433/charie"
-    assert (tmp_path / "e2e-db.dump").read_bytes() == b"dump-bytes"
+        assert seen["url"] == "postgresql+psycopg://u:pw@localhost:5433/charie"
+        assert (tmp_path / "e2e-db.dump").read_bytes() == b"dump-bytes"
+    finally:
+        get_settings.cache_clear()
