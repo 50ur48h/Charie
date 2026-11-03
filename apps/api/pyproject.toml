@@ -1,0 +1,173 @@
+[project]
+name = "charie"
+version = "0.1.0"
+description = "AI-native data analysis platform — API, agent runtime, DAL, connectors"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    # orjson is deliberately absent — see DECISIONS D-005.
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    "pydantic-settings>=2.6.0",
+    "sqlalchemy[asyncio]>=2.0.36",
+    "asyncpg>=0.30",
+    # SQL Server, through unixODBC and Microsoft's msodbcsql18 driver, which the
+    # image installs (architecture Part 3). Synchronous by nature, so every call
+    # goes through asyncio.to_thread behind the same async connector protocol.
+    "pyodbc>=5.2",
+    "alembic>=1.14",
+    "pyjwt[crypto]>=2.10",
+    "httpx>=0.28",
+    "pydantic[email]>=2.13.4",
+    # Fernet, for the local secrets backend (DECISIONS D-001). Already present
+    # transitively via pyjwt[crypto]; declared directly because we import it.
+    "cryptography>=44.0",
+    "sqlglot>=30.17.0",
+    # pgvector's SQLAlchemy type, so `knowledge_chunks.embedding` is a column
+    # the ORM and the migrations both understand rather than raw DDL either
+    # side has to keep in step by hand (WP10.1). The extension itself comes
+    # from the `pgvector/pgvector` image the compose stack already runs.
+    "pgvector>=0.3.6",
+    # A PDF's text layer (WP10.1a). **pypdf, not pymupdf**, which architecture
+    # 5.5 named — see DECISIONS D-030. pymupdf is AGPL-or-commercial, and this
+    # repository is public with its license still undecided (B-001), so taking
+    # an AGPL dependency would quietly decide it. pypdf is BSD-3-Clause,
+    # verified from the installed package metadata rather than from memory.
+    "pypdf>=5.1",
+    # FastAPI needs it to parse a multipart upload, and the documents route is
+    # the first in this codebase to take a file (WP10.1b). Declared rather than
+    # relied on transitively: without it the route raises at import time with a
+    # message about "python-multipart" that says nothing about which route.
+    "python-multipart>=0.0.20",
+    # Azure, for the two backends that replace the local ones in a deployment
+    # (WP12.2, DECISIONS D-001). `azure-identity` supplies the managed identity
+    # that makes "zero secrets in the pipeline" true — nothing here ever holds a
+    # Key Vault or Storage credential, it asks the platform who it is.
+    #
+    # **All three are unconditional dependencies, not an optional extra.** The
+    # image that runs in Azure is built from this file, and an extra would mean
+    # the production path depends on a build flag being remembered; the local
+    # stack pays a few megabytes it never imports, because `keyvault.py` and the
+    # Blob store import lazily inside their constructors.
+    "azure-identity>=1.19",
+    "azure-keyvault-secrets>=4.9",
+    "azure-storage-blob>=12.24",
+    # **`azure-core[aio]`, not bare `azure-core`, and a test is why.** The three
+    # packages above declare `azure-core` without its async extra, so installing
+    # them gets you SDK clients whose `.aio` variants raise
+    # `ImportError: aiohttp package is not installed` the first time anything
+    # constructs one. Nothing above catches that: the unit tests inject a fake
+    # client, so the only code path that builds a real one is the deployment.
+    # Caught here by the factory-selection test — the "prove it is reached" rule
+    # in AGENTS.md — which builds the store the way `artifact_store()` does.
+    "azure-core[aio]>=1.30",
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.8.0",
+    "pyright>=1.1.390",
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.24.0",
+    "pytest-cov>=6.0.0",
+    "httpx>=0.28.0",
+    "pyyaml>=6.0.3",
+    "hypothesis>=6.165.5",
+    "types-pyyaml>=6.0.12.20260724",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/charie"]
+
+# ---------------------------------------------------------------------------
+# ruff — lint + format. Line length matches .editorconfig.
+# ---------------------------------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # import sorting
+    "N",    # pep8-naming
+    "UP",   # pyupgrade
+    "B",    # bugbear
+    "C4",   # comprehensions
+    "SIM",  # simplify
+    "ASYNC",# async correctness — this codebase is async end to end
+    "S",    # bandit security rules
+    "RUF",  # ruff-specific
+]
+ignore = [
+    "B008",  # FastAPI's Depends()/Query() in defaults is the documented idiom
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = [
+    "S101",  # asserts are the point of a test
+    "S608",  # test SQL is built from module constants, never from input
+]
+# Migrations are DDL assembled from constants in the file itself. There is no
+# request data within a mile of them, and the alternative — hand-quoting every
+# identifier — would be less readable and no safer.
+"src/charie/db/alembic/versions/*" = ["S608"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["charie"]
+
+# ---------------------------------------------------------------------------
+# pyright — strict. The DAL is a security boundary; types are part of the guard.
+# ---------------------------------------------------------------------------
+[tool.pyright]
+include = ["src", "tests"]
+# `ops/evals` is where the eval harness lives, and `tests/evals` imports its
+# checking half directly (**B-066**). A resolution path only: `ops/` stays out of
+# `include`, so the harness is still ruff-checked rather than pyright-checked —
+# it is a standalone `uv` script with its own dependencies. Without this the test
+# file's every reference to `Result` and `match_value` is `Unknown` under strict
+# mode, which is 66 errors that say nothing.
+extraPaths = ["../../ops/evals"]
+pythonVersion = "3.12"
+typeCheckingMode = "strict"
+reportMissingTypeStubs = false
+
+# ---------------------------------------------------------------------------
+# pytest
+# ---------------------------------------------------------------------------
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "-q --strict-markers --strict-config"
+markers = [
+    "rls_proof: tenant-isolation proof tests — may never be skipped (plan §4.4)",
+    "live_provider: may obtain a non-stub provider, and so may spend real money (B-040)",
+]
+
+[tool.coverage.run]
+source = ["src/charie"]
+branch = true
+# The suite is measured in more than one CI job — one has Postgres, one has SQL
+# Server, neither has both — and the shards are combined afterwards (B-016).
+# Absolute paths would not match across jobs, and a combine that silently
+# matches nothing reports the same structurally wrong number it was meant to fix.
+relative_files = true
+# SQLAlchemy's asyncio layer runs awaited database work inside greenlets, and the
+# secrets backend does its file I/O in a worker thread. Without declaring both,
+# coverage silently misses every line executed there — reporting service modules
+# as barely covered while their tests pass, which is the worst of both worlds.
+concurrency = ["greenlet", "thread"]
+
+[tool.coverage.report]
+show_missing = true
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+]
