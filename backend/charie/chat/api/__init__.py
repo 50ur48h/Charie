@@ -1,1 +1,0 @@
-"""The chat API addresses."""
