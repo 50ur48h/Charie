@@ -1,0 +1,105 @@
+"""Liveness probe.
+
+Unauthenticated by design — compose, Container Apps and the web app's health
+widget all poll it — so it may report build identity and nothing else.
+
+**It also reports `degraded`, and that is not scope creep.** A deployment once
+answered `{"status":"ok"}` on this route while *every authenticated route*
+returned 500, because `AUTH_MODE=entra` was set and `OIDC_AUTHORITY` was not. The
+probe was telling the truth about the process and nothing useful about the
+service, which is the same failure as a smoke that reports a working deployment
+as broken and a test that cannot fail: a check whose green means less than a
+reader assumes.
+
+So a configuration that promises a mode it cannot serve is `degraded` here. It
+names the missing variables — they are variable *names*, never values — because
+the reader's next question is which one to set. It deliberately does **not**
+check reachability: a database that is briefly down is not a misconfiguration,
+and a liveness probe that fails on someone else's outage causes an outage of its
+own. What is reported is what this process was configured with and cannot honour.
+"""
+
+from __future__ import annotations
+
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as package_version
+from typing import Annotated, Literal
+
+from fastapi import APIRouter, Depends
+from pydantic import BaseModel, Field
+
+from charie import __version__
+from charie.config import Settings, get_settings
+from charie.llm.registry import unresolvable_roles
+
+router = APIRouter(tags=["meta"])
+
+
+class HealthResponse(BaseModel):
+    """Payload of ``GET /healthz``.
+
+    Carries no configuration, no environment name and no secret.
+    """
+
+    status: Literal["ok", "degraded"] = "ok"
+    version: str = Field(description="Application version from package metadata.")
+    git_sha: str = Field(description="Commit the image was built from, or 'unknown'.")
+    missing_settings: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Environment variables this configuration requires and does not have. "
+            "Names only — never values. Empty when status is 'ok'."
+        ),
+    )
+    unservable_roles: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Model roles this configuration cannot serve, and why. A deployment "
+            "can satisfy every required variable and still map a role to a tier "
+            "no model fills, which fails at the first question rather than here. "
+            "Names and reasons only — never a credential. Empty when 'ok'."
+        ),
+    )
+
+
+def resolve_version() -> str:
+    """Installed package version, falling back to the source constant.
+
+    Running straight from ``src`` without an install is normal in tooling
+    contexts, so a missing distribution is not an error.
+    """
+    try:
+        return package_version("charie")
+    except PackageNotFoundError:
+        return __version__
+
+
+@router.get("/healthz", summary="Liveness probe")
+async def healthz(settings: Annotated[Settings, Depends(get_settings)]) -> HealthResponse:
+    """Whether this deployment can do its job, not merely whether it is running.
+
+    **Two questions, because answering only the first was not enough.**
+    `missing_for_mode` asks whether the required variables are set, which is what
+    this probe checked and is `registry.resolve`'s first two refusals — not its
+    third. A deployment can name a `small` and a `strong` model, pass that check,
+    map a role to `mid`, and die at the first model call of the first question,
+    reporting `ok` the whole time.
+
+    `unresolvable_roles` closes it by resolving every role rather than the ones a
+    given request happens to need: a deployment that cannot answer one kind of
+    question is not well. It is what makes removing an unused model from
+    `LLM_MODELS` a safe tidy rather than a trap set for the next person to touch
+    `LLM_ROLE_MAP`.
+    """
+    missing = settings.missing_for_mode()
+    # Only worth asking once the variables are there: with `LLM_MODELS` unset,
+    # every role is unresolvable and the list would repeat what `missing` said,
+    # more loudly and less usefully.
+    unservable = [] if missing else unresolvable_roles(settings)
+    return HealthResponse(
+        status="degraded" if (missing or unservable) else "ok",
+        version=resolve_version(),
+        git_sha=settings.git_sha,
+        missing_settings=missing,
+        unservable_roles=unservable,
+    )
