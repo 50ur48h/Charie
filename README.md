@@ -1,11 +1,211 @@
 # Charie
 
-Charie: an AI data and business analyst. It learns a company's database and documents, then answers business questions with checked numbers.
+### Your data and business analyst. A clearer plan for what to do next.
 
-**Status:** Being built.
+[What you can do](#what-you-can-do) · [How it works](#how-charie-works) · [Run it locally](#run-charie-locally)
 
-**Tech stack:** Python (FastAPI) back end, React + Tailwind + shadcn/ui screens, Postgres with pgvector, Apache ECharts, and Meta's Muse API.
+It's Monday morning. You need to order stock, choose this week's promotion, and work out why sales slowed down. You have the records, but you still don't know where to start.
 
-## Run it on your laptop
+You could hire a data analyst. Or spend hours digging through your database, reports, and BI dashboards, trying to piece together an answer. Even then, you might have more charts than clarity.
 
-Docker is needed. Start our database with `docker compose up -d db`; it runs on port 5433.
+**Meet Charie, your data and business analyst.** Ask a question in everyday English, and it investigates your data the way an analyst would: work out what matters, look for patterns, check the findings, and explain what they mean for your next decision.
+
+> “What should I focus on this week to grow sales without buying stock I won't sell?”
+
+It brings together your sales history, stock records, and knowledge base—the documents and business rules you share. With that information available, Charie can help you explore which products need attention, where a promotion might help, and what to check before placing your next order. You can ask a follow-up, compare options, and see the evidence behind the suggestions.
+
+That could mean reviewing stock for a product that keeps selling out, considering an offer for a quiet weekday, or checking whether a popular discount brings customers back. The aim is to help you decide what to do next with the information your business already has.
+
+**One shop, a growing company, or a team managing hundreds of locations:** you deserve a clear view of what is working and where to focus. And it goes beyond running a business—any team with connected data can use Charie to investigate questions and make better-informed plans.
+
+It reads live data from your connected database when you ask. New records are available for the next investigation as they reach that database, so freshness follows your source. Suggestions depend on the information available; Charie shows the supporting work and what is still missing.
+
+## What you can do
+
+| | Questions you can bring to Charie |
+| --- | --- |
+| 📦 **Plan your stock** | “Based on recent sales, what stock should I review before next week?” |
+| 🎯 **Explore promotions** | “Which products might suit a promotion, and what have past offers taught us?” |
+| 🌱 **Find room to grow** | “Where are we losing sales, and which opportunities should we look into first?” |
+| 👥 **Bring customers back** | “Do people return after their first offer, or do they only buy with a discount?” |
+| 💰 **Understand the money** | “Sales grew, but did we make more profit?” |
+| 📈 **See what changed** | “Which stores, products, or days explain the fall?” |
+| 📖 **Use what your team knows** | Share business rules, product information, and past campaign notes so the analysis has context. |
+| 💬 **Keep asking** | “Why?”, “What about weekends?”, “Show me the comparison.” Continue in the same chat. |
+| 🧾 **Check the answer** | See the figures, charts, and queries behind the explanation. |
+
+Each question needs the relevant data. Stock planning may need stock levels and supplier lead times; profit needs cost data; promotion ideas are stronger with past campaign results and business notes. Charie helps you assess the options. You choose what to order, offer, or change.
+
+Answers can mix a short summary, key figures, tables, and charts. Ask for a **short answer** when you only need the main point.
+
+## How Charie works
+
+Before the first question, Charie reads the database structure: tables, columns, and relationships. Column profiling adds information about the values they contain. Business definitions and uploaded documents add the meaning that table names alone cannot explain.
+
+For each question, Charie works through an investigation:
+
+```mermaid
+flowchart TD
+    Q["You ask a question"] --> C["Find relevant tables, business definitions and documents"]
+    C --> P["Plan what to check"]
+    P --> S["Prepare a database query"]
+    S --> G["Data access checks: permissions, SQL rules and limits"]
+    G --> D[("Your database: read-only access")]
+    D --> R["Inspect the returned results"]
+    R --> E{"More evidence needed?"}
+    E -- "Yes, within the run limits" --> P
+    E -- "No, or limits reached" --> V["Review the evidence and draft answer"]
+    V --> A["Answer with explanations, visuals, queries and limitations"]
+```
+
+**It investigates in steps.** One query may establish the overall change; another may compare stores; a third may check the daily pattern. The next step depends on what the earlier results show. The controller limits queries, model calls, time, and spending so an investigation cannot continue indefinitely.
+
+**It checks access before running SQL.** Every customer-data query passes through the Data Access Layer (DAL). This code checks SQL against the catalog and access policy, applies query limits and timeouts, and masks protected values before results are stored or shown to the model. Database credentials are checked for read-only access. The model cannot grant itself permissions or bypass this route.
+
+**It reviews the evidence before presenting it.** Code checks things such as whether cited queries succeeded and whether reported numbers appear in the results. A separate model review looks for unsupported assumptions, conflicting findings, and missing evidence. Some findings become visible warnings rather than blocking the answer.
+
+**It keeps the work inspectable.** The API stores the run, query references, and progress events. The browser shows progress while the investigation runs, then renders the answer with its evidence. If the answer is incomplete, the product can show what remains unanswered.
+
+These checks help catch mistakes; they do not guarantee that every query or business conclusion is correct. Charie shows gaps and warnings so a polished report can still be questioned.
+
+## How Meta models are used
+
+Charie supports Meta models through the Meta Model API. The setup below uses Muse Spark for every step, matching the working Railway configuration:
+
+- **Muse Spark (`muse-spark-1.3`)** handles the full investigation: understanding your question, planning checks, preparing queries, reviewing results, and explaining the findings.
+- **Muse Wonder (`muse-wonder-1.0`)** is an optional model for investigation tasks when your Meta account has access. Confirm that access before changing the model and its price settings.
+
+The work is split into focused steps:
+
+| Step | What the model helps with |
+| --- | --- |
+| **Understand** | Work out the question, the time period, and the business measures involved. |
+| **Plan** | Decide which checks would help answer it. |
+| **Query** | Prepare queries using the tables and business rules supplied by Charie. |
+| **Reflect** | Read the results and decide what needs checking next. |
+| **Review** | Look for gaps, conflicting findings, and conclusions that go beyond the evidence. |
+| **Explain** | Turn the findings into a clear answer with useful visuals. |
+
+These are separate calls with different jobs. Charie assigns them to the configured model, so understanding a question, investigating it, and reviewing the answer each get their own instructions and context.
+
+Charie controls the database connection, permissions, query checks, and run limits. It gives the model relevant business context and returned results, and records the work behind the answer.
+
+The app runs on your machine; model requests go to the Meta Model API. Relevant schema details, document excerpts, and query results may be included in those requests.
+
+## Run Charie locally
+
+You will start the app, connect your PostgreSQL server with a read-only login, and ask your first question. No demo database or seeding is needed.
+
+### Before you start
+
+Install these once:
+
+- [Docker Desktop](https://docs.docker.com/get-started/get-docker/) — start it before running the app.
+- [Git](https://git-scm.com/downloads) and [uv](https://docs.astral.sh/uv/getting-started/installation/).
+- [Node.js 22](https://nodejs.org/en/download) and [pnpm 10.30.3](https://pnpm.io/installation).
+- GNU Make. On Windows, run `winget install ezwinports.make` in PowerShell, then open a new **Git Bash** window for the commands below. On macOS or Linux, use a terminal with Make installed.
+
+Create a [Meta Model API key](https://dev.meta.ai/) and enable API billing. Model calls use your Meta account and are billed by usage.
+
+### 1. Get the project
+
+Copy this into your terminal:
+
+```bash
+git clone https://github.com/50ur48h/Charie.git
+cd Charie
+uv python install 3.12
+make install
+make env
+```
+
+You now have the project, its dependencies, and a local settings file called `.env`.
+
+### 2. Add your Meta key
+
+Open `.env` in a text editor. Replace the matching settings with the block below, adding any that are missing. Replace `paste_your_meta_key_here` with your key:
+
+```dotenv
+META_API_KEY=paste_your_meta_key_here
+LLM_PROVIDERS=meta
+LLM_MODELS={"meta":{"small":"muse-spark-1.3","mid":"muse-spark-1.3","strong":"muse-spark-1.3"}}
+LLM_PRICES={"muse-spark-1.3":{"input":1.25,"output":4.25}}
+META_REASONING_EFFORT=minimal
+LLM_RUN_COST_LIMIT_USD=2.00
+EMBEDDINGS_MODEL=
+```
+
+This uses Muse Spark for every analysis step, sets a per-question spending limit, and uses wording-based search to find relevant tables and documents. The price entries are USD per million tokens; check [Meta's pricing](https://dev.meta.ai/docs/pricing-rate-limits) if you change the model.
+
+Leave the other settings as they are for this first setup. Keep `.env` private.
+
+### 3. Create the key that protects saved connections
+
+Run:
+
+```bash
+make secrets.key
+```
+
+It prints a line beginning with `LOCAL_SECRETS_KEY=`. Copy the **whole line** into `.env`, replacing the empty line with that name. Save the file.
+
+Keep this key unchanged after saving database connections. Charie uses it to protect their passwords.
+
+### 4. Start Charie
+
+```bash
+make up
+make db.setup
+```
+
+The first start may take a few minutes while Docker downloads and builds the services. These commands start the app and prepare its own platform database. Your business data stays on your PostgreSQL server.
+
+Open **[http://localhost:3000](http://localhost:3000)**. You should see the sign-in screen. Enter a name, continue, and create an organization.
+
+### 5. Connect your PostgreSQL server
+
+Open **Settings → Data sources → Register a database**. Enter your server's host,
+port, database name, and a dedicated read-only username and password. Use the
+appropriate TLS settings for that server. The API container must be able to
+reach it; localhost inside that container refers to the API itself.
+
+Run **Test connection**, **Refresh catalog**, then **Profile columns**. Choose
+**Answer questions from this** to select the source for your organization.
+
+### 6. Ask your first question
+
+> “How are sales changing, and where should I focus first?”
+
+Use a question relevant to your data. Open **How I worked this out** to inspect
+the evidence and ask follow-up questions in the same chat.
+
+### Need help?
+
+| If this happens… | Try this |
+| --- | --- |
+| The app will not open | Check that Docker Desktop is running. Run `make ps` to see service status, or `make logs` to read the logs. |
+| Questions fail | Check your Meta key, billing, and access to `muse-spark-1.3`. The API logs can show the failure. |
+| The database will not connect | Check the server hostname, port, TLS settings and read-only credentials. Verify the server is reachable from the API container. |
+| You changed `.env` but nothing changed | Recreate the API with the command below, then reload the browser. A restart alone keeps the old environment values. |
+| A port is already in use | See the port and environment settings in [.env.example](.env.example) and the local setup steps above. |
+
+```bash
+docker compose --env-file .env -f ops/docker-compose.yml up -d api
+```
+
+Run `make down` to stop the app and keep your saved data. Run `make up` to start it again.
+
+### Ready to use your own data?
+
+Register your PostgreSQL or Microsoft SQL Server database through the same screen, using a dedicated read-only login. It needs to be reachable from the API container. Then test the connection, refresh the catalog, and profile the columns.
+
+Add your team's definitions under **Settings → Definitions** and business documents under **Knowledge**. This helps Charie understand the meaning behind your numbers.
+
+## For developers
+
+- [Architecture](docs/architecture.md) — system design and data boundaries.
+- [Working agreement](AGENTS.md) — project rules and environment troubleshooting.
+
+The interface lives in `apps/web`; the API and analysis engine live in `apps/api`. `make help` lists the development and test commands.
+
+**License:** No license has been selected yet. All rights reserved.
