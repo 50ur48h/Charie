@@ -1,217 +1,645 @@
-name: CI
+# CI v1 (plan §4.1, WP0.5). It grows with the phases — Phase 1 adds a Postgres
+# service for the migration tests, Phase 5 a `test.dal` step with its own
+# coverage gate, Phase 9 the eval harness.
+#
+# `hygiene`, `api` and `web` are the required status checks on `main`, so they
+# must ALWAYS report. Path filtering therefore gates the *steps* inside a job,
+# never the job itself: a skipped job never reports its context and would leave
+# every docs-only PR permanently "Expected — waiting for status" (DECISIONS D-007).
+
+name: ci
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, edited]
-    branches: [main]
   push:
     branches: [main]
-
-permissions:
-  contents: read
 
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
-  pr-rules:
-    name: pr-rules
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      api: ${{ steps.filter.outputs.api }}
+      web: ${{ steps.filter.outputs.web }}
+      infra: ${{ steps.filter.outputs.infra }}
+      smoke: ${{ steps.filter.outputs.smoke }}
+      connectors: ${{ steps.filter.outputs.connectors }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            api:
+              - 'apps/api/**'
+              - 'ops/**'
+              - 'Makefile'
+              - '.github/workflows/ci.yml'
+            web:
+              - 'apps/web/**'
+              - 'Makefile'
+              - '.github/workflows/ci.yml'
+            # The compose smoke drives both halves at once, so it is the one job
+            # that would notice them disagreeing — and the only one for which a
+            # change to the compose file or the seed is a reason to run.
+            smoke:
+              - 'apps/web/**'
+              - 'apps/api/**'
+              - 'ops/**'
+              - 'Makefile'
+              - '.github/workflows/ci.yml'
+            infra:
+              - 'infra/**'
+              - '.github/workflows/ci.yml'
+            connectors:
+              - 'apps/api/src/charie/connectors/**'
+              - 'apps/api/src/charie/dal/**'
+              - 'apps/api/tests/connectors/**'
+              - 'ops/seed/seed_pizza_mssql.sql'
+              - 'ops/scripts/seed_mssql.sh'
+              - '.github/workflows/ci.yml'
+
+  hygiene:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - id: check
-        run: |
-          if [ -f scripts/ci/pr_rules.py ]; then
-            echo "present=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "present=false" >> "$GITHUB_OUTPUT"
-          fi
-      - if: steps.check.outputs.present == 'true'
-        env:
-          EVENT: ${{ github.event_name }}
-          PR_TITLE: ${{ github.event.pull_request.title }}
-          BRANCH: ${{ github.head_ref }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-        run: python scripts/ci/pr_rules.py
-      - if: steps.check.outputs.present == 'true'
-        uses: gitleaks/gitleaks-action@v3
+      - name: Scan for secrets
+        uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - if: steps.check.outputs.present == 'false'
-        run: echo "::notice::Nothing to check yet"
+      - name: Every TODO has a backlog ID
+        run: bash scripts/check_todos.sh
+      # **The half of the role check that needs no Azure** (B-130). A public role
+      # definition id looks exactly like a leaked key to gitleaks' entropy
+      # heuristic, so `.gitleaks.toml` allowlists each one by value — and that
+      # list drifted from the template the moment #107 swapped the vault role.
+      # Nothing noticed, because the id #107 introduced was invented and happened
+      # not to trip the heuristic; correcting it made `hygiene` fail on the fix.
+      #
+      # Checked in both directions: an id the template uses and the allowlist
+      # omits fails the scanner on a public value, and an id the allowlist keeps
+      # after the template drops it is a standing exemption a real secret could
+      # inherit. The `az` half runs in `deploy.yml`, where there is a session.
+      - name: The role ids and the secret-scanner allowlist agree
+        run: sh ops/scripts/check_role_definitions.sh --allowlist-only
+      # **The workflows are the one kind of code here that nothing could run
+      # before it ran in production** (**B-128**). `check_env.sh` has a
+      # `--selftest`, the Python has pytest — and a
+      # `run:` block was first exercised by the dispatch it gated. That is how
+      # `eval "value=${${$name}}"` reached main inside the step whose whole job is
+      # to say whether the deployment has its values: the deploy died with
+      # `bad substitution` on a configuration where all eight were present.
+      #
+      # **`bash -n` would not have caught it, and it is worth saying why rather
+      # than adding the cheaper guard.** That expansion is a *runtime* failure,
+      # not a syntax error: the line before it executes, and `bash -n` exits 0 on
+      # the defective script. A syntax check would have been a guard that does not
+      # guard.
+      #
+      # `actionlint` does catch it, because it extracts every `run:` block and
+      # runs **shellcheck** over it — `SC2082 (error)`, which names `${!name}`,
+      # the fix that was actually applied. Verified by running this image against
+      # the workflow at the defective commit before adding the step.
+      #
+      # Pinned by digest, not by tag: this is a public repository and a linter
+      # that can change under us is a step that can start failing, or stop
+      # catching, without a commit.
+      - name: Lint the workflows, with shellcheck over every `run:` block
+        run: |
+          docker run --rm -v "$PWD:/repo" -w /repo             rhysd/actionlint:latest@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667             -color
+      # Check environment correspondence and the guard itself. B-086 was a variable
+      # every developer had and no container was given, invisible for a whole
+      # phase because the tests run where the variable was.
+      - name: The environment guard still catches a variable that reaches nothing
+        run: bash scripts/check_env.sh --selftest
+      - name: .env.example and compose agree about what the container gets
+        run: bash scripts/check_env.sh
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      # **The guard on the guard.** `preflight` twice claimed to be every check
+      # in this file and twice was not — the second time it was missing
+      # `test.dal`'s coverage gate and `test.rls`, the two on the security
+      # boundary. Adding the targets fixed those; this stops the next job from
+      # arriving unnoticed. Runs its own selftest first, per B-019.
+      - name: preflight still covers every step this file runs
+        run: uv run --directory apps/api python ../../scripts/check_preflight.py --selftest && uv run --directory apps/api python ../../scripts/check_preflight.py
+      - name: Seed truths match the generator
+        run: make check.truths
 
-  backend:
-    name: backend
+  api:
+    needs: changes
     runs-on: ubuntu-latest
+    env:
+      RUN: ${{ needs.changes.outputs.api }}
+      # Migration and isolation tests need a real server. REQUIRE_DB turns their
+      # local "skip when nothing is reachable" into a hard failure here — a
+      # silently skipped RLS proof would be worse than having no proof at all.
+      # Owner role: migrations and test-database creation.
+      DATABASE_URL: postgresql+asyncpg://postgres:test@localhost:5432/postgres
+      # The unprivileged role the RLS proof suite connects as. Only the username
+      # and password are read from this; each test builds its own database name.
+      APP_DATABASE_URL: postgresql+asyncpg://charie_app:apptest@localhost:5432/postgres
+      REQUIRE_DB: "1"
+      # This job measures everything except the SQL Server connector, which it
+      # cannot reach. Its half is kept under its own name and combined with the
+      # mssql job's half in `coverage` below (B-016).
+      COVERAGE_FILE: ${{ github.workspace }}/.coverage.api
+    services:
+      # pgvector, not plain postgres: revision 0001 creates the vector extension.
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_PASSWORD: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        if: env.RUN == 'true'
+        with:
+          enable-cache: true
+          cache-dependency-glob: apps/api/uv.lock
+      - name: Install
+        if: env.RUN == 'true'
+        run: uv sync --locked --directory apps/api
+      - name: Lint, typecheck, test
+        if: env.RUN == 'true'
+        run: make lint.api lint.seed typecheck.api test.api
+      # Its own step so the tenant-isolation proof is a named signal in the log
+      # rather than a line inside a larger run. `pytest -m rls_proof` exits 5 if
+      # it collects nothing, so a deleted or renamed marker fails the build
+      # instead of quietly testing nothing. REQUIRE_DB=1 above means these
+      # cannot skip either.
+      - name: Tenant isolation proof (may never be skipped)
+        if: env.RUN == 'true'
+        run: make test.rls
+      # Its own step, and its own gate, for the same reason the RLS proof has
+      # one: the DAL is the security boundary (plan §4.4), and a number that
+      # only exists inside a larger total is one nobody looks at. `pytest`
+      # exits 5 if it collects nothing, so a deleted suite fails the build
+      # rather than passing with no tests.
+      - name: DAL suite and its coverage gate
+        if: env.RUN == 'true'
+        env:
+          # Its own data file. Without this it writes to COVERAGE_FILE like
+          # everything else in the job and replaces the whole suite's shard with
+          # a DAL-only one — which is not an error here, where the gate still
+          # passes, but drops the combined total from 96% to 63% in a job that
+          # cannot see why. This file is not uploaded; the gate is enforced
+          # where it is measured.
+          COVERAGE_FILE: ${{ github.workspace }}/.coverage.dal-gate
+        run: make test.dal
+      - name: Keep this job's half of the coverage data
+        if: env.RUN == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-api
+          path: .coverage.api
+          retention-days: 1
+          # Coverage data files start with a dot, and upload-artifact skips
+          # hidden files unless told otherwise — silently, leaving `coverage`
+          # with nothing to combine and a number that looks fine.
+          include-hidden-files: true
+      - name: Nothing to do
+        if: env.RUN != 'true'
+        run: echo "No changes under apps/api or ops — skipping."
+
+  # The second dialect, against a real SQL Server (WP3.3).
+  #
+  # Unlike `api` and `web` this job carries a job-level `if`, and the difference
+  # is deliberate rather than a lapse from D-007: those two are *required* status
+  # checks, so they must always report, while this one is not — a job that never
+  # runs simply never reports, and nothing waits on it. Gating the steps instead
+  # would start a 1.5 GB service container on every docs-only PR to then skip
+  # everything inside it.
+  mssql:
+    needs: changes
+    if: needs.changes.outputs.connectors == 'true'
+    runs-on: ubuntu-latest
+    # The heaviest job here, and the only one that installs from a third-party
+    # apt repository — so it is the one that can hang on somebody else's mirror.
+    # It did, on #71: `apt-get update` sat on azure.archive.ubuntu.com for 32
+    # minutes and would have run to GitHub's 360-minute default. A ceiling turns
+    # that into a red job in a quarter of an hour, which is a thing a person can
+    # act on.
+    timeout-minutes: 20
+    env:
+      # A throwaway for a container that lives for one job and listens on
+      # localhost. It still has to satisfy SQL Server's password policy.
+      MSSQL_SA_PASSWORD: Ci_only_password_1
+      MSSQL_PIZZA_READONLY_PASSWORD: Ci_only_readonly_1
+      MSSQL_HOST: localhost
+      MSSQL_PORT: "1433"
+      MSSQL_DB: pizza
+      MSSQL_PIZZA_READONLY_USER: pizza_readonly
+      # The connector suite skips when no server is reachable, which is right on
+      # a laptop and wrong here: this job exists to run it.
+      REQUIRE_MSSQL: "1"
+      # Postgres fixtures are not part of this job, so the shared conftest must
+      # be allowed to skip them rather than failing on a missing DATABASE_URL.
+      REQUIRE_DB: "0"
+      # This is the only job that can execute connectors/sqlserver.py, so it is
+      # the only job whose measurement of it means anything (B-016).
+      COVERAGE_FILE: ${{ github.workspace }}/.coverage.mssql
+    services:
+      mssql:
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        env:
+          ACCEPT_EULA: "Y"
+          MSSQL_PID: Developer
+          MSSQL_SA_PASSWORD: Ci_only_password_1
+        ports:
+          - 1433:1433
+        options: >-
+          --health-cmd "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P Ci_only_password_1 -C -Q 'SELECT 1'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 20
+          --health-start-period 60s
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: apps/api/uv.lock
+      # The same script the image uses, so the driver install is exercised on
+      # every connector change rather than only when an image is rebuilt.
+      - name: Install the SQL Server ODBC driver
+        # Its own, tighter ceiling: the job's 20 minutes would be spent here and
+        # report "the job timed out", which says nothing about which step. This
+        # says the driver install is what hung.
+        timeout-minutes: 8
+        run: sudo KEEP_BUILD_TOOLS=1 sh apps/api/docker/install-odbc.sh
+      - name: Install
+        run: uv sync --locked --directory apps/api
+      # -i so the redirected file becomes the container's stdin; sqlcmd reads
+      # from it when given neither -Q nor -i of its own.
+      - name: Seed the SQL Server fixture
+        run: |
+          docker exec -i \
+            -e RO_PASSWORD="$MSSQL_PIZZA_READONLY_PASSWORD" \
+            "${{ job.services.mssql.id }}" \
+            sh -c 'exec /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$MSSQL_SA_PASSWORD" -C -b -v ReadonlyPassword="$RO_PASSWORD"' \
+            < ops/seed/seed_pizza_mssql.sql
+      - name: Connector tests (may not skip here)
+        run: uv run --directory apps/api pytest tests/connectors -q --cov
+      - name: Keep this job's half of the coverage data
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-mssql
+          path: .coverage.mssql
+          retention-days: 1
+          include-hidden-files: true
+
+  # The API's coverage number, assembled from the jobs that each measured part
+  # of it (B-016). Splitting the suite by which database a job can reach is
+  # right; letting either half report the total as if it were the whole is not.
+  #
+  # `always()` for the D-007 reason: a job that is skipped never reports, and a
+  # number that only sometimes appears is one nobody notices going missing. The
+  # mssql shard is conditional, so this must not be conditional on it — the
+  # script says which shards it found and what their absence means.
+  # The twenty golden questions, against a real seed, on every PR (plan WP9.2b).
+  #
+  # Its own job because it needs a state nothing else does — a seeded pizza
+  # database, an organization, a registered read-only source and a built catalog
+  # — and because a suite that shares a database with the unit tests would be
+  # measuring their leftovers. It provisions all of it from nothing, which is
+  # what makes the evals a *required check* rather than twenty questions that run
+  # when somebody remembers.
+  #
+  # FakeLLM only, and deliberately: the SQL comes from `golden.yaml`, so this
+  # tests the catalog grounding, the DAL, the critic and the composer rather than
+  # a model's prose. It costs nothing, it cannot flake on a provider, and it
+  # gives the same answer every time. The model's own quality is
+  # `nightly-evals.yml`'s business, where it can spend money and fail without
+  # blocking a merge.
+  evals:
+    needs: changes
+    runs-on: ubuntu-latest
+    env:
+      RUN: ${{ needs.changes.outputs.api }}
+      DATABASE_URL: postgresql+asyncpg://postgres:test@localhost:5432/charie
+      APP_DATABASE_URL: postgresql+asyncpg://charie_app:apptest@localhost:5432/charie
+      APP_DB_PASSWORD: apptest
+      # The fixture's own database, on the same server. Registered with the
+      # read-only login `make seed` creates, never the owner: `readonly_verified`
+      # is part of what these evals exercise.
+      SEED_PIZZA_HOST: localhost
+      SEED_PIZZA_PORT: "5432"
+      SEED_PIZZA_DB: pizza
+      SEED_PIZZA_USER: postgres
+      SEED_PIZZA_PASSWORD: test
+      SEED_PIZZA_READONLY_USER: pizza_readonly
+      SEED_PIZZA_READONLY_PASSWORD: evalsreadonly
+      # Both databases are on this runner, so TLS is not negotiable here in the
+      # way it is anywhere else — declared explicitly rather than left to a
+      # default, so nothing about production leaks in from an omission.
+      TLS_LOCAL_HOSTS: localhost
+      SECRETS_BACKEND: local
+      LOCAL_SECRETS_PATH: ${{ github.workspace }}/ops/.secrets/evals.json
     services:
       postgres:
         image: pgvector/pgvector:pg16
         env:
-          POSTGRES_USER: charie
-          POSTGRES_PASSWORD: charie
-          POSTGRES_DB: charie_test
+          POSTGRES_PASSWORD: test
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U charie -d charie_test"
-          --health-interval 10s
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
           --health-timeout 5s
-          --health-retries 5
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        if: env.RUN == 'true'
+        with:
+          enable-cache: true
+          cache-dependency-glob: apps/api/uv.lock
+      - name: Install
+        if: env.RUN == 'true'
+        run: uv sync --locked --directory apps/api
+      - name: A key for the local secrets store
+        if: env.RUN == 'true'
+        run: |
+          mkdir -p ops/.secrets
+          echo "LOCAL_SECRETS_KEY=$(uv run --directory apps/api python -c             'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')"             >> "$GITHUB_ENV"
+      - name: The platform database
+        if: env.RUN == 'true'
+        run: |
+          psql "postgresql://postgres:test@localhost:5432/postgres"             -c "CREATE DATABASE charie"
+          uv run --directory apps/api alembic upgrade head
+          psql "postgresql://postgres:test@localhost:5432/charie"             -c "ALTER ROLE charie_app WITH LOGIN PASSWORD 'apptest'"
+      # The same generator `make seed` runs, so the numbers here are the numbers
+      # in truths.json — which is the whole basis of every expected value.
+      - name: The pizza fixture
+        if: env.RUN == 'true'
+        run: |
+          psql "postgresql://postgres:test@localhost:5432/postgres"             -c "CREATE DATABASE pizza"
+          uv run ops/seed/seed_pizza.py
+      - name: An organization, a registered source and its catalog
+        if: env.RUN == 'true'
+        run: |
+          uv run --directory apps/api python ../../ops/evals/provision.py | tee /tmp/provision.log
+          grep '^EVALS_ORG_ID=' /tmp/provision.log >> "$GITHUB_ENV"
+      - name: The twenty golden questions
+        if: env.RUN == 'true'
+        run: make evals
+      - name: Nothing to do
+        if: env.RUN != 'true'
+        run: echo "No API or ops changes; the evals did not need to run."
+
+  coverage:
+    needs: [api, mssql]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: apps/api/uv.lock
+      - name: Collect what each job measured
+        uses: actions/download-artifact@v4
+        with:
+          pattern: coverage-*
+          merge-multiple: true
+          path: apps/api/coverage-data
+      - name: Combine the shards and apply the floor
+        run: bash scripts/coverage_report.sh
+
+  web:
+    needs: changes
+    runs-on: ubuntu-latest
+    # Bounded, because an unbounded step here has already cost two hours. The
+    # job's real work is a couple of minutes; the browser install is the only
+    # part that reaches the network as root.
+    timeout-minutes: 20
     env:
-      DATABASE_URL: postgresql+psycopg://charie:charie@localhost:5432/charie_test
-      AI_REPLAY: replay
+      RUN: ${{ needs.changes.outputs.web }}
     steps:
-      - uses: actions/checkout@v7
-      - id: check
-        run: |
-          if [ -f backend/pyproject.toml ]; then
-            echo "present=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "present=false" >> "$GITHUB_OUTPUT"
-          fi
-      - if: steps.check.outputs.present == 'true'
-        uses: astral-sh/setup-uv@v10.3.2
-      - if: steps.check.outputs.present == 'true'
-        working-directory: backend
-        run: uv sync --frozen
-      - if: steps.check.outputs.present == 'true'
-        working-directory: backend
-        run: uv run ruff format --check .
-      - if: steps.check.outputs.present == 'true'
-        working-directory: backend
-        run: uv run ruff check .
-      - if: steps.check.outputs.present == 'true'
-        working-directory: backend
-        run: |
-          if [ -f alembic.ini ]; then
-            uv run alembic upgrade head
-          fi
-      - if: steps.check.outputs.present == 'true'
-        working-directory: backend
-        run: |
-          code=0
-          uv run pytest -m "not practice_db and not live_ai" || code=$?
-          if [ "$code" -eq 5 ]; then
-            echo "No tests found yet; counting as a pass"
-            exit 0
-          fi
-          exit "$code"
-      - if: steps.check.outputs.present == 'false'
-        run: echo "::notice::Nothing to check yet"
-
-  frontend:
-    name: frontend
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - id: check
-        run: |
-          if [ -f frontend/package.json ]; then
-            echo "present=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "present=false" >> "$GITHUB_OUTPUT"
-          fi
-      - if: steps.check.outputs.present == 'true'
-        uses: actions/setup-node@v7
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        if: env.RUN == 'true'
         with:
-          node-version-file: frontend/.nvmrc
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
-      - if: steps.check.outputs.present == 'true'
-        working-directory: frontend
-        run: npm ci
-      - if: steps.check.outputs.present == 'true'
-        working-directory: frontend
-        run: npm run lint
-      - if: steps.check.outputs.present == 'true'
-        working-directory: frontend
-        run: npm run typecheck
-      - if: steps.check.outputs.present == 'true'
-        working-directory: frontend
-        run: npm test
-      - if: steps.check.outputs.present == 'true'
-        working-directory: frontend
-        run: npm run build
-      - if: steps.check.outputs.present == 'false'
-        run: echo "::notice::Nothing to check yet"
-
-  e2e:
-    name: e2e
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - id: check
-        run: |
-          if [ -f frontend/package.json ] && grep -q '"e2e:mock"' frontend/package.json; then
-            echo "present=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "present=false" >> "$GITHUB_OUTPUT"
-          fi
-      - if: steps.check.outputs.present == 'true'
-        uses: actions/setup-node@v7
+          package_json_file: apps/web/package.json
+      - uses: actions/setup-node@v4
+        if: env.RUN == 'true'
         with:
-          node-version-file: frontend/.nvmrc
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
-      - if: steps.check.outputs.present == 'true'
-        working-directory: frontend
-        run: npm ci
-      - if: steps.check.outputs.present == 'true'
-        working-directory: frontend
-        run: npx playwright install --with-deps chromium
-      - if: steps.check.outputs.present == 'true'
-        working-directory: frontend
-        run: npm run e2e:mock
-      - if: failure() && steps.check.outputs.present == 'true'
-        uses: actions/upload-artifact@v7
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: apps/web/pnpm-lock.yaml
+      - name: Install
+        if: env.RUN == 'true'
+        run: pnpm --dir apps/web install --frozen-lockfile
+      - name: Lint, typecheck, test
+        if: env.RUN == 'true'
+        run: make lint.web typecheck.web test.web
+      - name: Build
+        if: env.RUN == 'true'
+        run: pnpm --dir apps/web build
+      # A real browser, because a jsdom test passed against code the browser
+      # visibly broke on (B-044). Chromium only, against a stub API, so this
+      # needs no compose stack, no database and no key.
+      - name: Install Chromium
+        if: env.RUN == 'true'
+        # **No `--with-deps`, deliberately.** That flag becomes root and runs
+        # `apt-get update`, and on 2026-08-19 apt stalled on GitHub's own Ubuntu
+        # mirror — twice, once for **1h 58m** — on a PR whose lint, typecheck,
+        # tests and build had all already passed. The log is unambiguous: repeated
+        # `Ign: http://azure.archive.ubuntu.com` and then seven silent minutes.
+        # The runner image already carries the shared libraries Chromium needs,
+        # so the browser comes from Playwright's own CDN and apt is never
+        # consulted. If a library ever is missing, the smoke below fails saying
+        # which — a better failure than a mirror nobody here controls.
+        #
+        # Bounded as well, because the two are separate lessons: this step must
+        # not be able to burn the job's six-hour default again, whatever stalls.
+        timeout-minutes: 8
+        run: pnpm --dir apps/web exec playwright install chromium
+      - name: Browser smoke
+        if: env.RUN == 'true'
+        run: make test.web.e2e
+      - name: Keep the trace of a failure
+        if: failure() && env.RUN == 'true'
+        uses: actions/upload-artifact@v4
         with:
           name: playwright-report
-          path: frontend/playwright-report/
-          if-no-files-found: ignore
-      - if: steps.check.outputs.present == 'false'
-        run: echo "::notice::Nothing to check yet"
+          path: apps/web/playwright-report/
+          retention-days: 7
+      - name: Nothing to do
+        if: env.RUN != 'true'
+        run: echo "No changes under apps/web — skipping."
 
-  docker:
-    name: docker
+  # The whole product, in a browser, on a real compose stack (plan WP11.2b).
+  #
+  # Its own job because it needs everything: both images built, a platform
+  # database with its migrations and its unprivileged role, a seeded customer
+  # database, and a browser. The `web` job above is the cheap one — a stub API,
+  # no containers — and merging the two would make every lint failure wait on a
+  # docker build.
+  #
+  # **What green here means, and what it does not.** It means login, source
+  # registration, catalog discovery, profiling, asking, answering, storage and
+  # the trace all connect. It does not mean a question was understood: the model
+  # is `llm/scripted.py`, selected by `LLM_PROVIDERS` below and refused by two
+  # independent guards outside CI (**D-040**). Plan WP11.2's gate wording says so
+  # explicitly, and the chart criterion is met by a live walk instead.
+  #
+  # Path filter per **D-007**: the job always runs so the check always reports,
+  # and its steps are what the filter gates. It watches `api` as well as `web` —
+  # this is the one job that would notice the two halves disagreeing.
+  web-e2e:
+    needs: changes
     runs-on: ubuntu-latest
+    # The observed cold run on a developer machine is ~3 minutes, most of it
+    # `next dev` compiling routes on first request. A cold runner also builds
+    # both images from nothing. Bounded well above that for the reason the
+    # `web` job is bounded: a step that reaches the network must not be able to
+    # burn the six-hour default when something outside this repo stalls.
+    timeout-minutes: 30
+    env:
+      RUN: ${{ needs.changes.outputs.smoke }}
     steps:
-      - uses: actions/checkout@v7
-      - id: check
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        if: env.RUN == 'true'
+        with:
+          enable-cache: true
+          cache-dependency-glob: apps/api/uv.lock
+      - uses: pnpm/action-setup@v4
+        if: env.RUN == 'true'
+        with:
+          package_json_file: apps/web/package.json
+      - uses: actions/setup-node@v4
+        if: env.RUN == 'true'
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: apps/web/pnpm-lock.yaml
+      - name: Install
+        if: env.RUN == 'true'
         run: |
-          if [ -f docker/chat.Dockerfile ]; then
-            echo "present=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "present=false" >> "$GITHUB_OUTPUT"
-          fi
-      - if: steps.check.outputs.present == 'true'
-        run: docker build -f docker/chat.Dockerfile .
-      - if: steps.check.outputs.present == 'true'
-        run: docker build -f docker/learner.Dockerfile .
-      - if: steps.check.outputs.present == 'false'
-        run: echo "::notice::Nothing to check yet"
+          uv sync --locked --directory apps/api
+          pnpm --dir apps/web install --frozen-lockfile
+      # No `--with-deps`, for the reason the `web` job gives at length: that flag
+      # becomes root and runs `apt-get update`, which stalled for 1h 58m on
+      # GitHub's own mirror on 2026-08-19.
+      - name: Install Chromium
+        if: env.RUN == 'true'
+        timeout-minutes: 8
+        run: pnpm --dir apps/web exec playwright install chromium
+      # The stack's configuration, which on a developer's machine is a file they
+      # own. Local-only values; the smoke reaches no paid API and stores no
+      # customer credential worth protecting — the one it does store is the
+      # fixture's own read-only login, written three lines above.
+      - name: A .env for the stack
+        if: env.RUN == 'true'
+        run: |
+          cp .env.example .env
+          {
+            echo "LOCAL_SECRETS_KEY=$(uv run --directory apps/api python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')"
+          } >> .env
+      # The script prints the api and web logs itself when the walk fails, before
+      # it takes the stack down — a step here could not, because by then there
+      # would be nothing left to ask.
+      - name: The walk
+        if: env.RUN == 'true'
+        run: make test.web.smoke
+      - name: Keep the trace of a failure
+        if: failure() && env.RUN == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-smoke
+          path: |
+            apps/web/playwright-report/
+            apps/web/test-results/
+          retention-days: 7
+      - name: Nothing to do
+        if: env.RUN != 'true'
+        run: echo "No changes under apps/web or apps/api — the smoke did not need to run."
 
+  # The deployment, compiled (plan WP12.1).
+  #
+  # `bicep build` is a real check, not a formality: it resolves every module,
+  # type-checks every parameter and rejects an API version that does not exist.
+  # It is also all that can run today — `what-if` needs the OIDC identity WP12.2
+  # creates, and until then there is nothing to authenticate as.
+  #
+  # Path-filtered per **D-007**: the job always runs so the check always reports,
+  # and its steps are what the filter gates.
   infra:
-    name: infra
+    needs: changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      RUN: ${{ needs.changes.outputs.infra }}
+      # **Obvious dummies, and deliberately not plausible ones.** Both parameter
+      # files read these from the environment rather than carrying them, so a
+      # lint run has to supply something. A value that looked real would be a
+      # value somebody eventually deployed.
+      POSTGRES_ADMIN_PASSWORD: lint-only-not-a-password
+      BUDGET_ALERT_EMAIL: lint@example.invalid
+    steps:
+      - uses: actions/checkout@v4
+      # Through the Makefile, so `make build.infra` and this job are the same
+      # command. It compiles both parameter files including prod's, which nothing
+      # deploys (D-041) — that file exists so standing prod up later is a
+      # parameter file rather than a rewrite, and that is only true while it
+      # still compiles.
+      - name: Compile every module and both parameter files
+        if: env.RUN == 'true'
+        run: make build.infra
+      # Its own file with its own selftest, like every other guard here. It
+      # started inline, where YAML escaping mangled the pattern into one that
+      # matched any assignment at all — it failed the build on correct code, and
+      # the obvious "fix" would have been to loosen it until it passed.
+      - name: The infra secret guard still catches one
+        if: env.RUN == 'true'
+        run: bash scripts/check_infra_secrets.sh --selftest
+      - name: No secret value is written into a template
+        if: env.RUN == 'true'
+        run: bash scripts/check_infra_secrets.sh
+      - name: Nothing to do
+        if: env.RUN != 'true'
+        run: echo "No changes under infra/ — skipping."
+
+  # Proves both images still build. Pushing them arrives with Phase 12.
+  docker:
+    needs: [api, web]
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - id: check
-        run: |
-          if compgen -G "infra/*.bicep" > /dev/null; then
-            echo "present=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "present=false" >> "$GITHUB_OUTPUT"
-          fi
-      - if: steps.check.outputs.present == 'true'
-        run: az bicep install
-      - if: steps.check.outputs.present == 'true'
-        run: |
-          for f in infra/*.bicep; do
-            az bicep build --file "$f" --stdout > /dev/null
-          done
-      - if: steps.check.outputs.present == 'false'
-        run: echo "::notice::Nothing to check yet"
+      - uses: actions/checkout@v4
+      - name: Build the API image
+        run: docker build --target prod --build-arg GIT_SHA=${{ github.sha }} -t api:ci apps/api
+      # **A placeholder, and it must be one that can never resolve** (B-132).
+      # `apps/web/Dockerfile` refuses to build without `NEXT_PUBLIC_API_URL`,
+      # because that value is inlined into the browser bundle and an image built
+      # without it can never reach an API. That guard is right, and this job was
+      # passing no build args at all — so it failed on every merge to main.
+      #
+      # `.invalid` is RFC 2606's reserved TLD: it is guaranteed never to resolve,
+      # anywhere, so the image this produces cannot be mistaken for a deployable
+      # one or accidentally point at something real. The deployable image is built
+      # by `deploy.yml`, with the real values from the `dev` environment.
+      #
+      # What this job proves is therefore exactly one thing: **the image builds**.
+      # It is not a deployment artifact and nothing should pull it.
+      - name: Build the web image
+        run: docker build --target prod --build-arg NEXT_PUBLIC_API_URL=https://api.ci.invalid -t web:ci apps/web
