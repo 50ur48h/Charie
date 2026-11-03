@@ -1,0 +1,262 @@
+{
+  "DELETE /v1/orgs/{org_id}/data-sources/{data_source_id}": {
+    "admin": "allow",
+    "contributor": "deny(403)",
+    "reader": "deny(403)"
+  },
+  "DELETE /v1/orgs/{org_id}/data-sources/{data_source_id}/definitions/{definition_id}": {
+    "admin": "allow",
+    "contributor": "deny(403)",
+    "reader": "deny(403)"
+  },
+  "DELETE /v1/orgs/{org_id}/data-sources/{data_source_id}/verified-queries/{verified_query_id}": {
+    "admin": "allow",
+    "contributor": "deny(403)",
+    "reader": "deny(403)"
+  },
+  "DELETE /v1/orgs/{org_id}/documents/{document_id}": {
+    "admin": "allow",
+    "contributor": "allow",
+    "reader": "deny(403)"
+  },
+  "DELETE /v1/orgs/{org_id}/members/{user_id}": {
+    "admin": "allow",
+    "contributor": "deny(403)",
+    "reader": "deny(403)"
+  },
+  "GET /v1/orgs/{org_id}/active-data-source": {
+    "admin": "allow",
+    "contributor": "allow",
+    "reader": "allow"
+  },
+  "GET /v1/orgs/{org_id}/catalog/search": {
+    "admin": "allow",
+    "contributor": "allow",
+    "reader": "allow"
+  },
+  "GET /v1/orgs/{org_id}/conversations": {
+    "admin": "allow",
+    "contributor": "allow",
+    "reader": "allow"
+  },
+  "GET /v1/orgs/{org_id}/conversations/{conversation_id}": {
+    "admin": "allow",
+    "contributor": "allow",
+    "reader": "allow"
+  },
+  "GET /v1/orgs/{org_id}/conversations/{conversation_id}/messages": {
+    "admin": "allow",
+    "contributor": "allow",
+    "reader": "allow"
+  },
+  "GET /v1/orgs/{org_id}/conversations/{conversation_id}/runs": {
+    "admin": "allow",
+    "contributor": "allow",
+    "reader": "allow"
+  },
+  "GET /v1/orgs/{org_id}/data-sources": {
+    "admin": "allow",
+    "contributor": "allow",
+    "reader": "allow"
+  },
+  "GET /v1/orgs/{org_id}/data-sources/{data_source_id}": {
+    "admin": "allow",
+    "contributor": "allow",
+    "reader": "allow"
+  },
+  "GET /v1/orgs/{org_id}/data-sources/{data_source_id}/catalog": {
+    "admin": "allow",
+    "contributor": "allow",
+    "reader": "allow"
+  },
+  "GET /v1/orgs/{org_id}/data-sources/{data_source_id}/definitions": {
+    "admin": "allow",
+    "contributor": "deny(403)",
+    "reader": "deny(403)"
+  },
+  "GET /v1/orgs/{org_id}/data-sources/{data_source_id}/definitions/proposals": {
+    "admin": "allow",
+    "contributor": "deny(403)",
+    "reader": "deny(403)"
+  },
+  "GET /v1/orgs/{org_id}/data-sources/{data_source_id}/definitions/{definition_id}/versions": {
+    "admin": "allow",
+    "contributor": "deny(403)",
+    "reader": "deny(403)"
+  },
+  "GET /v1/orgs/{org_id}/data-sources/{data_source_id}/verified-queries": {
+    "admin": "allow",
+    "contributor": "deny(403)",
+    "reader": "deny(403)"
+  },
+  "GET /v1/orgs/{org_id}/documents": {
+    "admin": "allow",
+    "contributor": "allow",
+    "reader": "allow"
+  },
+  "GET /v1/orgs/{org_id}/documents/search": {
+    "admin": "allow",
+    "contributor": "allow",
+    "reader": "allow"
+  },
+  "GET /v1/orgs/{org_id}/documents/supported-types": {
+    "admin": "allow",
+    "contributor": "allow",
+    "reader": "allow"
+  },
+  "GET /v1/orgs/{org_id}/members": {
+    "admin": "allow",
+    "contributor": "allow",
+    "reader": "allow"
+  },
+  "GET /v1/orgs/{org_id}/recovery-grants": {
+    "admin": "allow",
+    "contributor": "deny(403)",
+    "reader": "deny(403)"
+  },
+  "GET /v1/orgs/{org_id}/runs/{run_id}": {
+    "admin": "allow",
+    "contributor": "allow",
+    "reader": "allow"
+  },
+  "GET /v1/orgs/{org_id}/runs/{run_id}/events": {
+    "admin": "allow",
+    "contributor": "allow",
+    "reader": "allow"
+  },
+  "GET /v1/orgs/{org_id}/runs/{run_id}/executions/{execution_id}": {
+    "admin": "allow",
+    "contributor": "allow",
+    "reader": "allow"
+  },
+  "GET /v1/orgs/{org_id}/show-run-cost": {
+    "admin": "allow",
+    "contributor": "allow",
+    "reader": "allow"
+  },
+  "PATCH /v1/orgs/{org_id}/conversations/{conversation_id}": {
+    "admin": "allow",
+    "contributor": "allow",
+    "reader": "allow"
+  },
+  "PATCH /v1/orgs/{org_id}/data-sources/{data_source_id}": {
+    "admin": "allow",
+    "contributor": "deny(403)",
+    "reader": "deny(403)"
+  },
+  "PATCH /v1/orgs/{org_id}/data-sources/{data_source_id}/columns/{column_id}/policy": {
+    "admin": "allow",
+    "contributor": "deny(403)",
+    "reader": "deny(403)"
+  },
+  "PATCH /v1/orgs/{org_id}/data-sources/{data_source_id}/definitions/{definition_id}": {
+    "admin": "allow",
+    "contributor": "deny(403)",
+    "reader": "deny(403)"
+  },
+  "PATCH /v1/orgs/{org_id}/members/{user_id}": {
+    "admin": "allow",
+    "contributor": "deny(403)",
+    "reader": "deny(403)"
+  },
+  "POST /v1/orgs/{org_id}/conversations": {
+    "admin": "allow",
+    "contributor": "allow",
+    "reader": "allow"
+  },
+  "POST /v1/orgs/{org_id}/conversations/{conversation_id}/archive": {
+    "admin": "allow",
+    "contributor": "allow",
+    "reader": "allow"
+  },
+  "POST /v1/orgs/{org_id}/conversations/{conversation_id}/messages": {
+    "admin": "allow",
+    "contributor": "allow",
+    "reader": "allow"
+  },
+  "POST /v1/orgs/{org_id}/data-sources": {
+    "admin": "allow",
+    "contributor": "deny(403)",
+    "reader": "deny(403)"
+  },
+  "POST /v1/orgs/{org_id}/data-sources/{data_source_id}/definitions": {
+    "admin": "allow",
+    "contributor": "deny(403)",
+    "reader": "deny(403)"
+  },
+  "POST /v1/orgs/{org_id}/data-sources/{data_source_id}/definitions/import": {
+    "admin": "allow",
+    "contributor": "deny(403)",
+    "reader": "deny(403)"
+  },
+  "POST /v1/orgs/{org_id}/data-sources/{data_source_id}/definitions/{definition_id}/accept": {
+    "admin": "allow",
+    "contributor": "deny(403)",
+    "reader": "deny(403)"
+  },
+  "POST /v1/orgs/{org_id}/data-sources/{data_source_id}/definitions/{definition_id}/reinstate": {
+    "admin": "allow",
+    "contributor": "deny(403)",
+    "reader": "deny(403)"
+  },
+  "POST /v1/orgs/{org_id}/data-sources/{data_source_id}/definitions/{definition_id}/reject": {
+    "admin": "allow",
+    "contributor": "deny(403)",
+    "reader": "deny(403)"
+  },
+  "POST /v1/orgs/{org_id}/data-sources/{data_source_id}/profile": {
+    "admin": "allow",
+    "contributor": "allow",
+    "reader": "deny(403)"
+  },
+  "POST /v1/orgs/{org_id}/data-sources/{data_source_id}/refresh": {
+    "admin": "allow",
+    "contributor": "allow",
+    "reader": "deny(403)"
+  },
+  "POST /v1/orgs/{org_id}/data-sources/{data_source_id}/test": {
+    "admin": "allow",
+    "contributor": "deny(403)",
+    "reader": "deny(403)"
+  },
+  "POST /v1/orgs/{org_id}/data-sources/{data_source_id}/verified-queries": {
+    "admin": "allow",
+    "contributor": "deny(403)",
+    "reader": "deny(403)"
+  },
+  "POST /v1/orgs/{org_id}/documents": {
+    "admin": "allow",
+    "contributor": "allow",
+    "reader": "deny(403)"
+  },
+  "POST /v1/orgs/{org_id}/documents/{document_id}/reindex": {
+    "admin": "allow",
+    "contributor": "allow",
+    "reader": "deny(403)"
+  },
+  "POST /v1/orgs/{org_id}/invitations": {
+    "admin": "allow",
+    "contributor": "deny(403)",
+    "reader": "deny(403)"
+  },
+  "POST /v1/orgs/{org_id}/recovery-grants": {
+    "admin": "allow",
+    "contributor": "deny(403)",
+    "reader": "deny(403)"
+  },
+  "POST /v1/orgs/{org_id}/recovery-grants/{grant_id}/revoke": {
+    "admin": "allow",
+    "contributor": "deny(403)",
+    "reader": "deny(403)"
+  },
+  "PUT /v1/orgs/{org_id}/active-data-source": {
+    "admin": "allow",
+    "contributor": "deny(403)",
+    "reader": "deny(403)"
+  },
+  "PUT /v1/orgs/{org_id}/show-run-cost": {
+    "admin": "allow",
+    "contributor": "deny(403)",
+    "reader": "deny(403)"
+  }
+}
