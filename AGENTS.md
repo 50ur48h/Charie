@@ -1,50 +1,64 @@
-# Charie: rules for Muse Code
+# AGENTS.md — Charie
 
-Charie is an AI data and business analyst with two apps that share one knowledge base:
-- Learner app: connects the customer's database, documents and owner notes, then learns and tests the business knowledge.
-- Chat app: a ChatGPT-style chat that answers business questions with checked numbers.
+Charie has two deployables: `apps/web` (Next.js) and `apps/api` (FastAPI).
+The analysis engine, connectors and DAL are libraries inside the API.
+Read `docs/architecture.md` before making design changes.
 
-## Every session
-1. Run /start-session. It checks git and any open PR, then reads docs/STATUS.md and the current sub-phase file in docs/plan/.
-2. Work on ONE task at a time. Run /plan for it first.
-3. End each task with /finish-task. After the last task of a sub-phase, /finish-task opens the PR.
-   Then STOP: the owner reviews and merges. While the PR is open, only fix the owner's review comments.
-4. Until P01.6 builds our skills, follow their documented procedures by hand: read docs/STATUS.md and the
-   current sub-phase file, run the checks, and update the docs yourself. A missing skill never blocks
-   work, and never invent a command for it.
-5. If a sub-phase plan is missing or incomplete, complete it first from DECISIONS.md, the architecture,
-   older outlines and the existing code. Use judgment for routine details; ask the owner about material
-   decisions or conflicts. Never skip required work just because its plan is incomplete.
+MERGE_POLICY: ASK
 
-## Where things are
-- docs/ (on this laptop only): DECISIONS.md (what we decided; it wins), IMPLEMENTATION-PLAN.md and plan/ (what to build),
-  architecture/ (how it's built), designs/calm/ (the approved look), reference/ (checked facts),
-  BACKLOG.md (later work), CHANGES.md (every change and where it was updated).
-- backend/: Python, FastAPI. Read backend/AGENTS.md.
-- frontend/: React. Read frontend/AGENTS.md.
-- infra/: Bicep. docker/: Dockerfiles. .github/: PR template and workflows.
+## Git workflow
 
-## Golden rules
-1. The AI never types numbers. AI text uses labels like [n1]; code fills in the numbers.
-2. Code does all math (DuckDB) and all checks.
-3. The customer's database is read-only. Never write to it. Never change the practice data.
-4. Every query goes through the SQL checker. Known business numbers use recipes, not AI-written SQL.
-5. Check, don't guess. For Meta, Azure, Muse Code or any library, read the real docs (MCP: microsoft-learn, context7)
-   or the installed package. Save short notes in docs/reference/.
-6. Small tasks. Each task has a "Done when" test. Don't start the next task until it passes.
-7. Tests before done. Don't break what already works. Run the tests for the areas you touched.
-8. Everything a user reads is plain, simple English: screens, thinking panel, errors.
-9. Simple code. Comments: one or two short lines, only where needed. Use a good existing library before writing your own.
-10. Never open or edit .env. Never commit secrets. Never open docs/hidden-tests/.
-11. Follow DECISIONS.md. If something seems wrong, ask; don't change it on your own.
-12. Match the approved designs in docs/designs/calm/. Use the theme colors, never hard-coded colors.
-13. Git: work only on the current branch (one sub-phase, or a batch of 2–3 related sub-phases in one PR, per C012). Never commit or push on main. Never merge, close or approve a PR.
-    Never force-push. One open PR at a time.
-14. Stay in scope: only what the current sub-phase file says. Anything else goes to docs/BACKLOG.md (/add-backlog).
-15. If anything differs from the plan or the docs (a name, a file, a choice), record it with /record-change
-    and update every document that mentions it, in the same session.
+- Start from freshly fetched `origin/main` on a new branch. Never commit or push to main.
+- Push the branch and open a PR using `.github/pull_request_template.md`.
+- Only the owner reviews and squash-merges. Never merge, enable auto-merge,
+  or change branch protection on the owner's behalf.
+- Check open PRs and red CI before starting work. Rebase on main to resolve conflicts.
+- No AI attribution in commits or PRs. Enable `git config core.hooksPath .githooks`.
+- Update CHANGELOG for visible changes. Record deferred work in an issue or PR.
+- Internal planning documents are no longer maintained in this repository.
+  Do not recreate docs/plan or require its files in checks.
 
-## Main commands
-Back end (in backend/): uv sync · uv run pytest -q tests/unit · uv run ruff check . · uv run alembic upgrade head
-Front end (in frontend/): npm install · npm run dev:chat · npm run dev:learner · npm test · npm run lint · npx playwright test
-Our database: docker compose up -d db
+## Design and validation
+
+- The architecture is binding. Explain and document design changes in the PR.
+- DAL and infrastructure changes require human review.
+- The model is never a security boundary; analysis queries go through the DAL.
+- The API uses charie_app: no superuser, BYPASSRLS or schema ownership.
+  Migrations use the separate owner connection. Never collapse those roles.
+- New tenant tables require RLS, a TENANT_TABLES entry and tenant-isolation proofs.
+- Prove new behavior is reached through the actual product path, not just a helper.
+- When changing a model-filled schema, sweep producers in src, ops and tests.
+- Run checks appropriate to the change. Include manual verification steps and
+  expected results in the PR, including the failure case.
+- Existing TODO(B-###) identifiers remain historical references. Do not strip
+  useful explanations or security checks merely because planning files are gone.
+
+## Commands and local development
+
+- Python 3.12 via uv in apps/api; Node 22 and pnpm in apps/web.
+- make up / make down: start / stop the local Compose stack.
+- make seed rebuilds the generated pizza sample; do not run against user data.
+- make db.setup: migrations and the restricted local app login.
+- make lint / make typecheck / make test; make preflight lists broader checks.
+- On Windows, run Make from Git Bash. Never repurpose HOME or CODEX_HOME.
+- Bind-mount reloads can miss host edits. Restart the API after source changes;
+  clear /app/.next in the web container before restarting it for code changes.
+  New dependencies require rebuilding the relevant image.
+- Web tests under memory pressure: use --no-file-parallelism --pool=threads.
+- Run API test suites separately: conftest modules and cluster-wide role setup
+  can collide. Re-run setup errors in isolation; investigate repeatable failures.
+- Git Bash rewrites leading slash arguments. Use MSYS_NO_PATHCONV where needed.
+- Do not reset local databases, reseed user data or stop unrelated services
+  unless the user has authorized it.
+
+## Data and credentials
+
+- The GitHub repository is public: https://github.com/50ur48h/Charie.
+- Never commit secrets. Real credentials stay in local .env or a secret store;
+  .env.example contains placeholders and documents runtime configuration.
+- Customer databases, dictionaries, derived findings and diagnostic artifacts
+  belong under gitignored .SampleData/. Never publish identifying information.
+- Check quoted literals in SQL/view definitions and fixtures as well as data rows.
+- Product/repository name is Charie. Keep internal charie identifiers,
+  package paths and service names. The Compose project is charie.
+- No license has been selected. Do not add license headers or grant permissions.
