@@ -53,6 +53,9 @@ RUN sh /tmp/install-odbc.sh && rm /tmp/install-odbc.sh
 
 COPY --from=deps-dev /app/.venv /app/.venv
 COPY pyproject.toml uv.lock README.md ./
+# alembic.ini as in prod, so a dev image deployed on its own can run
+# `alembic upgrade head` (compose runs migrations from the host instead).
+COPY alembic.ini ./alembic.ini
 COPY src ./src
 COPY tests ./tests
 RUN --mount=type=cache,target=/root/.cache/uv uv sync --locked

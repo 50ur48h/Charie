@@ -1,0 +1,191 @@
+# Builds Charie's container images and pushes them to GitHub Container Registry:
+#
+#   ghcr.io/<owner>/charie-api   ghcr.io/<owner>/charie-web
+#
+# Run it from the Actions tab ("publish-images" → "Run workflow").
+#
+# flavor=testing    A private test deploy with simple sign-in: the API image is the
+#                   `dev` target (dev token issuer, encrypted-file secrets) and the
+#                   web image allows dev sign-in. Tags: `testing`, `testing-<sha>`.
+#                   Not for real customer data.
+# flavor=production The `prod` targets: Microsoft Entra sign-in and Key Vault
+#                   secrets. Tags: `latest`, `<sha>`.
+#
+# The web image bakes NEXT_PUBLIC_API_URL into the browser bundle, so build it once
+# the API has its public URL (images=web).
+name: publish-images
+
+on:
+  workflow_dispatch:
+    inputs:
+      flavor:
+        description: "testing (simple sign-in) or production (Entra)"
+        type: choice
+        options: [testing, production]
+        default: testing
+      images:
+        description: "Which images to build"
+        type: choice
+        options: [api, web, both]
+        default: api
+      api_url:
+        description: "Public URL of the API, e.g. https://charie-api.up.railway.app (web only)"
+        type: string
+        required: false
+      entra_authority:
+        description: "Production web only: Entra authority URL"
+        type: string
+        required: false
+      entra_client_id:
+        description: "Production web only: Entra client ID of the web app"
+        type: string
+        required: false
+      api_scope:
+        description: "Production web only: API scope, e.g. api://<api-client-id>/access_as_user"
+        type: string
+        required: false
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: publish-images-${{ inputs.flavor }}
+  cancel-in-progress: false
+
+jobs:
+  names:
+    runs-on: ubuntu-latest
+    outputs:
+      api: ${{ steps.names.outputs.api }}
+      web: ${{ steps.names.outputs.web }}
+      tags_suffix: ${{ steps.names.outputs.tags_suffix }}
+    steps:
+      - id: names
+        env:
+          REPO_OWNER: ${{ github.repository_owner }}
+          FLAVOR: ${{ inputs.flavor }}
+          SHA: ${{ github.sha }}
+        run: |
+          owner=$(printf '%s' "$REPO_OWNER" | tr '[:upper:]' '[:lower:]')
+          short=${SHA:0:7}
+          {
+            echo "api=ghcr.io/$owner/charie-api"
+            echo "web=ghcr.io/$owner/charie-web"
+            if [ "$FLAVOR" = "production" ]; then
+              echo "tags_suffix=latest $short"
+            else
+              echo "tags_suffix=testing testing-$short"
+            fi
+          } >> "$GITHUB_OUTPUT"
+
+  api:
+    needs: names
+    if: inputs.images != 'web'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: tags
+        env:
+          IMAGE: ${{ needs.names.outputs.api }}
+          SUFFIXES: ${{ needs.names.outputs.tags_suffix }}
+        run: |
+          tags=""
+          for suffix in $SUFFIXES; do tags="$tags,$IMAGE:$suffix"; done
+          echo "list=${tags#,}" >> "$GITHUB_OUTPUT"
+      - uses: docker/build-push-action@v6
+        with:
+          context: apps/api
+          target: ${{ inputs.flavor == 'production' && 'prod' || 'dev' }}
+          build-args: GIT_SHA=${{ github.sha }}
+          push: true
+          tags: ${{ steps.tags.outputs.list }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.title=charie-api
+          cache-from: type=gha,scope=api-${{ inputs.flavor }}
+          cache-to: type=gha,mode=max,scope=api-${{ inputs.flavor }}
+      - name: Summary
+        env:
+          TAGS: ${{ steps.tags.outputs.list }}
+        run: |
+          {
+            echo "### API image pushed"
+            echo
+            IFS=',' read -ra list <<< "$TAGS"
+            for tag in "${list[@]}"; do echo "- $tag"; done
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  web:
+    needs: names
+    if: inputs.images != 'api'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check the inputs
+        env:
+          FLAVOR: ${{ inputs.flavor }}
+          API_URL: ${{ inputs.api_url }}
+          AUTHORITY: ${{ inputs.entra_authority }}
+          CLIENT_ID: ${{ inputs.entra_client_id }}
+          SCOPE: ${{ inputs.api_scope }}
+        run: |
+          case "$API_URL" in
+            https://*|http://*) ;;
+            *) echo "::error::api_url must be the API's public URL, starting with https://"; exit 1 ;;
+          esac
+          if [ "$FLAVOR" = "production" ] && { [ -z "$AUTHORITY" ] || [ -z "$CLIENT_ID" ] || [ -z "$SCOPE" ]; }; then
+            echo "::error::A production web image needs entra_authority, entra_client_id and api_scope."
+            exit 1
+          fi
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: tags
+        env:
+          IMAGE: ${{ needs.names.outputs.web }}
+          SUFFIXES: ${{ needs.names.outputs.tags_suffix }}
+        run: |
+          tags=""
+          for suffix in $SUFFIXES; do tags="$tags,$IMAGE:$suffix"; done
+          echo "list=${tags#,}" >> "$GITHUB_OUTPUT"
+      - uses: docker/build-push-action@v6
+        with:
+          context: apps/web
+          target: prod
+          build-args: |
+            NEXT_PUBLIC_API_URL=${{ inputs.api_url }}
+            NEXT_PUBLIC_AUTH_MODE=${{ inputs.flavor == 'production' && 'entra' || 'dev' }}
+            NEXT_PUBLIC_ENV=${{ inputs.flavor == 'production' && 'prod' || 'local' }}
+            NEXT_PUBLIC_ENTRA_AUTHORITY=${{ inputs.entra_authority }}
+            NEXT_PUBLIC_ENTRA_CLIENT_ID=${{ inputs.entra_client_id }}
+            NEXT_PUBLIC_API_SCOPE=${{ inputs.api_scope }}
+          push: true
+          tags: ${{ steps.tags.outputs.list }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.title=charie-web
+          cache-from: type=gha,scope=web-${{ inputs.flavor }}
+          cache-to: type=gha,mode=max,scope=web-${{ inputs.flavor }}
+      - name: Summary
+        env:
+          TAGS: ${{ steps.tags.outputs.list }}
+          API_URL: ${{ inputs.api_url }}
+        run: |
+          {
+            echo "### Web image pushed (API: $API_URL)"
+            echo
+            IFS=',' read -ra list <<< "$TAGS"
+            for tag in "${list[@]}"; do echo "- $tag"; done
+          } >> "$GITHUB_STEP_SUMMARY"
