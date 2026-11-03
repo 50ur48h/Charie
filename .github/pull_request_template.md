@@ -1,21 +1,14 @@
-## What this PR does
-<!-- Say what this PR does, in 2-4 plain sentences. -->
+## Title
 
-## Plan
-<!-- The sub-phase or backlog ID, the tasks done, and any deviations (or the C0xx change IDs). -->
+**What & why** (2–5 lines)
 
-## How to try it
-<!-- Exact commands or clicks to try this change. -->
+**Architecture impact:** relevant design sections, or no change.
 
-## Screenshots
-<!-- For screen changes: laptop, tablet and phone sizes. Otherwise write "none". -->
+**Tests added:**
 
-## Checks
-<!-- Tick each one that is true. -->
-- [ ] CI green
-- [ ] Laptop-only tests (practice database or real AI), with their result
-- [ ] No secrets and nothing from `docs/`
-- [ ] The docs on the laptop are updated
-
-## New backlog items
-<!-- The B0xx IDs added by this PR, or "none". -->
+**Checklist**
+- [ ] lint + typecheck + tests green locally
+- [ ] no secrets in diff; .env.example updated if new config
+- [ ] Follow-up work recorded in an issue or the PR description
+- [ ] Architecture updated if the design changed (or no change)
+- [ ] CHANGELOG "Unreleased" updated if user-visible

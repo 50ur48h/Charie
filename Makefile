@@ -1,0 +1,326 @@
+# Charie — developer entry points.
+#
+# Targets grow with the phases; nothing here refers to a component that does not
+# exist yet (plan §4). Run `make` or `make help` for the current list.
+#
+# Requires GNU make. On Windows run it from Git Bash.
+#
+# Every recipe here is a SINGLE line, deliberately. GNU make hands a recipe to
+# the shell with its backslash-newline continuations intact, and on Windows it
+# falls back to cmd.exe whenever sh.exe is not on PATH — cmd.exe does not
+# understand `\` continuation, so a multi-line recipe silently runs truncated
+# (`docker build --target prod \` alone, which fails with an unhelpful
+# "requires 1 argument"). Anything too long for one line belongs in
+# ops/scripts/*.sh, invoked as `bash ops/scripts/thing.sh`.
+#
+# SHELL is set below when a POSIX shell can be found, so pipelines and quoting
+# behave the same on every machine.
+
+.DEFAULT_GOAL := help
+
+# These recipes need a POSIX shell. On Windows, make falls back to cmd.exe
+# whenever sh.exe is not on PATH -- the normal state when make is run from
+# PowerShell, because Git puts cmd\ on PATH but not usr\bin\. Under cmd.exe
+# `printf` does not exist, and a bare `bash` resolves to WSL's bash, which
+# cannot reach the Docker CLI or this drive the same way. Both fail late and
+# confusingly, so probe once and stop with an instruction instead.
+SHELL_PROBE := $(shell sh -c "echo yes" 2>&1)
+ifneq ($(SHELL_PROBE),yes)
+$(error No POSIX shell found, so these recipes cannot run. Use Git Bash, or add Git's usr\bin to PATH first: $$env:PATH = 'C:\Program Files\Git\usr\bin;' + $$env:PATH)
+endif
+SHELL := sh
+
+GIT_SHA := $(shell git rev-parse HEAD 2>/dev/null)
+
+API_DIR := apps/api
+UV_API  := uv run --directory $(API_DIR)
+
+WEB_DIR := apps/web
+PNPM_WEB := pnpm --dir $(WEB_DIR)
+
+COMPOSE := docker compose --env-file .env -f ops/docker-compose.yml
+
+# ---------------------------------------------------------------------------
+# Meta
+# ---------------------------------------------------------------------------
+.PHONY: help
+help: ## Show available targets
+	@grep -hE '^[a-zA-Z0-9_.-]+:.*?## ' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-16s %s\n", $$1, $$2}'
+
+.PHONY: env
+env: .env ## Create .env from .env.example if it does not exist
+
+.env:
+	@cp .env.example .env
+	@printf 'Created .env from .env.example. Local-only values; review before use.\n'
+
+# ---------------------------------------------------------------------------
+# Umbrella targets
+# ---------------------------------------------------------------------------
+.PHONY: install lint fmt typecheck test
+install: install.api install.web         ## Install all dependencies
+lint: lint.api lint.web lint.seed        ## Lint everything
+fmt: fmt.api                             ## Format everything in place
+typecheck: typecheck.api typecheck.web   ## Type-check everything
+test: test.api test.web                  ## Run all tests
+
+# ---------------------------------------------------------------------------
+# Local stack
+# ---------------------------------------------------------------------------
+.PHONY: up up.mssql down down.hard logs ps seed seed.mssql seed.fnb seed.definitions
+.PHONY: db.firewall.plan db.firewall.narrow
+up: .env ## Start the app and platform database (no sample data)
+	$(COMPOSE) up -d --build
+	@printf '\n  web  http://localhost:3000\n  api  http://localhost:8000/healthz\n\n'
+
+up.mssql: .env ## Start the SQL Server container on demand (Phase 3+)
+	$(COMPOSE) --profile mssql up -d mssql
+
+down: ## Stop the stack, keeping database volumes
+	$(COMPOSE) down
+
+down.hard: ## Stop the stack and delete its volumes (throws away seeded data)
+	$(COMPOSE) down --volumes
+
+logs: ## Follow logs from every service
+	$(COMPOSE) logs -f
+
+ps: ## Show stack status
+	$(COMPOSE) ps
+
+seed: .env ## (Re)build the pizza demo dataset in seed-pizza-pg
+	uv run ops/seed/seed_pizza.py
+
+seed.mssql: .env ## (Re)build the pizza demo dataset in the mssql container
+	$(SHELL) ops/scripts/seed_mssql.sh
+
+seed.fnb: .env ## Load a customer SQLite file into seed-fnb-pg: make seed.fnb SQLITE=path
+	uv run ops/seed/load_sqlite.py --sqlite "$(SQLITE)"
+
+seed.definitions: .env ## Load metric definitions: make seed.definitions FILE=... SOURCE="..."
+	$(SHELL) ops/scripts/seed_definitions.sh
+
+db.firewall.plan: ## Show what narrowing the demo DB firewall would change (touches nothing)
+	$(SHELL) ops/scripts/narrow_db_firewall.sh --dry-run
+
+db.firewall.narrow: ## Replace the demo DB allow-all rule with this machine's IP
+	$(SHELL) ops/scripts/narrow_db_firewall.sh
+
+.PHONY: db.setup migrate migrate.down migration
+db.setup: .env ## Migrate, then give charie_app its local login
+	$(SHELL) ops/scripts/db_setup.sh
+
+migrate: .env ## alembic upgrade head against the local platform database
+	$(UV_API) alembic upgrade head
+
+migrate.down: .env ## Roll back one revision
+	$(UV_API) alembic downgrade -1
+
+migration: .env ## Autogenerate a revision: make migration m="add widgets"
+	$(UV_API) alembic revision --autogenerate -m "$(m)"
+
+.PHONY: secrets.key
+secrets.key: ## Print a fresh LOCAL_SECRETS_KEY line to paste into .env
+	@$(UV_API) python -c "from cryptography.fernet import Fernet; print('LOCAL_SECRETS_KEY=' + Fernet.generate_key().decode())"
+
+# **This target has now overstated itself twice, so it was audited rather than
+# patched a third time.** Every job and every step in `.github/workflows/ci.yml`
+# was walked against what this runs.
+#
+# The history is the argument. `test.web.e2e` was missing, and a WP11.2b change
+# that passed every other check failed in CI on the one suite a developer had no
+# reason to run. `compile.web` was missing, and WP13.16 did exactly the same
+# thing one step further down the same job. Both times the target said
+# "everything CI will run" and printed "safe to push". The audit found **six
+# more**, and two of them are guards rather than conveniences:
+#
+#   test.dal      — the DAL suite carries a 90% coverage gate (plan §4.4) that
+#                   `test` does not apply: `test.api` runs those tests without
+#                   the floor, so a regression on the security boundary's
+#                   coverage reached CI unseen.
+#   test.rls      — `pytest -m rls_proof` exists to fail when it collects
+#                   *nothing*. `test.api` runs the proofs as part of the suite
+#                   and would stay green if the marker vanished.
+#   build.infra   — `check.infra` greps templates for secrets; it does not
+#                   compile them. A Bicep syntax error passed preflight.
+#   lint.workflows— B-128's whole point was that a `run:` block was first
+#                   exercised by the deployment it gated. Leaving actionlint to
+#                   CI repeats the argument that filed it.
+#   check.todos   — `TODO(B-###)` or CI fails.
+#   check.roles   — the allowlist half of B-130's role check.
+#
+# What is **deliberately** not here is now stated in the output rather than
+# implied, because a developer reading "safe to push" is entitled to know what
+# that sentence does not cover.
+.PHONY: preflight
+preflight: lint typecheck check.env check.todos check.roles check.truths check.preflight lint.workflows test test.rls test.dal test.web.e2e compile.web check.infra build.infra ## Every CI step that needs no stack or cloud session
+	@echo ""
+	@echo "Preflight clean — every CI step that runs without a stack, a registry"
+	@echo "or a cloud session. CI will additionally run, and this did not:"
+	@echo "  gitleaks            a GitHub Action; no local equivalent is wired up"
+	@echo "  mssql connectors    needs the SQL Server container (make up.mssql)"
+	@echo "  evals               needs the platform DB and the pizza fixture"
+	@echo "  coverage floor      combines two CI shards; neither exists here"
+	@echo "  test.web.smoke      builds images and seeds a database; minutes"
+	@echo "  docker images       both prod builds"
+	@echo ""
+
+.PHONY: check.preflight
+check.preflight: ## Fail if ci.yml grew a step preflight neither runs nor excuses
+	$(UV_API) python ../../scripts/check_preflight.py --selftest
+	$(UV_API) python ../../scripts/check_preflight.py
+
+.PHONY: check.todos check.roles lint.workflows
+check.todos: ## Fail if a TODO carries no backlog id
+	bash scripts/check_todos.sh
+
+check.roles: ## Fail if a role id and the secret-scanner allowlist disagree (B-130)
+	sh ops/scripts/check_role_definitions.sh --allowlist-only
+
+# `MSYS_NO_PATHCONV=1` because Git Bash rewrites `-w /repo` into
+# `C:/Program Files/Git/repo` and docker rejects it — the quirk AGENTS.md
+# records for `docker exec`, in its `docker run` form. Ignored off Windows.
+lint.workflows: ## actionlint over every workflow, with shellcheck on each `run:` block
+	MSYS_NO_PATHCONV=1 docker run --rm -v "$(CURDIR):/repo" -w /repo \
+	  rhysd/actionlint:latest@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 \
+	  -color
+
+.PHONY: check.env
+check.env: ## Fail if a documented variable reaches no container and nothing says why
+	bash scripts/check_env.sh --selftest
+	bash scripts/check_env.sh
+
+.PHONY: check.infra
+check.infra: ## Fail if a secret value is written into a deployment template
+	bash scripts/check_infra_secrets.sh --selftest
+	bash scripts/check_infra_secrets.sh
+
+.PHONY: build.infra
+build.infra: ## Compile every Bicep module and both parameter files
+	$(SHELL) ops/scripts/build_infra.sh
+
+.PHONY: truths check.truths
+truths: ## Regenerate ops/seed/truths.json without touching the database
+	uv run ops/seed/seed_pizza.py --truths-only
+
+check.truths: ## Fail if truths.json and the seed generator disagree
+	uv run ops/seed/seed_pizza.py --check
+
+# ---------------------------------------------------------------------------
+# apps/api
+# ---------------------------------------------------------------------------
+# `--no-cache` on every lint recipe, deliberately. A warm ruff cache has twice
+# reported a clean tree that CI then failed on — the cache keys on content ruff
+# has already seen, and a file edited between runs can slip through. The rule
+# that follows is the only one that works: the target a developer runs must be
+# the same command CI runs, with nothing between them that could differ. Costs a
+# few seconds; has cost two red builds so far.
+.PHONY: install.api lint.api fmt.api typecheck.api test.api test.rls test.dal test.llm api.dev build.api llm.smoke agent.smoke
+install.api: ## Sync the API virtualenv from uv.lock
+	uv sync --directory $(API_DIR)
+
+lint.api: ## ruff check + format check
+	$(UV_API) ruff check --no-cache .
+	$(UV_API) ruff format --check --no-cache .
+
+fmt.api: ## ruff format + autofix
+	$(UV_API) ruff format .
+	$(UV_API) ruff check --fix .
+
+typecheck.api: ## pyright (strict)
+	$(UV_API) pyright
+
+test.api: ## pytest with coverage
+	$(UV_API) pytest --cov --cov-report=term-missing
+
+test.rls: ## Tenant-isolation proof suite on its own; fails if it collects nothing
+	$(UV_API) pytest -m rls_proof
+
+test.dal: ## The security boundary's suite, with its own coverage gate (plan §4.4)
+	$(UV_API) pytest tests/dal --cov=charie.dal --cov-report=term-missing --cov-fail-under=90
+
+test.llm: ## The LLM package's suite on its own
+	$(UV_API) pytest tests/llm
+
+llm.smoke: ## Live provider smoke — real keys, real money, NEVER in CI
+	$(UV_API) python ../../scripts/llm_smoke.py $(ARGS)
+
+agent.smoke: ## Live agent smoke — one real question end to end, NEVER in CI
+	$(UV_API) python ../../scripts/agent_smoke.py $(ARGS)
+
+api.dev: ## uvicorn with reload on :8000
+	$(UV_API) uvicorn charie.main:app --host 0.0.0.0 --port 8000 --reload
+
+build.api: ## Build the production API image
+	docker build --target prod --build-arg GIT_SHA=$(GIT_SHA) -t charie-api:local $(API_DIR)
+
+# ---------------------------------------------------------------------------
+# ops/seed — a standalone uv script, so it has its own dependencies and is not
+# part of the API's pyright run. It still obeys the same ruff rules.
+# ---------------------------------------------------------------------------
+.PHONY: lint.seed
+lint.seed: ## ruff check the seed scripts
+	$(UV_API) ruff check --no-cache --config pyproject.toml ../../ops
+	$(UV_API) ruff format --check --no-cache --config pyproject.toml ../../ops
+
+# ---------------------------------------------------------------------------
+# apps/web
+# ---------------------------------------------------------------------------
+.PHONY: install.web lint.web typecheck.web test.web test.web.e2e test.web.smoke web.dev build.web compile.web
+install.web: ## Install web dependencies from the lockfile
+	$(PNPM_WEB) install --frozen-lockfile
+
+lint.web: ## eslint
+	$(PNPM_WEB) lint
+
+typecheck.web: ## next typegen + tsc --noEmit
+	$(PNPM_WEB) typecheck
+
+test.web: ## vitest
+	$(PNPM_WEB) test
+
+test.web.e2e: ## Playwright: the chat screen in a real browser, against a stub API
+	$(PNPM_WEB) test:e2e
+
+test.web.smoke: .env ## Playwright: the whole product in a browser, on its own compose stack
+	$(SHELL) ops/scripts/web_smoke.sh $(ARGS)
+
+web.dev: ## next dev on :3000
+	$(PNPM_WEB) dev
+
+compile.web: ## next build — the production compile CI runs after test.web
+	$(PNPM_WEB) build
+
+build.web: ## Build the production web image
+	docker build --target prod --build-arg NEXT_PUBLIC_API_URL=http://localhost:8000 --build-arg NEXT_PUBLIC_ENV=local -t charie-web:local $(WEB_DIR)
+
+.PHONY: trial
+trial: .env ## Engine trial: ask each probe 3+ times against a source and compare the runs
+	$(UV_API) python -m charie.ops.trial $(ARGS)
+
+.PHONY: evals
+evals: .env ## Run the 20 golden evals (FakeLLM by default; EVALS_LIVE=1 for real models)
+	$(UV_API) --with pyyaml python ../../ops/evals/runner.py $(ARGS)
+
+evals.docker: .env ## Same, but inside the api container — for the compose stack
+	$(SHELL) ops/scripts/evals.sh $(ARGS)
+
+evals.setup: .env ## The eval harness's org — HOST addresses, not usable in the browser (B-115)
+	$(UV_API) python ../../ops/evals/provision.py
+
+# **Two provisioners, and the difference is the network you are on** (**B-115**).
+# `evals.setup` registers the fixture at the address in `.env` — `localhost:6543`
+# — because the harness runs in-process on the host and on a CI runner with no
+# container at all. `demo.setup` registers the compose names, because the API
+# answers questions inside the container, where `localhost` is the API itself.
+# The old help text for `evals.setup` said "create the org, register the seed
+# source, build its catalog", which is true of both and told nobody which they
+# were getting; a fresh machine ran it and got an organization every browser
+# question failed against.
+.PHONY: demo.setup
+demo.setup: .env ## The browser's org — COMPOSE addresses, built inside the api container
+	$(SHELL) ops/scripts/demo_setup.sh
+
+.PHONY: test.fixtures.up
+test.fixtures.up: .env ## Start synthetic databases for tests only
+	$(COMPOSE) --profile test-fixtures up -d seed-pizza-pg seed-fnb-pg
