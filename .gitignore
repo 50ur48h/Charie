@@ -135,11 +135,3 @@ apps/web/test-results/
 *.local.json
 # Sandbox shell cache artifact (created by headless tool runs in the repo)
 %SystemDrive%/
-
-# ---------------------------------------------------------------------------
-# Generated files in backend/ and frontend/
-# ---------------------------------------------------------------------------
-backend/tests/replays/
-backend/tests/data/local/
-dist-mock/
-.vite/
