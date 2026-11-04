@@ -1,26 +1,4 @@
-"""The data access layer's front door (architecture Part 7.1).
-
-``run`` is the whole of it: the agent's ``run_sql`` tool will call this and
-nothing else, and every phase after this one inherits the properties it holds.
-There is exactly one path from a piece of text to a customer's rows, and it
-passes through the validator, the executor, the masker and the recorder in that
-order, with no argument that turns any of them off.
-
-The layering is worth stating plainly, because the temptation later will be to
-call one layer down:
-
-* ``validator.validate`` decides. It emits SQL, because it holds the grant.
-* ``executor.execute`` runs and masks. It knows nothing about the platform
-  database.
-* ``audit_hook`` writes the record. It knows nothing about connectors.
-* ``service.run`` is the only one that knows all three exist, and it records on
-  **every** path — the query that worked, the one the engine refused, and the
-  one this service refused before the engine was asked.
-
-A refusal is recorded and then re-raised. The caller gets the same
-``PolicyViolation`` it would have got without any of this, and the trail has the
-row either way.
-"""
+"""The data access layer's front door (architecture Part 7.1)."""
 
 from __future__ import annotations
 
@@ -47,9 +25,7 @@ async def run(
     store: ArtifactStore | None = None,
     connector: Connector | None = None,
 ) -> Execution:
-    """Validate, execute, mask, record. Raises ``PolicyViolation`` or
-    ``ConnectorError`` — and has written a row before it does either.
-    """
+    """Validate, execute, mask, record."""
     resolved_store = store if store is not None else artifact_store()
 
     try:
@@ -58,9 +34,7 @@ async def run(
             data_source_id=data_source_id,
             sql=sql,
             max_rows=max_rows,
-            # Supplied by the run's lease where there is one (**B-176**).
-            # `executor` closes only what it opened, so a supplied connector
-            # outlives the query and is closed with the run.
+            # Supplied by the run's lease where there is one (B-176).
             connector=connector,
         )
     except PolicyViolation as violation:
@@ -93,8 +67,5 @@ async def run(
         store=resolved_store,
         run_id=run_id,
     )
-    # The id goes back to the caller because a citation must name a row somebody
-    # can look up (architecture 4.2). The executor cannot fill it in — it does
-    # not write the row — so the front door is the only place that can, which is
-    # also the only place callers are supposed to be.
+    # The id goes back to the caller because a citation must name a row somebody can look up.
     return replace(execution, execution_id=recorded.execution_id)

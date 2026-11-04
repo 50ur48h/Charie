@@ -1,17 +1,6 @@
 "use client";
 
-/**
- * The chart, or the reason there is none (WP11.1, B-048).
- *
- * **Inside the answer**, because a chart beside the answer is a picture next to
- * some prose, while a chart inside it is part of the claim. And **its spec opens
- * the way the SQL does**: a picture nobody can check is decoration that looks
- * like evidence.
- *
- * **A refusal renders here too, in the chart's own place.** It is deliberately
- * not a limitation — that list is about whether the answer is true, and a
- * missing picture says nothing about that.
- */
+/** The chart, or the reason there is none (WP11.1, B-048). */
 
 import { Braces, ChartNoAxesColumn, Download, Maximize2 } from "lucide-react";
 import { useCallback, useMemo, useRef, useState } from "react";

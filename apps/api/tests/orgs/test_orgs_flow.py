@@ -1,12 +1,4 @@
-"""Signup → org → invite → accept, across two organizations.
-
-The M2 flow, run over real HTTP against a real database. Two orgs exist
-throughout so that every assertion about what someone can see is also an
-assertion about what they cannot.
-
-The harness — the app, the stub validator, the `api` fixture — is in
-`conftest.py`, shared with **B-017**'s recovery-grant suite.
-"""
+"""Signup → org → invite → accept, across two organizations."""
 
 from __future__ import annotations
 
@@ -162,9 +154,7 @@ async def test_the_raw_token_is_never_stored(api: Api, migrated_database: URL) -
     assert all(token not in row for row in audited), "the raw token reached the audit log"
 
 
-# ---------------------------------------------------------------------------
-# A token that carried no email claim (B-009)
-# ---------------------------------------------------------------------------
+# --- A token that carried no email claim (B-009) ---
 
 
 async def test_a_missing_email_claim_is_recorded_as_missing(
@@ -230,9 +220,7 @@ async def test_a_member_without_an_email_still_appears_in_the_list(api: Api) -> 
     }
 
 
-# ---------------------------------------------------------------------------
-# Last-admin protection
-# ---------------------------------------------------------------------------
+# --- Last-admin protection ---
 
 
 async def test_the_only_admin_cannot_demote_themselves(api: Api) -> None:
@@ -285,9 +273,7 @@ async def test_an_admin_may_step_down_once_someone_else_is_admin(api: Api) -> No
     assert member["role"] == "reader"
 
 
-# ---------------------------------------------------------------------------
-# Two organizations
-# ---------------------------------------------------------------------------
+# --- Two organizations ---
 
 
 async def test_an_invitation_only_admits_you_to_its_own_organization(api: Api) -> None:

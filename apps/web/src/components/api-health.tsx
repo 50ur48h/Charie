@@ -23,16 +23,7 @@ function Dot({ tone }: { tone: "good" | "bad" }) {
   );
 }
 
-/**
- * Walking-skeleton widget: proves the browser can reach the API.
- *
- * Failure is a first-class state here, not a thrown error — an unreachable API
- * during local development is the normal case, and saying so plainly is more
- * useful than an empty page.
- *
- * A quiet status line rather than a card: on the front door it is the footnote,
- * not the point.
- */
+/** Walking-skeleton widget: proves the browser can reach the API. */
 export function ApiHealth({ className }: { className?: string | undefined }) {
   const [state, setState] = useState<State>({ kind: "loading" });
 
@@ -65,9 +56,7 @@ export function ApiHealth({ className }: { className?: string | undefined }) {
       </h2>
 
       <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1">
-        {/* The same shimmer the working state uses, so every "something is
-            happening" in this product reads the same way. `Pending` carries its
-            own live region, so the word is still announced. */}
+        {/* The same shimmer the working state uses. */}
         {state.kind === "loading" && <Pending>Checking…</Pending>}
 
         {state.kind === "healthy" && (

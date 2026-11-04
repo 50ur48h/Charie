@@ -1,31 +1,4 @@
-"""What a bounded sample of each column looks like (architecture Part 5.2).
-
-The budget is not a safety net around this feature; it *is* the feature. A
-profiler without one is a tool that reads a customer's production database until
-something gives, and the first time it matters will be on the largest table
-somebody owns. So three limits apply at once and none of them is optional:
-
-* **rows** — at most ``max_rows`` per table, in a single ``LIMIT``ed statement;
-* **time per query** — the connector's own ``ExecLimits`` timeout, which is a
-  server-side ``statement_timeout`` on Postgres and the driver's query timeout on
-  SQL Server;
-* **time per source** — a wall clock checked before each table, so a schema of
-  two thousand tables stops rather than running all night.
-
-Stopping early is a normal outcome and is recorded as ``partial``, not as an
-error. Half a catalog with honest provenance is worth more than a complete one
-that took a production database down to get.
-
-Two properties of the sample are stated rather than hidden. It is the *first*
-``max_rows`` rows, not a random sample — ordering would mean sorting the table —
-so a column that is sorted by date has a profile of its oldest rows. And every
-statistic is computed from that sample in Python, so "distinct" means distinct
-*within the sample*: for a column with more distinct values than rows sampled it
-is a floor, not an estimate.
-
-Everything sensitive is masked before it is written. That is in ``classify``,
-and it happens here, on the way in.
-"""
+"""What a bounded sample of each column looks like (architecture Part 5.2)."""
 
 from __future__ import annotations
 
@@ -65,15 +38,9 @@ STATUS_COMPLETE = "complete"
 
 @dataclass(frozen=True, slots=True)
 class Budget:
-    """Every limit in one object, so "what does profiling cost" has an answer.
+    """Every limit in one object, so "what does profiling cost" has an answer."""
 
-    The defaults are deliberately modest. Architecture Part 5.2 allows five
-    minutes per source and admin tuning; the point of starting low is that the
-    first time this runs against a real database, nobody has tuned anything.
-    """
-
-    #: Rows read per table. 5,000 is enough for a null fraction and a top-k to
-    #: mean something, and small enough to be uninteresting to any server.
+    #: Rows read per table. 5,000 is enough for a null fraction and a top-k to mean something.
     max_rows: int = 5_000
     #: Passed to the connector as ExecLimits, so the *engine* enforces it.
     per_query_timeout_seconds: float = 10.0
@@ -109,11 +76,7 @@ class ColumnProfile:
 
 
 def _render(value: object) -> str:
-    """A value as text, for a min/max or a top-k entry.
-
-    Bytes are never rendered: a ``bytea`` column's contents are not something to
-    put in a catalog, and their length says everything a profile needs.
-    """
+    """A value as text, for a min/max or a top-k entry."""
     if isinstance(value, bytes | bytearray):
         return f"<{len(value)} bytes>"
     if isinstance(value, memoryview):
@@ -122,9 +85,6 @@ def _render(value: object) -> str:
 
 
 #: Types where a low/high is worth having, and cheap for an engine to compute.
-#: Everything else — free text, json, arrays, booleans — gets **no range at all**
-#: rather than one taken from a sample (B-051): an absent figure is safe and a
-#: wrong one is not, and "email runs from a*** to z***" was never information.
 _RANGED_TYPES = (
     "int",
     "serial",
@@ -159,20 +119,7 @@ def profile_column(
     budget: Budget,
     value_range: tuple[object, object] | None = None,
 ) -> ColumnProfile:
-    """Statistics for one column of the sample, masked as they are built.
-
-    **A range is never derived here** (B-051). The values this function sees are
-    a *sample* — the first n rows, because `pg_sample` must not sort somebody's
-    production table — so their extremes are the extremes of the oldest rows and
-    not of the column. The demo catalog recorded orders as ending sixteen months
-    before they did, and the agent then refused an answerable question on the
-    strength of it, which is a wrong refusal wearing an honest one's clothes.
-
-    So `value_range` arrives from the engine or not at all, and there is **no
-    code path from `values` to `min_val`/`max_val`**. That is the guard: this
-    function could not publish a sampled range if someone wanted it to, which is
-    a stronger statement than a convention that it should not.
-    """
+    """Statistics for one column of the sample, masked as they are built."""
     present = [value for value in values if value is not None]
     null_frac = 0.0 if sampled == 0 else (sampled - len(present)) / sampled
 
@@ -198,8 +145,7 @@ def profile_column(
         maximum = None if high is None else _render(high)
 
     if sensitive:
-        # The extremes of an email column are two email addresses. Masked with
-        # everything else, on the way in.
+        # The extremes of an email column are two email addresses.
         minimum = None if minimum is None else mask_value(minimum, verdict.kind)
         maximum = None if maximum is None else mask_value(maximum, verdict.kind)
 
@@ -228,14 +174,7 @@ def profile_column(
 async def _engine_ranges(
     connector: Connector, target: _Target, budget: Budget
 ) -> dict[str, tuple[object, object]]:
-    """The true low and high of each ranged column, from the engine (B-051).
-
-    One aggregate per table, so the cost is the same order as the sample beside
-    it. **Failure means no range, never a fallback to the sample**: a timeout on
-    a huge table, a type the engine will not aggregate, a permission — every one
-    of them ends with the figure absent, because that is the safe direction and
-    a sampled range is the thing this exists to stop.
-    """
+    """The true low and high of each ranged column, from the engine (B-051)."""
     caps = connector.capabilities()
     ranged = [name for _, name, data_type, _ in target.columns if wants_range(data_type)]
     if not ranged:
@@ -279,11 +218,7 @@ async def profile(
     budget: Budget | None = None,
     embedder: Embedder | None = None,
 ) -> ProfileOutcome:
-    """Profile the active snapshot of one data source.
-
-    Never raises for a database's sake: a source that cannot be read, or has no
-    catalog yet, is an answer rather than an exception.
-    """
+    """Profile the active snapshot of one data source."""
     limits = budget if budget is not None else Budget()
     view = await datasources.get_data_source(org_id, data_source_id)
 
@@ -329,11 +264,7 @@ async def profile(
         skipped=skipped,
         errors=errors,
     )
-    # A profile changes what a card can say about values, so the cards are
-    # rewritten with it rather than describing a database nobody profiled — and
-    # a rewritten card needs a new vector, since the old one describes words the
-    # card no longer contains (**B-018**). `refresh_cards` clears the embedding
-    # of every card whose text actually changed; this fills them back in.
+    # A profile changes what a card can say about values.
     await cards.refresh_cards(org_id, data_source_id)
     await cards.embed_cards(org_id, data_source_id, embedder=embedder)
     return outcome
@@ -411,11 +342,7 @@ async def _targets(session: AsyncSession, snapshot_id: uuid.UUID) -> tuple[_Targ
 async def _row_estimates(
     connector: Connector, schemas: Sequence[str]
 ) -> dict[tuple[str, str], int]:
-    """How big each table is, as the engine already believes.
-
-    A catalog query against statistics the engine keeps anyway — no scan, and no
-    identifier interpolation, because it asks about every table at once.
-    """
+    """How big each table is, as the engine already believes."""
     caps = connector.capabilities()
     query = (
         introspection.tsql_row_estimates()
@@ -446,8 +373,7 @@ async def _sample_everything(
 
     for index, target in enumerate(targets):
         if time.monotonic() - started >= budget.wall_clock_seconds:
-            # Everything from here on is skipped, and the count is what makes
-            # "partial" a number rather than a shrug.
+            # Everything from here on is skipped.
             skipped = len(targets) - index
             break
 
@@ -461,9 +387,7 @@ async def _sample_everything(
                 ),
             )
         except ConnectorError as error:
-            # One unreadable table does not end the pass: a view over a missing
-            # object, or a permission the crawl could see but not read through,
-            # is that table's problem and not the catalog's.
+            # One unreadable table does not end the pass: a view over a missing object.
             errors.append(f"{target.schema_name}.{target.table_name}: {error}")
             skipped += 1
             continue
@@ -502,8 +426,7 @@ async def _store(
     sensitive = 0
 
     async with org_session(org_id) as session:
-        # `in_` of an empty list is valid SQL that matches nothing, so there is
-        # no branch here for "nothing was profiled".
+        # `in_` of an empty list is valid SQL that matches nothing.
         columns = (
             (
                 await session.execute(
@@ -533,10 +456,7 @@ async def _store(
             profiled_tables.add(column.table_id)
             table = tables.get(column.table_id)
             if table is not None:
-                # The *engine's* estimate, never the sample's size. A table of
-                # 72,000 rows profiled from a cap of 5,000 would otherwise be
-                # described as having about 5,000 rows, which is not a floor or
-                # an approximation — it is wrong.
+                # The engine's estimate, never the sample's size.
                 table.row_estimate = estimates.get((table.schema_name, table.table_name))
             column.null_frac = found.null_frac
             column.distinct_est = found.distinct
@@ -608,12 +528,7 @@ async def _default_to_mask(
     column_name: str,
     kind: str | None,
 ) -> None:
-    """Give a suspected column a masking policy, unless a person has decided.
-
-    The check for an existing row is the important half: an Admin who set a
-    column to ``allow`` has looked at it, and a later profile run must not
-    quietly overrule them (DECISIONS D-013).
-    """
+    """Give a suspected column a masking policy, unless a person has decided."""
     existing = (
         (
             await session.execute(

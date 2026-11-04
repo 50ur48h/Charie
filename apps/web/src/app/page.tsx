@@ -1,30 +1,6 @@
 "use client";
 
-/**
- * The front door (WP13.1b).
- *
- * **A member with an organization lands in chat**, not on a profile page with an
- * Ask button on it. That is the whole direction of this work package: you open
- * the app and start talking to your data.
- *
- * Three states, and the second is the one worth being careful about:
- *
- *   1. Signed out → the welcome: the mark, one line on what this is, and the
- *      sign-in card.
- *   2. Signed in, **no organization yet** → the bootstrap profile, unchanged.
- *      This is a real state, not an edge case: it is every first login, and it
- *      is the only screen from which an organization can be created. Redirecting
- *      it anywhere would strand a new person on a chat that has nothing to talk
- *      to.
- *   3. Signed in with organizations → straight into the first one's chat.
- *
- * **Redirecting happens only when there is exactly one organization**, and that
- * restraint is the whole of the multi-org story for now. The shell has no
- * organization switcher, so redirecting a member of two into the first would
- * make the second reachable only by typing a URL — a screen you can leave but
- * cannot return to. With several, the list below is shown and each entry links
- * into its own chat. A switcher in the sidebar is **B-141**.
- */
+/** The front door (WP13.1b). */
 
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -41,9 +17,7 @@ export default function Home() {
   const router = useRouter();
   const api = useMemo(() => createApi(session.getToken), [session.getToken]);
 
-  // `null` is "we have not asked yet". Rendering the bootstrap screen while the
-  // answer is unknown would flash "create an organization" at people who have
-  // one — the empty-state-as-loading-state mistake, one screen over.
+  // `null` is "we have not asked yet".
   const [checked, setChecked] = useState(false);
 
   useEffect(() => {
@@ -58,8 +32,7 @@ export default function Home() {
           return;
         }
       } catch {
-        // Fall through to the profile, which reports its own failure and still
-        // offers the one action available here.
+        // Fall through to the profile, which reports its own failure and still offers the one...
       }
       if (alive) setChecked(true);
     })();

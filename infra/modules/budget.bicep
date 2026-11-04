@@ -1,15 +1,4 @@
 // The monthly spend ceiling, and who hears about it.
-//
-// A budget does not stop anything — Azure has no hard cap on a subscription, and
-// pretending otherwise would be worse than useless. What it does is tell a person
-// early, which is the only control available at this layer. The application's own
-// hard-stop is `quotas/` in WP12.3, and that one does refuse.
-//
-// **The alert address is not in a tracked file.** It is a personal email, it has
-// no default, and no `.bicepparam` in this repo carries it — it is supplied at
-// deploy time from a GitHub secret. That is the owner's instruction and it is
-// also the right shape: a repository that is public should not carry the address
-// its owner reads alerts on.
 
 targetScope = 'resourceGroup'
 
@@ -36,11 +25,7 @@ resource budget 'Microsoft.Consumption/budgets@2023-11-01' = {
       startDate: startDate
     }
     notifications: {
-      // **Three thresholds, and the first two are the useful ones.** An alert at
-      // 100% arrives when the money is already spent; 50% is the one that gives
-      // a week to look. The third is `Forecasted` rather than `Actual`, which
-      // fires when the *trend* would exceed the cap — the only one of the three
-      // that can arrive before the overspend rather than during it.
+      // Three thresholds, and the first two are the useful ones.
       half: {
         enabled: true
         operator: 'GreaterThan'

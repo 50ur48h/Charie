@@ -1,15 +1,4 @@
-"""The per-run spending ceiling.
-
-Against a real platform database, because the ceiling is computed from the same
-``usage_ledger`` rows the meter writes — a test with an in-memory counter would
-prove that the counter works, not that the ledger and the ceiling agree about
-what a run has cost.
-
-The case that matters most is the unpriced one. A model with no configured price
-records ``cost_usd = NULL``; summed, that is a total smaller than the truth and a
-ceiling that is never reached. A cap that cannot see what it is spending is not
-a cap, and these tests are what stop that from being a silent property.
-"""
+"""The per-run spending ceiling."""
 
 from __future__ import annotations
 
@@ -81,14 +70,11 @@ async def _spend(org_id: uuid.UUID, run_id: uuid.UUID, *, model: str, tokens: in
     )
 
 
-# ---------------------------------------------------------------------------
-# When the ceiling applies at all
-# ---------------------------------------------------------------------------
+# --- When the ceiling applies at all ---
 
 
 async def test_no_configured_ceiling_means_no_check(platform: URL, migrated_database: URL) -> None:
-    """The default. Right for a person asking one question, wrong for a sweep —
-    which is why the eval and gate configs set one."""
+    """The default. Right for a person asking one question, wrong for a sweep."""
     org_id = await _org(migrated_database)
 
     await budget.assert_within_limit(
@@ -100,9 +86,7 @@ async def test_no_configured_ceiling_means_no_check(platform: URL, migrated_data
 
 
 async def test_a_call_with_no_run_is_not_capped(platform: URL, migrated_database: URL) -> None:
-    """Stated as a test because it is a real hole rather than an oversight:
-    there is nothing to accumulate against without a run id. Everything that
-    spends in a loop has one; Phase 8's BudgetState closes this properly."""
+    """Stated as a test because it is a real hole rather than an oversight."""
     org_id = await _org(migrated_database)
 
     await budget.assert_within_limit(
@@ -113,9 +97,7 @@ async def test_a_call_with_no_run_is_not_capped(platform: URL, migrated_database
     )
 
 
-# ---------------------------------------------------------------------------
-# The ceiling itself
-# ---------------------------------------------------------------------------
+# --- The ceiling itself ---
 
 
 async def test_a_run_under_its_ceiling_may_keep_going(
@@ -154,8 +136,7 @@ async def test_a_run_at_its_ceiling_is_stopped(platform: URL, migrated_database:
 async def test_only_this_run_counts_towards_this_run_s_ceiling(
     platform: URL, migrated_database: URL
 ) -> None:
-    """An organization's total spend is B-025's business. A ceiling that counted
-    a neighbouring run would stop work for reasons its own trace cannot explain."""
+    """An organization's total spend is B-025's business."""
     org_id = await _org(migrated_database)
     expensive = await seed_run(migrated_database, org_id)
     cheap = await seed_run(migrated_database, org_id)
@@ -183,16 +164,13 @@ async def test_spend_is_read_back_with_its_unpriced_count(
     assert spend.unpriced_calls == 1
 
 
-# ---------------------------------------------------------------------------
-# Unpriced models: the case the whole design turns on
-# ---------------------------------------------------------------------------
+# --- Unpriced models: the case the whole design turns on ---
 
 
 async def test_an_unpriced_model_is_refused_under_a_ceiling(
     platform: URL, migrated_database: URL
 ) -> None:
-    """Its cost would be recorded as NULL, sail past every check, and spend
-    without limit. A ceiling that cannot see what it is spending is not one."""
+    """Its cost would be recorded as NULL, sail past every check, and spend without limit."""
     org_id = await _org(migrated_database)
 
     with pytest.raises(RunCostExceededError, match="LLM_PRICES"):
@@ -207,8 +185,7 @@ async def test_an_unpriced_model_is_refused_under_a_ceiling(
 async def test_a_run_holding_unpriced_calls_cannot_be_capped_honestly(
     platform: URL, migrated_database: URL
 ) -> None:
-    """Even for a priced model: part of this run's spend is unknown, so the
-    remaining headroom is unknown too."""
+    """Even for a priced model: part of this run's spend is unknown."""
     org_id = await _org(migrated_database)
     run_id = await seed_run(migrated_database, org_id)
     await _spend(org_id, run_id, model="mystery-model", tokens=1000)
@@ -225,8 +202,7 @@ async def test_a_run_holding_unpriced_calls_cannot_be_capped_honestly(
 async def test_the_unpriced_risk_can_be_accepted_knowingly(
     platform: URL, migrated_database: URL
 ) -> None:
-    """Off by default, available on purpose — but it is a choice someone makes,
-    not a default they inherit."""
+    """Off by default, available on purpose — but it is a choice someone makes."""
     org_id = await _org(migrated_database)
 
     await budget.assert_within_limit(

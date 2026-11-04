@@ -1,7 +1,4 @@
-"""Fixtures for the DAL suite. The catalog they are built from is in
-``catalog_fixture``, which the tests also import directly when a case needs to
-name its engine rather than take both.
-"""
+"""Fixtures for the DAL suite. The catalog they are built from is in ``catalog_fixture``."""
 
 from __future__ import annotations
 
@@ -23,11 +20,6 @@ def mssql() -> SourcePolicy:
 
 @pytest.fixture(params=["pg", "mssql"], ids=["postgres", "sqlserver"])
 def either(request: pytest.FixtureRequest) -> SourcePolicy:
-    """Both dialects, for every rule that is not about one of them.
-
-    A rule proven on PostgreSQL alone is a rule proven on half the product: the
-    two engines parse, quote and spell things differently, and Phase 5 exists
-    because "it worked on the one we tested" is not a security position.
-    """
+    """Both dialects, for every rule that is not about one of them."""
     engine: str = request.param
     return build_source(engine)

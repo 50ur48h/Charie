@@ -1,26 +1,4 @@
-"""table cards: the text the agent will read, and the index it is found by
-
-WP4.3, architecture Part 5.3. A card is a compact description of one table —
-what it holds, its columns and their roles, its keys and its neighbours — written
-so that a language model can be given *this* instead of a schema dump. Part 5.2
-is blunt about why: the full catalog never enters a prompt, and "schema RAG" is
-what makes a two-thousand-table database workable.
-
-``card_tsv`` is a **generated** column rather than one a trigger maintains. The
-index can then never disagree with the text it indexes, which is the failure a
-trigger eventually has: someone writes a card in a migration or a backfill, the
-trigger is not there, and search quietly stops finding a table nobody notices is
-missing.
-
-There is no ``embedding`` column yet. Plan §6 Phase 4 makes the embeddings key
-optional and says card search runs lexical-only without one; a vector column
-nothing can fill is a column that is never exercised, so it arrives with the key
-that fills it (**B-018**).
-
-Revision ID: 0009
-Revises: 0008
-Create Date: 2026-08-13
-"""
+"""table cards: the text the agent will read, and the index it is found by"""
 
 from __future__ import annotations
 
@@ -37,10 +15,7 @@ depends_on: str | Sequence[str] | None = None
 
 TABLE = "catalog_tables"
 
-#: 'english' rather than 'simple': a card is prose, and a person searching
-#: "revenue" should find a table whose card says "revenues". Stored in the
-#: generated column's definition, so changing it is a migration — which it
-#: should be, since every existing row's index would have to be rebuilt.
+#: 'english' rather than 'simple': a card is prose.
 CONFIGURATION = "english"
 
 
@@ -61,9 +36,7 @@ def upgrade() -> None:
         sa.Column("row_estimate", sa.BigInteger(), nullable=True),
     )
 
-    # Generated, so the text and its index cannot drift. COALESCE because a
-    # table that has not been carded yet is a null, and to_tsvector(null) is
-    # null — which would make the column unindexable rather than empty.
+    # Generated, so the text and its index cannot drift.
     op.execute(
         f"ALTER TABLE {TABLE} ADD COLUMN card_tsv tsvector "
         f"GENERATED ALWAYS AS (to_tsvector('{CONFIGURATION}', COALESCE(card_text, ''))) STORED"

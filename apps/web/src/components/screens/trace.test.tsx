@@ -2,24 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { STEP_SENTENCES, sentence } from "./trace";
 
-/**
- * Every step reads as a sentence, including when the payload is empty.
- *
- * **Written because the first version of this vocabulary got it wrong.**
- * `knowledge_consulted` built its detail by joining two optional parts and
- * appending a full stop — so an event carrying neither rendered a bare `"."` to
- * a real person. The module's own docstring states the rule it broke: a payload
- * shape that changed should make the trace *quieter*, not wrong.
- *
- * The empty payload is the case worth sweeping, because it is the one no fixture
- * produces and no browser run exercises: `agent_events.payload` defaults to
- * `'{}'` in the schema, and an older server, a truncated write or a future event
- * type all arrive here as an object with nothing in it.
- *
- * Everything below indexes the record through `Object.entries` or `build()`,
- * never through `STEP_SENTENCES[type]` directly — `noUncheckedIndexedAccess` is
- * on, and a bare index is possibly-undefined.
- */
+/** Every step reads as a sentence, including when the payload is empty. */
 
 /** Punctuation and space only — what a broken template leaves behind. */
 const ONLY_PUNCTUATION = /^[\s.,;:—–-]*$/;
@@ -35,8 +18,7 @@ function build(type: string, payload: Record<string, unknown> = {}) {
 
 describe("every step's sentence survives an empty payload", () => {
   it("covers more than a handful of event types, so the sweep means something", () => {
-    // Guards the sweep itself: an import that silently resolved to `{}` would
-    // make every test below pass by describing nothing.
+    // Guards the sweep itself: an import that silently resolved to `{}` would make every test...
     expect(ENTRIES.length).toBeGreaterThan(15);
   });
 
@@ -44,8 +26,7 @@ describe("every step's sentence survives an empty payload", () => {
     const { lead, rest } = make({});
 
     expect(lead.trim().length).toBeGreaterThan(0);
-    // `rest` is allowed to be empty — that is the honest outcome when an event
-    // carries nothing worth adding. What it may never be is *almost* empty.
+    // `rest` is allowed to be empty — that is the honest outcome when an event carries nothing...
     if (rest !== "") {
       expect(rest).not.toMatch(ONLY_PUNCTUATION);
     }
@@ -73,8 +54,7 @@ describe("the sentences use what the events carry", () => {
   });
 
   it("says why a join was checked, not just that it was", () => {
-    // The event carries `answerable`; the sentence carries the consequence,
-    // which is the part a person cannot infer from a machine name.
+    // The event carries `answerable`; the sentence carries the consequence.
     expect(build("capability_checked", { answerable: true }).rest).toContain("they can");
 
     const refused = build("capability_checked", { answerable: false, unreachable: ["a and b"] });
@@ -90,8 +70,7 @@ describe("the sentences use what the events carry", () => {
   });
 
   it("keeps a step number of zero rather than dropping it as falsy", () => {
-    // `num` returns a number and `0` is falsy in TypeScript; a truthiness test
-    // here would silently lose a legitimate step.
+    // `num` returns a number and `0` is falsy in TypeScript.
     expect(build("step_started", { iteration: 0 }).rest).toContain("step 0");
     expect(build("step_started").rest).toBe("");
   });
@@ -99,8 +78,7 @@ describe("the sentences use what the events carry", () => {
 
 describe("an event this build has never heard of", () => {
   it("shows its raw name rather than being hidden", () => {
-    // The module's standing rule: a trace that silently omits a step is worse
-    // than an ugly one. This is the fallback for an event from a *newer* server.
+    // The module's standing rule: a trace that silently omits a step is worse than an ugly one.
     const step = sentence({
       seq: 1,
       type: "something_new",
@@ -113,10 +91,7 @@ describe("an event this build has never heard of", () => {
 });
 
 describe("the period check is legible, including when it could not run", () => {
-  // **B-157, D-059.** The owner's requirement: a run where the check abstained
-  // must be distinguishable from one where it ran and passed. Three statuses,
-  // three different sentences — and the abstention carries its reason, because
-  // "could not be checked" with no "why" is the same silence wearing a label.
+  // B-157, D-059.
 
   it("says both periods when the answer is outside what the catalogue records", () => {
     const step = build("answer_composed", {
@@ -163,10 +138,7 @@ describe("the period check is legible, including when it could not run", () => {
   });
 
   it("is silent when the payload carries no coverage at all", () => {
-    // `coverage: null` is what an older server sends, and what a run that never
-    // reached the composer leaves behind. It must not render as though a check
-    // happened — `nested()` returning null rather than `{}` is what guarantees
-    // that, and this is the assertion that holds it.
+    // `coverage: null` is what an older server sends.
     expect(build("answer_composed", { limitations: 0, coverage: null }).rest).not.toContain(
       "period",
     );
@@ -175,13 +147,10 @@ describe("the period check is legible, including when it could not run", () => {
 });
 
 describe("the trace spends what the events already carry", () => {
-  // WP13.21. Every field read below has been in the payload since long before
-  // the sentence said it out loud — "what it considered" and "what it ruled
-  // out" were being discarded at render time. No new emit-time field is read.
+  // WP13.21.
 
   it("says how much of each table the model actually saw", () => {
-    // **B-160.** "25 tables" said nothing about detail, and it described the
-    // search's result rather than the prompt's.
+    // B-160. "25 tables" said nothing about detail.
     const step = build("context_selected", {
       tables: ["public.fact_sale", "public.dim_outlet", "public.dim_calendar"],
       tables_in_full: 1,
@@ -222,8 +191,7 @@ describe("the trace spends what the events already carry", () => {
   });
 
   it("tells no definitions matched apart from having no definitions", () => {
-    // **B-087's finding, said out loud.** An empty list beside a non-zero count
-    // is the whole point.
+    // B-087's finding, said out loud.
     const none = build("context_selected", {
       tables: ["public.fact_sale"],
       definitions_applied: [],
@@ -286,8 +254,7 @@ describe("the trace spends what the events already carry", () => {
   });
 
   it("tells an unprofiled source apart from a checked one", () => {
-    // B-157/D-059: the key is present even when null, and the two must not read
-    // the same.
+    // B-157/D-059: the key is present even when null, and the two must not read the same.
     const known = build("capability_checked", {
       answerable: true,
       available_period: "2025-01 to 2025-12",

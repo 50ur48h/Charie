@@ -1,21 +1,4 @@
-"""The guard that stops a test spending real money (B-040).
-
-A guard that has never fired is a guard nobody has tested, and this one protects
-against a failure that already happened once: a WP7.2c test reached the agent
-through HTTP, settings resolved through the developer's ``.env``, and OpenAI
-answered for real. CI could not have caught it — CI has no key, so the suite went
-green there while charging every developer who ran it locally.
-
-These run the guard against a deliberately non-stub provider, which is the only
-way to know it still bites.
-
-**There are two doors and both are watched** (B-073). A chat model comes out of
-``registry.get_provider``; an embedder comes out of
-``knowledge.embeddings.get_embedder`` and bills the same account through a
-different endpoint. The second half of this file is the second door, tested the
-same way and for a sharper reason: one upload is one embedding call per chunk,
-so an unguarded embedder spends faster than the completion that prompted B-040.
-"""
+"""The guard that stops a test spending real money (B-040)."""
 
 from __future__ import annotations
 
@@ -32,11 +15,7 @@ from llm_fixture import build_settings
 
 
 class _PretendLiveProvider:
-    """Claims not to be a stub, and would be a real API in production.
-
-    ``is_stub=False`` is the whole fixture: it is the one bit the registry's
-    production check and this guard both read, and the FakeLLM sets it True.
-    """
+    """Claims not to be a stub, and would be a real API in production."""
 
     def capabilities(self) -> ProviderCaps:
         return ProviderCaps(name="pretend-live", supports_response_schema=True, is_stub=False)
@@ -86,20 +65,13 @@ def test_a_stub_provider_passes_straight_through(fake_llm: object) -> None:
 
 @pytest.mark.live_provider
 def test_a_marked_test_may_use_a_live_provider(pretend_live: object) -> None:
-    """The opt-out exists so the guard is a control rather than an obstacle.
-
-    Nothing in the suite carries this marker today — the live smokes are scripts,
-    run by hand, on purpose. It is here so that if something ever needs to, the
-    decision is visible in the test's own source rather than in a comment.
-    """
+    """The opt-out exists so the guard is a control rather than an obstacle."""
     provider = registry.get_provider("pretend-live")
 
     assert provider.capabilities().is_stub is False
 
 
-# ---------------------------------------------------------------------------
-# The second door: embeddings (B-073)
-# ---------------------------------------------------------------------------
+# --- The second door: embeddings (B-073) ---
 
 
 def _configured(**overrides: Any) -> Any:
@@ -113,23 +85,20 @@ def _configured(**overrides: Any) -> Any:
 
 @pytest.fixture(autouse=True)
 def forget_built_embedders() -> Iterator[None]:
-    """The factory caches, and a cached live embedder would outlive the test
-    that built it — including into a test with no opt-out marker."""
+    """The factory caches, and a cached live embedder would outlive the test that built it."""
     embeddings.reset_embedder()
     yield
     embeddings.reset_embedder()
 
 
 def test_asking_for_a_live_embedder_is_refused(expected_live_provider_refusal: None) -> None:
-    """No pretend object here, deliberately: this is the embedder a configured
-    deployment actually builds, refused because it declares `is_stub` false."""
+    """No pretend object here, deliberately."""
     with pytest.raises(RuntimeError, match="live embedder"):
         embeddings.get_embedder(_configured())
 
 
 def test_the_embedder_refusal_says_how_to_fix_it(expected_live_provider_refusal: None) -> None:
-    """Same advice as the provider door, in the same words. Two doors refusing
-    in two dialects would be two things to learn."""
+    """Same advice as the provider door, in the same words."""
     with pytest.raises(RuntimeError) as raised:
         embeddings.get_embedder(_configured())
 
@@ -139,8 +108,7 @@ def test_the_embedder_refusal_says_how_to_fix_it(expected_live_provider_refusal:
 
 
 def test_no_embedder_configured_passes_straight_through() -> None:
-    """The guard must be invisible to the suite it protects, and None is what
-    every test that does not configure embeddings already gets."""
+    """The guard must be invisible to the suite it protects."""
     assert embeddings.get_embedder(build_settings()) is None
 
 

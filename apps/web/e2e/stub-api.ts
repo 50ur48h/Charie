@@ -1,23 +1,4 @@
-/**
- * A stand-in for the Charie API, for the browser tests.
- *
- * Not a mock of the client — a real HTTP server the real app talks to over a
- * real socket, so what is exercised is the built page in a real browser with
- * real network timing. That distinction is the whole point: the jsdom test for
- * **B-044** passed against the broken code, because a stubbed `fetch` that
- * resolves in a microtask beats React's commit and hides the race entirely.
- *
- * Two things it models faithfully, because the bug lives in both:
- *
- *   1. **`POST …/messages` returns 202 with a run id and no answer.** The reply
- *      becomes a `messages` row only when the run finishes, so a screen that
- *      does not re-read the thread at that moment shows a wordless answer.
- *   2. **A run is `running` before it is `completed`.** The transition is what
- *      the poll has to notice, and answering `completed` immediately would skip
- *      the very state machine under test.
- *
- * Every response is delayed a little, the way a real one is.
- */
+/** A stand-in for the Charie API, for the browser tests. */
 
 import { createServer, type Server } from "node:http";
 
@@ -26,13 +7,7 @@ const CONVERSATION = "22222222-2222-2222-2222-222222222222";
 const RUN = "33333333-3333-3333-3333-333333333333";
 const EXECUTION = "44444444-4444-4444-4444-444444444444";
 
-/**
- * The chart the answer carries, exactly as `agent/charts.py` assembles one.
- *
- * Inline values and no URL, because that is the property the server guarantees
- * by construction — and a stub that served a URL would be testing a document
- * the product cannot produce.
- */
+/** The chart the answer carries, exactly as `agent/charts.py` assembles one. */
 export const CHART_SPEC = {
   $schema: "https://vega.github.io/schema/vega-lite/v5.json",
   mark: "line",
@@ -63,71 +38,29 @@ const LATENCY_MS = 25;
 export interface StubApi {
   url: string;
   close: () => Promise<void>;
-  /**
-   * Back to "nothing has been asked yet", without rebinding the port.
-   *
-   * One server for the whole file, reset between tests: the browser holds
-   * keep-alive connections, so `close()` does not free a fixed port promptly and
-   * the next test's `listen` loses it — which shows up as a page that never
-   * signs in, several tests later and nowhere near the cause.
-   */
+  /** Back to "nothing has been asked yet", without rebinding the port. */
   reset: () => void;
   /** Requests seen, for asserting what the screen did and did not ask for. */
   readonly calls: string[];
 }
 
-/**
- * Fixed, because `NEXT_PUBLIC_API_URL` is inlined when the dev server starts and
- * therefore has to be known before any test runs. Chosen well away from the
- * compose stack's 3000/8000 so a developer's running containers are untouched.
- */
+/** Fixed, because `NEXT_PUBLIC_API_URL` is inlined when the dev server starts and therefore... */
 export const STUB_PORT = 4111;
 
-/**
- * One server per worker process, shared by every spec file in it.
- *
- * **Two files each starting their own on a fixed port is the failure this
- * module's header already warned about**, and WP13.1b walked straight into it:
- * adding `shell.spec.ts` beside `conversation.spec.ts` meant the first file's
- * `close()` raced the second file's `listen()`, the browser's keep-alive
- * connections kept the port from freeing promptly, and the loser showed up as a
- * page that never signed in — **in a different test on every run**, which is
- * what made it read as flakiness rather than as a bug.
- *
- * So `startStubApi` hands back the running instance if there is one, and
- * `close()` only really closes when the last holder has let go. Every caller
- * keeps its existing `beforeAll`/`afterAll` and none of them has to know.
- */
+/** One server per worker process, shared by every spec file in it. */
 let shared: Promise<StubApi> | null = null;
 
 export async function startStubApi(port: number = STUB_PORT): Promise<StubApi> {
   shared ??= bindStubApi(port).then((api) => ({
     ...api,
     calls: api.calls,
-    /**
-     * Deliberately does not close.
-     *
-     * Reference counting was tried and does not help: spec files run one after
-     * another, so the first file's `afterAll` fires *before* the second file's
-     * `beforeAll` and the count reaches zero between them — which is the same
-     * unbind/rebind race by a longer route. The server instead lives as long as
-     * the worker process, and the operating system reclaims the port when that
-     * exits. Nothing leaks beyond the run.
-     */
+    /** Deliberately does not close. */
     close: async () => {},
   }));
   return shared;
 }
 
-/**
- * Bind, retrying briefly on a port that has not been released yet.
- *
- * **Playwright restarts a worker after a test fails**, and the replacement can
- * reach `listen` while the previous process's socket is still in `TIME_WAIT`.
- * Without this, one genuine failure turns into a cascade of unrelated ones in
- * the next file — which is precisely the "nowhere near the cause" symptom this
- * module's header warns about.
- */
+/** Bind, retrying briefly on a port that has not been released yet. */
 async function bindWithRetry(server: Server, port: number): Promise<void> {
   const deadline = Date.now() + 10_000;
   for (;;) {
@@ -164,8 +97,7 @@ async function bindStubApi(port: number): Promise<StubApi> {
     const send = (status: number, body: unknown) => {
       const payload = JSON.stringify(body);
       setTimeout(() => {
-        // A page closed mid-flight leaves a destroyed socket; writing to it
-        // would throw inside a timer, where nothing is there to catch it.
+        // A page closed mid-flight leaves a destroyed socket.
         if (response.writableEnded || response.destroyed) return;
         response.writeHead(status, {
           "content-type": "application/json",
@@ -173,11 +105,7 @@ async function bindStubApi(port: number): Promise<StubApi> {
           "access-control-allow-origin": "*",
           "access-control-allow-headers": "authorization,content-type,accept",
           "access-control-allow-methods": "GET,POST,PATCH,DELETE,OPTIONS",
-          // No keep-alive. Each test opens fresh pages against this one
-          // long-lived server, and sockets held open by pages that have since
-          // closed accumulate until the browser's per-host connection limit is
-          // reached — after which a later test simply never signs in, failing
-          // several tests away from the cause.
+          // No keep-alive. Each test opens fresh pages against this one long-lived server.
           connection: "close",
         });
         response.end(payload);
@@ -194,8 +122,7 @@ async function bindStubApi(port: number): Promise<StubApi> {
       return;
     }
 
-    // Development sign-in, so a real browser can hold a real session without
-    // Entra (`lib/auth/dev-tokens.ts`).
+    // Development sign-in, so a real browser can hold a real session without Entra.
     if (url.startsWith("/dev/token")) {
       send(200, { access_token: "stub-token", token_type: "Bearer", expires_in: 3600 });
       return;
@@ -234,8 +161,7 @@ async function bindStubApi(port: number): Promise<StubApi> {
     }
 
     if (url.includes("/events")) {
-      // The trace's own steps, revealed as the run progresses so a browser test
-      // can watch them arrive rather than being handed the finished list.
+      // The trace's own steps, revealed as the run progresses so a browser test can watch them...
       const steps = [
         { seq: 1, type: "run_started", payload: { question: QUESTION } },
         { seq: 2, type: "context_selected", payload: { tables: ["public.orders"] } },
@@ -248,9 +174,7 @@ async function bindStubApi(port: number): Promise<StubApi> {
       const fresh = visible.filter((step) => step.seq > after);
 
       if ((request.headers.accept ?? "").includes("text/event-stream")) {
-        // Replay, then close — the real server holds the connection open until
-        // the run ends, and the client resumes from `Last-Event-ID` either way,
-        // so closing early exercises exactly that recovery path.
+        // Replay, then close — the real server holds the connection open until the run ends.
         setTimeout(() => {
           if (response.writableEnded || response.destroyed) return;
           response.writeHead(200, {
@@ -281,13 +205,7 @@ data: ${body}
       return;
     }
 
-    /**
-     * One run, as both routes state it.
-     *
-     * Shared, because the API shares it: `_run_out` builds the single route's
-     * payload and the thread's list alike, and a stub that let the two drift
-     * would be testing a difference the product cannot produce.
-     */
+    /** One run, as both routes state it. */
     const runPayload = () => {
       const done = finished();
       return {
@@ -300,7 +218,6 @@ data: ${body}
           ? [{ id: "f1", statement: ANSWER, support: [EXECUTION], confidence: "high" }]
           : [],
         // A real spec, of the shape the server builds: values inline, no URL.
-        // Only once the run is done, because a chart is part of an answer.
         chart: done ? { spec: CHART_SPEC } : null,
         started_at: "2026-08-15T09:00:01Z",
         finished_at: done ? "2026-08-15T09:00:20Z" : null,
@@ -308,10 +225,7 @@ data: ${body}
       };
     };
 
-    // The thread's runs (**B-106**), which the screen reads so every answer is a
-    // card rather than only the newest one. Before the trailing-slash route
-    // below, because `/conversations/{id}/runs` has no slash after `runs` and
-    // would otherwise fall through to the messages branch.
+    // The thread's runs (B-106), which the screen reads so every answer is a card rather than...
     if (url.endsWith("/runs")) {
       send(200, finished() ? [runPayload()] : []);
       return;
@@ -339,8 +253,7 @@ data: ${body}
           created_at: "2026-08-15T09:00:00Z",
         });
       }
-      // The reply exists only once the run has finished — which is exactly what
-      // stops `send()`'s own reload from picking it up.
+      // The reply exists only once the run has finished.
       if (finished()) {
         thread.push({
           id: "m2",
@@ -377,9 +290,7 @@ data: ${body}
       return;
     }
 
-    // The database this organization answers from (D-045). The chat home and
-    // Settings both read it; without it they would report a failure instead of
-    // a composer.
+    // The database this organization answers from (D-045).
     if (url.includes("/active-data-source")) {
       send(200, {
         data_source_id: "66666666-6666-6666-6666-666666666666",
@@ -388,20 +299,9 @@ data: ${body}
       return;
     }
 
-    /**
-     * The **list**, which the sidebar reads — an array, not the single object
-     * the catch-all below returns.
-     *
-     * Matched before it and anchored on the end of the path, because
-     * `/conversations` is a prefix of `/conversations/{id}` and the looser test
-     * would answer both with the wrong shape. `api.conversations()` validates
-     * `every(isConversation)`, so the wrong shape is an error banner in the rail
-     * rather than a silent oddity.
-     */
+    /** The list, which the sidebar reads — an array. */
     if (/\/conversations(\?|$)/.test(url)) {
-      // Starting a chat posts to the same path the list is read from, and answers
-      // with the one conversation it made — not with a list. Without this the
-      // new-chat flow parses an array as a conversation and fails its guard.
+      // Starting a chat posts to the same path the list is read from.
       if (method === "POST") {
         send(201, {
           id: CONVERSATION,
@@ -436,11 +336,7 @@ data: ${body}
         title: QUESTION,
         created_at: "2026-08-15T09:00:00Z",
         message_count: asked ? 1 : 0,
-        // Null until a question has been asked, then the run — exactly as the
-        // real API behaves. This is what a reloaded page adopts, and getting it
-        // wrong made the refresh-replay test pass vacuously: the answer was
-        // visible from the messages while no run, and therefore no trace, was
-        // ever picked up.
+        // Null until a question has been asked, then the run — exactly as the real API behaves.
         last_run_id: asked ? RUN : null,
         data_source_id: "66666666-6666-6666-6666-666666666666",
         data_source_name: "Demo",

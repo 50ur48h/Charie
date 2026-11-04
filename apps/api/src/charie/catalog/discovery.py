@@ -1,31 +1,4 @@
-"""The metadata pass: what one crawl of a customer database found.
-
-Catalog queries only — the four ``list_*`` calls a connector already has, which
-read the engine's own catalog and never touch a customer's rows. Profiling comes
-in WP4.2 and is where the budgets and sampling live; this pass is seconds' work
-against any schema.
-
-**A crawl that finds no change writes nothing** (DECISIONS D-012). Every table is
-reduced to a ``structural_hash`` over its shape; if every hash matches the active
-snapshot and no table has appeared or vanished, the crawl records that it looked
-and stops. Only a real change builds a new snapshot, and unchanged tables are
-copied into it rather than re-inspected — so the expensive work WP4.2 and WP4.3
-will hang off a table (profiles, cards, embeddings) is inherited instead of
-repeated.
-
-Three orderings here are deliberate:
-
-* **The customer's database is read outside any transaction of ours.** Holding a
-  platform transaction open across a network call to somebody else's machine is
-  how a slow third party becomes a lock queue on your own — the same rule
-  ``datasources.service`` follows for connection tests.
-* **The new snapshot is built, then activated in one transaction.** A crawl that
-  dies half-written leaves a ``building`` snapshot that nothing reads, and the
-  previous ``active`` one still serving.
-* **Failure is recorded, not raised away.** A snapshot that could not be built
-  stays as ``failed`` with a sanitized message, because "the last refresh failed
-  and here is why" is a thing a screen must be able to say.
-"""
+"""The metadata pass: what one crawl of a customer database found."""
 
 from __future__ import annotations
 
@@ -83,12 +56,7 @@ class SnapshotView:
 
 @dataclass(frozen=True, slots=True)
 class DiscoveryOutcome:
-    """What a refresh did, in the words a screen needs.
-
-    ``changed`` is the honest answer to "did anything happen": false means the
-    database looks exactly as it did, and the active snapshot is the one that was
-    already there — not a new identical copy.
-    """
+    """What a refresh did, in the words a screen needs."""
 
     snapshot: SnapshotView | None
     changed: bool
@@ -99,16 +67,7 @@ class DiscoveryOutcome:
 
 
 def structural_hash(table: TableRef, columns: Sequence[ColumnInfo]) -> str:
-    """A digest of one table's *shape*.
-
-    Everything WP4.1 stores about a table goes in, and nothing else does — so
-    two crawls that agree on this hash agree on every catalog row, and a refresh
-    can skip the table without hoping. Column order is the engine's ordinal,
-    which is part of the shape rather than an accident of iteration.
-
-    Deliberately not a hash of row counts or data: this answers "has the schema
-    moved", and a table whose contents changed has not changed shape.
-    """
+    """A digest of one table's shape."""
     digest = hashlib.sha256()
     digest.update(
         f"{table.schema}.{table.name}\x00{table.kind}\x00{table.comment or ''}\x00".encode()
@@ -139,14 +98,11 @@ class _Crawl:
     relationships: tuple[ForeignKey, ...]
     hashes: dict[tuple[str, str], str]
     #: Joins the engine does not declare, measured rather than guessed (D-050).
-    #: Empty when the database declares its keys properly, which is the case
-    #: this costs nothing in.
     inferred: tuple[InferredKey, ...] = ()
 
 
 async def _crawl(connector: Connector, *, dialect: str = POSTGRES) -> _Crawl:
-    """Four catalog reads, the hashes that make a refresh cheap, and — where the
-    database declares nothing — a measured look for the joins it does have."""
+    """Four catalog reads, the hashes that make a refresh cheap, and."""
     schemas = await connector.list_schemas()
     tables = await connector.list_tables(schemas)
     columns = await connector.list_columns(schemas)
@@ -163,10 +119,7 @@ async def _crawl(connector: Connector, *, dialect: str = POSTGRES) -> _Crawl:
         )
         for table in tables
     }
-    # **Only where there is something to find.** A database that declares its
-    # keys needs none of this, and the scans are not free — so inference runs
-    # when the engine offered nothing at all, which is the case that was
-    # refusing every real question (B-145).
+    # Only where there is something to find.
     inferred: tuple[InferredKey, ...] = ()
     if not relationships and tables:
         report = await infer_relationships(
@@ -194,23 +147,11 @@ async def discover(
     data_source_id: uuid.UUID,
     embedder: Embedder | None = None,
 ) -> DiscoveryOutcome:
-    """Refresh one data source's catalog. Never raises for a database's sake.
-
-    A source that cannot be reached, or whose credentials were never proven
-    read-only, is an answer this returns rather than an exception a route has to
-    translate.
-
-    ``embedder`` is passed on to `cards.embed_cards` (**B-018**) and is a
-    parameter rather than something resolved here for B-040's reason: a function
-    that reached for a spending credential on its own would be one no caller —
-    and no test — could stop.
-    """
+    """Refresh one data source's catalog."""
     view = await datasources.get_data_source(org_id, data_source_id)
 
     if not view.readonly_verified:
-        # Discovery is read-only work, but "we never proved these credentials
-        # cannot write" is a state to fix before pointing anything at a
-        # customer's database on a schedule.
+        # Discovery is read-only work, but "we never proved these credentials cannot write" is a...
         return DiscoveryOutcome(
             snapshot=None,
             changed=False,
@@ -238,27 +179,17 @@ async def discover(
         crawl=crawl,
     )
     if outcome.changed:
-        # A new snapshot's tables have no cards yet, and a catalog nobody can
-        # search is half a catalog. Written here rather than left to the caller
-        # so there is no path that produces one without the other — and since
-        # B-018 that applies to both halves of "searchable": the words and the
-        # vector. `embed_cards` is idempotent and a no-op without an embedder.
+        # A new snapshot's tables have no cards yet.
         await cards.refresh_cards(org_id, data_source_id)
         await cards.embed_cards(org_id, data_source_id, embedder=embedder)
     return outcome
 
 
 async def _read_the_database(view: datasources.DataSourceView) -> _Crawl:
-    """Open a connector, ask it four questions, and close it again.
-
-    Outside any platform transaction, deliberately — see the module docstring.
-    """
+    """Open a connector, ask it four questions, and close it again."""
     connector = await datasources.connector_for_view(view)
     try:
-        # `pg`/`mssql` are how a data source names its engine; `postgres`/`tsql`
-        # are how `introspection` names a SQL dialect. Two vocabularies, and the
-        # constants are used rather than the strings so a rename cannot quietly
-        # send T-SQL to Postgres.
+        # `pg`/`mssql` are how a data source names its engine.
         return await _crawl(connector, dialect=POSTGRES if view.engine == "pg" else TSQL)
     finally:
         await connector.aclose()
@@ -316,8 +247,7 @@ async def _store(
 
         counts = await _write_catalog(session, org_id=org_id, snapshot_id=snapshot.id, crawl=crawl)
 
-        # The previous catalog is superseded, not deleted: a run that is still
-        # going is entitled to the snapshot it started with.
+        # The previous catalog is superseded, not deleted.
         if active is not None:
             await session.execute(
                 update(CatalogSnapshot)
@@ -359,12 +289,7 @@ async def _store(
 
 
 async def _unchanged(session: AsyncSession, active: CatalogSnapshot, crawl: _Crawl) -> bool:
-    """Does the active snapshot already describe exactly this database?
-
-    Compared as whole maps, so it answers in both directions: a dropped table
-    changes nothing about the tables that remain, and a catalog that still lists
-    one would be wrong in the way an agent would never notice.
-    """
+    """Does the active snapshot already describe exactly this database?"""
     rows = (
         await session.execute(
             select(
@@ -395,8 +320,7 @@ async def _write_catalog(
         for table in crawl.tables
     }
     session.add_all(rows.values())
-    # Flushed here so every table has an id for its columns to point at. One
-    # round trip for the whole snapshot, not one per table.
+    # Flushed here so every table has an id for its columns to point at.
     await session.flush()
 
     columns_written = 0
@@ -432,9 +356,7 @@ async def _write_catalog(
         for key in crawl.relationships
     )
 
-    # Inferred edges, each carrying the numbers that justify it. `kind` is what
-    # keeps them separable everywhere downstream: the capability check relies on
-    # them, and an answer that rests on one is entitled to say so.
+    # Inferred edges, each carrying the numbers that justify it.
     session.add_all(
         CatalogRelationship(
             org_id=org_id,
@@ -487,8 +409,7 @@ async def _record_failure(
             version=(previous or 0) + 1,
             status=STATUS_FAILED,
             completed_at=datetime.now(UTC),
-            # Already sanitized by the connector: it names what failed, never a
-            # DSN, an address or a credential.
+            # Already sanitized by the connector: it names what failed, never a DSN.
             error=detail,
         )
         session.add(snapshot)

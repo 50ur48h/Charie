@@ -1,29 +1,6 @@
 "use client";
 
-/**
- * The query behind an answer, as a person may check it (plan WP7.3, B-034).
- *
- * This is the screen that makes the product's central claim checkable. An answer
- * says "128 orders"; a finding points at the execution that produced it; this
- * opens that execution and shows the statement, the rows it returned and how
- * long it took.
- *
- * Three things it will not blur together:
- *
- * **A refusal is not an empty result.** A statement the DAL declined to send
- * reached no engine, so it has no rows — it shows its violation code and the
- * statement that earned it instead of an empty table.
- *
- * **A preview is not the result.** The table shows at most the rows the
- * artifact keeps inline, so "50 shown of 71,798" is said in those words.
- *
- * **A masked column is labelled where it is read.** The values arrive already
- * masked — there is no unmasked copy (D-013, WP5.2b) — so the header carries
- * the badge.
- *
- * The SQL and the cells are shown verbatim: somebody asking why the answer looks
- * odd should be able to read exactly what ran and exactly what came back.
- */
+/** The query behind an answer, as a person may check it (plan WP7.3, B-034). */
 
 import { CircleSlash, Clock, Database, Rows3, TriangleAlert } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
@@ -151,16 +128,14 @@ export function EvidencePanel({
   const api = useMemo(() => createApi(session.getToken), [session.getToken]);
 
   useEffect(() => {
-    // Guarded so a slow response cannot write into an unmounted panel — a
-    // citation can be collapsed again before the query comes back.
+    // Guarded so a slow response cannot write into an unmounted panel.
     let active = true;
     void (async () => {
       try {
         const found = await api.execution(orgId, runId, executionId);
         if (active) setExecution(found);
       } catch (cause) {
-        // A citation that will not open is said out loud rather than rendered
-        // as an empty panel, which would look like the evidence being thin.
+        // A citation that will not open is said out loud rather than rendered as an empty panel.
         if (active) {
           setError(cause instanceof ApiError ? cause.message : "This citation could not be opened.");
         }

@@ -1,72 +1,5 @@
 #!/usr/bin/env bash
-#
 # The environment a developer has is not the environment the product runs in.
-#
-# B-086 is the instance that cost a phase. `ops/docker-compose.yml` passed every
-# `LLM_*` key to the API under a comment explaining that runs happen *inside the
-# API process* -- and then did not pass `EMBEDDINGS_*`. So `get_embedder()`
-# returned None in the container while the identical question answered from the
-# host had a working embedder, and every card and document in the browser was
-# lexically searchable only. No test could see it: the tests run on the host,
-# where the variable was there.
-#
-# B-090 is the class. Nothing compared the two, so the next variable added goes
-# missing the same way -- silently, and only where the product actually runs.
-#
-# A plain diff cannot be the guard, because the legitimate absences outnumber the
-# defects: `DATABASE_URL` is rebuilt for the compose network, `SEED_*_HOST` is
-# `localhost` for tools run on the host, the `MSSQL_*` seed block belongs to a
-# script. So the guard is a **declaration**, in the idiom `TENANT_TABLES` uses:
-# every key deliberately not passed is named below with the reason. Adding a
-# variable then costs one deliberate line -- pass it, or say why not -- and
-# forgetting costs a red build instead of a silently degraded product.
-#
-# Five questions:
-#
-#   1. Is every key `.env.example` documents either passed to a service or
-#      declared HOST_ONLY? This is B-086's question.
-#   2. Does every HOST_ONLY declaration still name a key that exists? A stale
-#      declaration is a claim about a file that has moved on.
-#   3. Is any HOST_ONLY key passed after all? Then the declaration is a lie in
-#      the more dangerous direction: it says nobody meant this to reach the
-#      container, and something does.
-#   4. Does compose reference anything `.env.example` never documents? That is
-#      the same defect facing the other way -- a variable nobody setting the
-#      project up can discover.
-#   5. Does every `Settings` field have a `.env.example` line? `config.py` is
-#      where the API decides what is configurable, and a field nobody documents
-#      is a knob with no label.
-#   6. Does every environment variable the **deployment templates** set on a
-#      container name something `Settings` actually reads? This is B-120's
-#      question, and it is questions 1-5 asked of the other environment.
-#   7. When a template selects a non-default backend, does it also set what that
-#      backend needs? `SECRETS_BACKEND=keyvault` without `KEY_VAULT_URL` is an
-#      app that boots and then refuses the first route that matters.
-#
-# **B-120 is why questions 6 and 7 exist, and it is worth reading before editing
-# this file.** For a whole work package the guard compared `.env.example` with
-# `ops/docker-compose.yml` and nothing else, so `infra/` -- the environment the
-# product is actually *deployed* into -- was unexamined. WP12.1's Bicep compiled,
-# CI was green, and it set `AZURE_KEY_VAULT_URI`, `ARTIFACTS_BLOB_ENDPOINT` and
-# `APP_DB_PASSWORD`, none of which `Settings` has ever read. A green build proves
-# the parts work and never that they meet.
-#
-# **What questions 6 and 7 still cannot see, stated rather than left to be
-# discovered:** a variable the template *omits*. `ARTIFACTS_BACKEND` was never
-# set at all, so results would have been written to a container filesystem that
-# vanishes on the next revision -- and no correspondence check can flag an
-# absence, because most settings are absent on purpose and correctly defaulted.
-# Question 7 covers the one shape of that which is knowable (a backend selected
-# without its companion); the general case needs a person.
-#
-# Usage:
-#   bash scripts/check_env.sh              # the repo's own files
-#   bash scripts/check_env.sh --selftest   # prove the guard still fails when it should
-#
-# Overrides, all used by --selftest and none needed in normal use:
-#   ENV_EXAMPLE_FILE   default .env.example
-#   COMPOSE_FILE       default ops/docker-compose.yml
-#   SETTINGS_FILE      default apps/api/src/charie/config.py
 
 set -euo pipefail
 
@@ -75,21 +8,8 @@ COMPOSE_FILE=${COMPOSE_FILE:-ops/docker-compose.yml}
 SETTINGS_FILE=${SETTINGS_FILE:-apps/api/src/charie/config.py}
 INFRA_DIR=${INFRA_DIR:-infra/modules}
 
-# ---------------------------------------------------------------------------
-# The declaration
-# ---------------------------------------------------------------------------
-#
-# `KEY | why it is not passed to any service`. A reason is mandatory: the point
-# of this file is that the next person reads why rather than guessing, and
-# "somebody decided" is what the guard exists to replace.
-#
-# Two rules for deciding which side a new key belongs on:
-#
-#   * If the API, the web app or a database container reads it, **pass it**.
-#     Everything the product does at runtime happens inside a container.
-#   * If it is for a tool run on the host -- a seed script, a migration, psql --
-#     or if compose necessarily rebuilds it, declare it here and say so.
-#
+# --- The declaration ---
+# `KEY | why it is not passed to any service`.
 readonly HOST_ONLY='
 DATABASE_URL | The owner connection, rebuilt inside compose: the database is `platform-pg` on the compose network, not `localhost:5432`. Used on the host by alembic and psql.
 APP_DATABASE_URL | The same, for the unprivileged application role the API actually connects as.
@@ -105,15 +25,7 @@ MSSQL_PIZZA_READONLY_PASSWORD | As above.
 DB_PASSWORD | Deployment-only (WP12.2). Locally the owner password is inside DATABASE_URL and nothing needs it separately; in Azure the template builds the DSN in the clear and takes only this from Key Vault, and only the migration job is given it. Passing it to a compose service would add a second source of truth for a password that is already in the URL beside it.
 '
 
-# Keys the image or the build sets, which a person never puts in a `.env` and
-# which therefore have no `.env.example` line. Declared so that check 4 and
-# check 5 do not each need a special case -- and so that adding a third one is a
-# visible decision.
-# Environment variables the deployment sets that `Settings` deliberately does not
-# read -- they belong to the platform or to a library, not to this application's
-# configuration. Declared for the same reason HOST_ONLY is: the alternative is a
-# guard that everyone switches off the first time it is right about something
-# boring.
+# Keys the image or the build sets.
 readonly PLATFORM_ENV='
 AZURE_CLIENT_ID | Read by `DefaultAzureCredential` to pick the user-assigned managed identity, not by `Settings`. Without it a container with more than one identity cannot tell which to present.
 APPLICATIONINSIGHTS_CONNECTION_STRING | Read by the OpenTelemetry exporter (WP12.3), not by this application. Set here so the wiring exists before the code that uses it.
@@ -133,28 +45,19 @@ fail() {
 
 # --- Reading the three files ------------------------------------------------
 
-# Every key `.env.example` documents, commented ones included. `# OPENAI_API_KEY=`
-# is the file's own idiom for "optional, uncomment to set" -- it is documentation,
-# and treating it as absent would report the whole optional half as undocumented.
-# `|| true` on every grep here and below: grep exits 1 when it matches nothing,
-# and these are all read as `keys=$(...)`, where a non-zero status under `set -e`
-# would end the run silently -- the one failure mode a guard must not have.
+# Every key `.env.example` documents, commented ones included.
 documented_keys() {
   sed -E 's/\r$//; s/^[[:space:]]*#[[:space:]]*//' "$ENV_EXAMPLE_FILE" |
     { grep -oE '^[A-Z_][A-Z0-9_]*=' || true; } | tr -d '=' | sort -u
 }
 
-# Every `${KEY}` compose expands, with comment lines stripped first -- a comment
-# explaining `${VAR:?}` is prose about the syntax, not a variable anyone passes.
+# Every `${KEY}` compose expands, with comment lines stripped first.
 compose_keys() {
   sed -E 's/\r$//; s/^[[:space:]]*#.*$//' "$COMPOSE_FILE" |
     { grep -oE '\$\{[A-Z_][A-Z0-9_]*' || true; } | sed 's/^\${//' | sort -u
 }
 
-# Every field of `Settings`, as the environment variable name pydantic reads it
-# for. The class ends at the next top-level `class`, `def` or decorator; no field
-# uses an alias, and one that did would need this to learn about aliases -- which
-# is why check 5's message says where to look rather than only what is missing.
+# Every field of `Settings`, as the environment variable name pydantic reads it for.
 settings_keys() {
   awk '
     /^class Settings\(BaseSettings\):/ { inside = 1; next }
@@ -168,8 +71,7 @@ settings_keys() {
   ' "$SETTINGS_FILE" | sort -u
 }
 
-# `KEY | reason` lines out of a declaration block. Reasons may contain anything
-# but a newline, so the split is on the first pipe only.
+# `KEY | reason` lines out of a declaration block.
 declared_keys() {
   printf '%s\n' "$1" | { grep -E '^[A-Z_][A-Z0-9_]*[[:space:]]*\|' || true; } |
     sed -E 's/^([A-Z_][A-Z0-9_]*)[[:space:]]*\|.*$/\1/' | sort -u
@@ -184,18 +86,10 @@ contains() {
   printf '%s\n' "$2" | grep -qxF "$1"
 }
 
-# Every environment variable the deployment templates set on a container, as
-# `name: 'KEY'` inside a Bicep `env` array. Comment lines are stripped first, for
-# the reason compose_keys() strips them: prose about a variable is not a variable.
-# Reads every module rather than a named one, so a new template is covered by
-# existing here rather than by somebody remembering to add it.
+# Every environment variable the deployment templates set on a container.
 infra_env_keys() {
   local files
-  # `set -e` plus `pipefail` makes this delicate, and getting it wrong is worse
-  # than the defect it looks for: an unmatched glob hands `sed` a literal path,
-  # `sed` exits non-zero, the pipeline fails, and the whole guard exits **1 with
-  # no message at all** -- a red build that says nothing. So the file list is
-  # built first and an empty one returns cleanly.
+  # `set -e` plus `pipefail` makes this delicate.
   files=$(find "$INFRA_DIR" -maxdepth 1 -name '*.bicep' 2>/dev/null || true)
   [[ -n $files ]] || return 0
   # shellcheck disable=SC2086
@@ -206,8 +100,7 @@ infra_env_keys() {
   return 0
 }
 
-# What a template actually assigns to a key, so question 7 can tell
-# `SECRETS_BACKEND: 'keyvault'` from `SECRETS_BACKEND: 'local'`.
+# What a template actually assigns to a key.
 infra_value_for() {
   local key=$1 files
   files=$(find "$INFRA_DIR" -maxdepth 1 -name '*.bicep' 2>/dev/null || true)
@@ -332,18 +225,6 @@ check_every_infra_key_is_read() {
 }
 
 # --- 8. A selected backend gets what it needs -------------------------------
-#
-# `KEY | VALUE | COMPANION` -- when a template sets KEY to VALUE, it must also set
-# COMPANION. Each is a coupling the application cannot default its way out of:
-# the mode is chosen and the thing that mode requires is not.
-#
-# The third entry was added after it happened. `apps.bicep` set `AUTH_MODE=entra`
-# and no `OIDC_AUTHORITY`, so the deployed API raised at the first authenticated
-# request -- "there is nothing to discover signing keys from, and every token
-# would have to be taken on trust" -- which is `config.py` refusing exactly as it
-# should, about a deployment that never gave it the chance. Three couplings, all
-# three found by a deployment failing rather than by this check, which is why
-# each one is here now.
 readonly BACKEND_REQUIRES='
 SECRETS_BACKEND | keyvault | KEY_VAULT_URL
 ARTIFACTS_BACKEND | blob | ARTIFACTS_ACCOUNT_URL
@@ -367,34 +248,12 @@ check_selected_backends_have_what_they_need() {
 }
 
 # --- 9. The deployment can actually answer a question -----------------------
-#
-# `KEY | why` -- names the templates must set, because a *run* needs them. Check 8
-# asks what a chosen backend requires; this asks what the product requires to be
-# the product, and the difference is B-126: `apps.bicep` chose no backend wrongly,
-# passed every check above, and shipped an API that failed every question with
-# "The run could not be completed."
-#
-# The mirror of `RUN_REQUIRED` in `config.py`, kept honest by
-# `apps/api/tests/test_mode_requirements.py` -- this is shell and cannot import
-# Python, so the copy is checked rather than avoided.
 readonly RUN_REQUIRED='
 LLM_PROVIDERS | the ordered provider chain a run resolves a model from
 LLM_MODELS | provider -> tier -> model id; without it every run fails at its first model call
 '
 
-# **What makes this a coupling rather than a blanket requirement.** Check 8 fires
-# on `KEY=VALUE`; here there is no value to compare, because the credential
-# arrives as a `secretRef` and the template holds only its name. So the trigger is
-# *presence*: a template that ships a model credential is a template meant to
-# answer questions, and it must ship the configuration that makes the credential
-# usable. One template, one argument -- which is exactly the shape of what went
-# wrong.
-#
-# **The limit, stated rather than left to be discovered**: a template that ships
-# neither a key nor any model configuration is not caught here. That deployment
-# cannot call a provider at all and fails far more loudly, and an infra directory
-# with no provider key -- the selftest's fixtures, for one -- is not a deployment
-# of this product.
+# What makes this a coupling rather than a blanket requirement.
 readonly RUN_CREDENTIALS='OPENAI_API_KEY ANTHROPIC_API_KEY'
 
 check_the_deployment_can_answer_a_question() {
@@ -442,14 +301,8 @@ run_checks() {
   check_the_deployment_can_answer_a_question
 }
 
-# ---------------------------------------------------------------------------
-# Selftest
-# ---------------------------------------------------------------------------
-#
-# Run before the check it tests, like `check_status.sh --selftest` and
-# `check_backlog.sh --selftest`: a guard that has stopped catching anything must
-# fail loudly rather than pass everything. Each case builds the exact mistake a
-# future change might make and requires this script to notice.
+# --- Selftest ---
+# Run before the check it tests, like `check_status.sh --selftest` and...
 
 SELFTEST_WORKSPACE=''
 cleanup_workspace() { [[ -n $SELFTEST_WORKSPACE ]] && rm -rf "$SELFTEST_WORKSPACE"; return 0; }
@@ -501,10 +354,7 @@ class Settings(BaseSettings):
 def other() -> None:
     pass
 FIXTURE
-    # An empty infra directory by default: the existing cases are about compose
-    # and Settings, and a template fixture they never asked for would make every
-    # one of them also a test of the B-120 checks. The cases that want a template
-    # write their own.
+    # An empty infra directory by default: the existing cases are about compose and Settings.
     mkdir -p "$dir/infra"
   }
 
@@ -547,9 +397,7 @@ PASSED_KEY | Claimed host-only while compose passes it.'
 
   dir="$workspace/unlabelled"
   write_fixture "$dir"
-  # Written whole rather than appended to: a field after the fixture's
-  # trailing `def` would be outside `Settings`, the guard would be right to
-  # ignore it, and this case would pass while proving nothing.
+  # Written whole rather than appended to.
   {
     echo 'class Settings(BaseSettings):'
     echo '    passed_key: str = "x"'
@@ -562,9 +410,7 @@ PASSED_KEY | Claimed host-only while compose passes it.'
   write_fixture "$dir"
   expect 1 "a declaration with no reason fails" guard "$dir" 'HOST_KEY |'
 
-  # The parser's own two traps, both of which would make the guard pass
-  # everything: a commented example line read as absent, and a compose comment
-  # read as a reference.
+  # The parser's own two traps, both of which would make the guard pass everything.
   dir="$workspace/comments"
   write_fixture "$dir"
   expect 0 "a commented example line counts as documented" guard "$dir"
@@ -574,10 +420,7 @@ PASSED_KEY | Claimed host-only while compose passes it.'
   printf '      # ${PROSE_KEY:-} appears only in a comment\n' >>"$dir/compose.yml"
   expect 0 "a variable named only inside a compose comment is not a reference" guard "$dir"
 
-  # B-120's cases. The first is the defect itself: a template setting a name the
-  # application never reads. The second is its companion, a backend selected
-  # without the address it needs. The third is the control -- without it the two
-  # above would pass just as well against a check that failed everything.
+  # B-120's cases. The first is the defect itself.
   dir="$workspace/infra-unread"
   write_fixture "$dir"
   cat >>"$dir/infra/apps.bicep" <<'FIXTURE'
@@ -620,9 +463,7 @@ FIXTURE
 FIXTURE
   expect 0 "a template setting only names Settings reads passes" guard "$dir"
 
-  # **B-126, reproduced.** A template with the model credential and none of the
-  # configuration that makes it usable -- which is what `apps.bicep` actually
-  # shipped, and what every check above was satisfied by.
+  # B-126, reproduced.
   dir="$workspace/infra-credential-without-models"
   write_fixture "$dir"
   cat >"$dir/infra/apps.bicep" <<'FIXTURE'
@@ -651,8 +492,7 @@ FIXTURE
   } >"$dir/config.py"
   expect 1 "a template with a model credential and no model configuration fails" guard "$dir"
 
-  # The control for the case above: the same template, complete. Without it the
-  # case above is satisfied by a check that fails every template it sees.
+  # The control for the case above: the same template, complete.
   dir="$workspace/infra-credential-with-models"
   write_fixture "$dir"
   cat >"$dir/infra/apps.bicep" <<'FIXTURE'
@@ -698,9 +538,7 @@ case "${1-}" in
   selftest
   ;;
 --with-declaration)
-  # Selftest only: run the checks against the declaration the fixture supplied
-  # rather than this file's own. Kept behind a flag so the real invocation can
-  # never be talked out of the declaration it ships with.
+  # Selftest only: run the checks against the declaration the fixture supplied rather than this...
   run_checks "${SELFTEST_HOST_ONLY-}" ''
   ((failures == 0)) || exit 1
   ;;

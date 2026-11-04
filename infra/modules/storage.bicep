@@ -1,12 +1,4 @@
 // Blob storage: document originals and stored query results.
-//
-// WP5.2b's claim is that no unmasked value reaches a stored file, and these are
-// those files. So the account is closed by default in every way it can be: no
-// public blob access, no shared-key authorisation, TLS 1.2, HTTPS only. What
-// reads them is the managed identity with a data-plane role, which means there
-// is no account key anywhere to leak — and `allowSharedKeyAccess: false` makes
-// that true by refusing key-based calls outright rather than trusting nobody to
-// make one.
 
 @description('Where everything goes.')
 param location string
@@ -74,11 +66,7 @@ resource documents 'Microsoft.Storage/storageAccounts/blobServices/containers@20
   }
 }
 
-// **The retention promise, enforced by the platform rather than by the app.**
-// `ARTIFACT_RETENTION_DAYS` is a promise the product makes about how long a
-// stored result lives; a promise kept only by application code is one that
-// stops being kept the first time that code does not run. This deletes them
-// whether or not anything is running.
+// The retention promise, enforced by the platform rather than by the app.
 resource lifecycle 'Microsoft.Storage/storageAccounts/managementPolicies@2023-05-01' = {
   parent: account
   name: 'default'

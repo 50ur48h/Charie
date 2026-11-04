@@ -1,12 +1,4 @@
-"""Migrations must go up, come back down, and go up again.
-
-A downgrade that has never been executed is not a downgrade — it is a hope. This
-runs the full cycle against an empty database, which is what a rollback in Phase
-12 will actually do.
-
-These are sync tests on purpose: Alembic's env.py calls ``asyncio.run`` itself,
-which would fail inside an already-running event loop.
-"""
+"""Migrations must go up, come back down, and go up again."""
 
 from __future__ import annotations
 
@@ -70,11 +62,7 @@ def test_upgrade_downgrade_upgrade_round_trip(alembic_config: Config, temp_datab
 
 
 def test_models_and_migrations_do_not_drift(alembic_config: Config, temp_database: URL) -> None:
-    """Autogenerate against the migrated database must find nothing to do.
-
-    This is what stops a model edit from reaching production without a migration:
-    the two descriptions of the schema have to agree.
-    """
+    """Autogenerate against the migrated database must find nothing to do."""
     command.upgrade(alembic_config, "head")
 
     def skip_alembic_bookkeeping(
@@ -97,11 +85,7 @@ def test_models_and_migrations_do_not_drift(alembic_config: Config, temp_databas
 def test_every_tenant_table_exists_and_carries_its_key(
     alembic_config: Config, temp_database: URL
 ) -> None:
-    """The map WP1.2 builds RLS policies from must describe reality.
-
-    A typo here would produce a policy on a column that does not exist, or worse,
-    a tenant table nobody remembered to protect.
-    """
+    """The map WP1.2 builds RLS policies from must describe reality."""
     command.upgrade(alembic_config, "head")
 
     def columns(connection: Connection) -> dict[str, set[str]]:
@@ -136,9 +120,7 @@ def test_there_is_exactly_one_head(alembic_config: Config) -> None:
     assert len(script.get_heads()) == 1
 
 
-# ---------------------------------------------------------------------------
-# Revision 0013 rewrites data, so an empty database proves nothing about it
-# ---------------------------------------------------------------------------
+# --- Revision 0013 rewrites data, so an empty database proves nothing about it ---
 
 
 def _write(url: URL, statements: list[tuple[str, dict[str, object]]]) -> None:
@@ -219,12 +201,7 @@ NEW_CARD = "menu_items (public.menu_items) is a table with about 40 rows.\nColum
 def test_0013_makes_an_existing_card_findable_by_its_own_name(
     alembic_config: Config, temp_database: URL
 ) -> None:
-    """The whole point of the revision, and an empty database cannot show it.
-
-    A card written before B-039 named its table only in qualified form, which
-    PostgreSQL's English parser reads as one host token — so the card could not
-    be found by searching for the table's name.
-    """
+    """The whole point of the revision, and an empty database cannot show it."""
     command.upgrade(alembic_config, "0012")
     org = _seed_a_card(temp_database, OLD_CARD)
 
@@ -241,8 +218,7 @@ def test_0013_makes_an_existing_card_findable_by_its_own_name(
 def test_0013_leaves_a_card_that_is_already_correct_alone(
     alembic_config: Config, temp_database: URL
 ) -> None:
-    """The LIKE guard. Re-running must not prepend the name a second time, and a
-    database that already holds new-format cards must come through untouched."""
+    """The LIKE guard. Re-running must not prepend the name a second time."""
     command.upgrade(alembic_config, "0012")
     org = _seed_a_card(temp_database, NEW_CARD)
 

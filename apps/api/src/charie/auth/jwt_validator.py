@@ -1,20 +1,4 @@
-"""Bearer token validation.
-
-The whole of authentication is here, and it is deliberately unforgiving:
-
-* **Only RS256.** Passing an algorithm allowlist is what defeats the classic
-  ``alg: none`` and RS256→HS256 confusion attacks, where a forged token asks to
-  be verified with the public key as an HMAC secret.
-* **Issuer and audience are required**, not optional niceties: a token minted by
-  a different tenant of the same identity provider, for a different application,
-  is a valid signature and an invalid credential.
-* **Expiry, not-before and issued-at are all checked**, with a small leeway for
-  clock skew and no more.
-
-Every failure raises ``TokenError`` with a short code. Routes turn all of them
-into one 401: telling a caller *why* their token was rejected tells an attacker
-which half of the forgery worked.
-"""
+"""Bearer token validation."""
 
 from __future__ import annotations
 
@@ -45,15 +29,7 @@ def _first_string(claims: dict[str, Any], *names: str) -> str | None:
 
 class TokenValidator:
     def __init__(self, issuer: str | None, audience: str | Sequence[str], jwks: JwksCache) -> None:
-        """``issuer`` pins the expected issuer; None means "trust discovery".
-
-        Trusting discovery is the better default. A Microsoft Entra external
-        tenant publishes its metadata at one host and issues tokens claiming
-        another, and the *same* tenant also answers on login.microsoftonline.com
-        with a different issuer — so a hand-written value is a coin flip that
-        fails every token with bad_issuer. Pinning remains available for a
-        provider whose discovery document cannot be trusted.
-        """
+        """``issuer`` pins the expected issuer; None means "trust discovery"."""
         self._issuer = issuer
         self._audience = audience
         self._jwks = jwks
@@ -65,8 +41,7 @@ class TokenValidator:
             raise TokenError("malformed", "Token header could not be read") from error
 
         if header.get("alg") not in ALGORITHMS:
-            # Checked before touching the key material, so a token asking to be
-            # verified with 'none' never reaches a verifier at all.
+            # Checked before touching the key material.
             raise TokenError("bad_algorithm", "Token algorithm is not permitted")
 
         kid = header.get("kid")
@@ -109,16 +84,11 @@ class TokenValidator:
         if not isinstance(subject, str) or not subject:
             raise TokenError("missing_claim", "Token has no usable subject")
 
-        # Entra populates one of these depending on tenant type and which
-        # optional claims the API registration asks for. Taking the first that
-        # is present beats showing somebody their opaque subject id.
+        # Entra populates one of these depending on tenant type and which optional claims the...
         email = _first_string(claims, "email", "preferred_username", "upn")
         name = _first_string(claims, "name", "given_name")
         if email is None:
-            # Names only, never values: a token's claim *values* are personal
-            # data and some are secrets. Which claims a provider sends is
-            # configuration, and it is the thing you need to know when someone
-            # shows up in the UI as their opaque subject id.
+            # Names only, never values: a token's claim values are personal data and some are...
             logger.warning(
                 "token carried no email-like claim; claims present: %s",
                 ", ".join(sorted(claims)),

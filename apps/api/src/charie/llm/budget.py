@@ -1,28 +1,4 @@
-"""A ceiling on what one run may spend.
-
-Architecture 8.3 wants per-organization daily and monthly quotas with a soft
-warning at 80% and a hard stop at 100%. That is **B-025**, and it belongs with
-the Phase 8 controller that owns ``BudgetState``. This module is the narrow
-slice that is useful before any of it exists: a hard per-run ceiling, so an eval
-sweep or a looping agent stops costing money at a number somebody chose.
-
-It reads the same ``usage_ledger`` rows the meter writes, which means it needs
-no state of its own and cannot drift from what was actually billed.
-
-**An unpriced model cannot be capped, and the cap says so.** A model with no
-entry in ``LLM_PRICES`` records ``cost_usd = NULL``; summing those gives a total
-that is smaller than the truth and a ceiling that is never reached. So when a
-limit is configured and either the model has no price or the run already holds
-unpriced rows, the call is refused rather than waved through
-(``LLM_REFUSE_UNPRICED_WHEN_CAPPED``, on by default). A ceiling that cannot see
-what it is spending is not a ceiling.
-
-**The cap is per run, and a call with no run is not capped.** Stated plainly
-because it is a real hole rather than an oversight: there is nothing to
-accumulate against without a run id. Everything that spends in a loop — the
-agent, the eval harness, the smoke script — has one. Phase 8's BudgetState is
-what closes this properly.
-"""
+"""A ceiling on what one run may spend."""
 
 from __future__ import annotations
 
@@ -40,15 +16,7 @@ __all__ = ["RunCostExceededError", "RunSpend", "assert_within_limit", "spent_on_
 
 
 class RunCostExceededError(LLMError):
-    """This run has spent what it was allowed to spend.
-
-    Not retryable, and deliberately its own type rather than a bare
-    ``LLMError``: architecture 8.5 calls budget exhaustion *not a failure* — the
-    right response is to compose an answer from the findings so far and state
-    the limitation. There is no controller to do that until Phase 8, so this
-    raises with a name that Phase 8 can catch and turn into a graceful ending
-    rather than an apology.
-    """
+    """This run has spent what it was allowed to spend."""
 
     def __init__(self, message: str) -> None:
         super().__init__(message, retryable=False)
@@ -88,11 +56,7 @@ async def assert_within_limit(
     model: str,
     settings: Settings | None = None,
 ) -> None:
-    """Refuse the next call when this run has reached its ceiling.
-
-    Checked *before* the call rather than after, because a limit enforced after
-    the spend is a report.
-    """
+    """Refuse the next call when this run has reached its ceiling."""
     resolved = settings if settings is not None else get_settings()
     limit = resolved.llm_run_cost_limit_usd
     if limit is None or run_id is None:

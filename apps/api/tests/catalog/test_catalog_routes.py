@@ -1,9 +1,4 @@
-"""The catalog over HTTP.
-
-Authorization for these two routes is proved by the role matrix, which records
-who may refresh and who may browse. What is left to check here is the contract:
-the shapes a screen and, from Phase 5, the DAL will read.
-"""
+"""The catalog over HTTP."""
 
 from __future__ import annotations
 
@@ -68,12 +63,7 @@ async def api(
         "_session_factory",
         lambda: async_sessionmaker(app_engine, expire_on_commit=False, autoflush=False),
     )
-    # Refreshing a catalog embeds its cards since B-018, and this app resolves
-    # settings from the developer's `.env` — so without this seam every run of
-    # this file would embed a whole catalog at the owner's expense, and the
-    # B-040 guard would refuse and turn a route test into a 500. What the cards
-    # look like with vectors is proved in `tests/catalog/test_card_embeddings.py`
-    # against a stub; this file is about the routes.
+    # Refreshing a catalog embeds its cards since B-018.
     monkeypatch.setattr(catalog_routes, "card_embedder", lambda: None)
     app = create_app(settings=Settings(auth_mode="dev", env="ci", build_env="dev"))
     app.state.token_validator = _SubjectAsToken()

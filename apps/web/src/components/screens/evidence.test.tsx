@@ -71,8 +71,7 @@ describe("<EvidencePanel />", () => {
 
     render(<EvidencePanel orgId="o1" runId="r1" executionId="x1" />);
 
-    // Verbatim, for the same reason the catalog shows a card verbatim: somebody
-    // asking why the answer looks odd must be able to read exactly what ran.
+    // Verbatim, for the same reason the catalog shows a card verbatim.
     expect(await screen.findByText(/SELECT count\(\*\) AS "order_count"/)).toBeInTheDocument();
     expect(screen.getByText("public.orders")).toBeInTheDocument();
     expect(screen.getByText("142 ms")).toBeInTheDocument();
@@ -83,8 +82,7 @@ describe("<EvidencePanel />", () => {
 
     render(<EvidencePanel orgId="o1" runId="r1" executionId="x1" />);
 
-    // "1 shown of 71,798" rather than a table the reader has to measure — a
-    // preview mistaken for the result is a wrong conclusion, not a display nit.
+    // "1 shown of 71,798" rather than a table the reader has to measure.
     expect(await screen.findByText("1 shown of 71,798")).toBeInTheDocument();
   });
 
@@ -95,8 +93,7 @@ describe("<EvidencePanel />", () => {
 
     expect(await screen.findByText("k***@e***.com")).toBeInTheDocument();
     expect(screen.getByText("masked")).toBeInTheDocument();
-    // The values arrived masked (D-013): there is no unmasked copy in the
-    // platform database, and this panel has no path that could ask for one.
+    // The values arrived masked (D-013): there is no unmasked copy in the platform database.
     expect(screen.getByText(/unmasked values were never kept/)).toBeInTheDocument();
   });
 
@@ -108,8 +105,7 @@ describe("<EvidencePanel />", () => {
     expect(await screen.findByText("refused")).toBeInTheDocument();
     expect(screen.getByText("unknown_column")).toBeInTheDocument();
     expect(screen.getByText(/Unknown column 'customer_name'/)).toBeInTheDocument();
-    // An empty table here would read as "your data has no answer", when what
-    // happened is "this service would not run that".
+    // An empty table here would read as "your data has no answer".
     expect(screen.getByText(/Nothing was sent to the database/)).toBeInTheDocument();
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
   });
@@ -119,8 +115,7 @@ describe("<EvidencePanel />", () => {
 
     render(<EvidencePanel orgId="o1" runId="r1" executionId="gone" />);
 
-    // Silence here would look like evidence that is merely thin, which is the
-    // one failure this panel must not disguise.
+    // Silence here would look like evidence that is merely thin.
     expect(await screen.findByText(/No such execution/)).toBeInTheDocument();
   });
 

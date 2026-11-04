@@ -1,27 +1,4 @@
-"""The gate every tool call goes through (architecture Part 4.6).
-
-4.6 gives the registry five jobs and this module does exactly those: filter the
-tool list per role **before the model sees it**, validate arguments against the
-schema before dispatch, declare what each call costs a budget, emit the trace
-events, and wrap every result in a typed envelope.
-
-The ordering of the first two is the point. A tool the caller may not use is
-never described to the model, so a hijacked prompt cannot ask for a capability it
-was never offered — and if it names one anyway, the answer is the same
-``unknown_tool`` a typo gets, because "exists but you may not have it" is a fact
-worth not disclosing.
-
-**Arguments are validated here, not in the handler.** A handler that had to check
-its own arguments would be a handler that could forget, and the model's output is
-the least trustworthy input in the system. Validation failure is repairable and
-says what was wrong, because the next thing that happens is the model trying
-again with one attempt (WP7.2b).
-
-**Nothing here decides tenancy.** ``ToolContext`` carries the organization and
-the handlers pass it down to the DAL and the catalog, which are org-scoped and
-sit behind row-level security. The registry is a usability and budget boundary,
-never a security one.
-"""
+"""The gate every tool call goes through (architecture Part 4.6)."""
 
 from __future__ import annotations
 
@@ -36,8 +13,7 @@ from charie.runs.events import EventWriter
 
 __all__ = ["ToolRegistry", "default_registry"]
 
-#: Which roles satisfy each declared minimum. Built from the guard module's own
-#: tuples so the agent cannot drift from the API's answer about the same word.
+#: Which roles satisfy each declared minimum.
 _ROLES_SATISFYING: Mapping[str, tuple[str, ...]] = {
     "reader": ANY_MEMBER,
     "contributor": CONTRIBUTOR_OR_ADMIN,
@@ -66,12 +42,7 @@ class ToolRegistry:
         self._tools[tool.name] = tool
 
     def available_to(self, role: str) -> tuple[Tool, ...]:
-        """The tools this role may call, in registration order.
-
-        Registration order rather than alphabetical: the order tools appear in a
-        prompt is a weak nudge about which to reach for first, and it should be a
-        decision somebody made rather than an accident of naming.
-        """
+        """The tools this role may call, in registration order."""
         return tuple(
             tool for tool in self._tools.values() if role in _ROLES_SATISFYING[tool.required_role]
         )
@@ -91,13 +62,7 @@ class ToolRegistry:
         *,
         events: EventWriter | None = None,
     ) -> ToolResult:
-        """Validate, dispatch, and come back with an envelope either way.
-
-        Never raises for a tool's own failure — that is what ``ToolResult.ok`` is
-        for. It does propagate anything the *platform* could not do, because a
-        platform that cannot write an event has a problem the agent must not
-        paper over.
-        """
+        """Validate, dispatch, and come back with an envelope either way."""
         tool = self._tools.get(name)
         if tool is None or context.role not in _ROLES_SATISFYING[tool.required_role]:
             available = tuple(t.name for t in self.available_to(context.role))
@@ -123,8 +88,7 @@ class ToolRegistry:
             )
 
         if events is not None:
-            # Emitted before dispatch, so a call that hangs or crashes is still
-            # visible in the trace as something that was attempted.
+            # Emitted before dispatch, so a call that hangs or crashes is still visible in the...
             await events.emit("tool_called", {"tool": name, "safe_args": _safe(raw)})
 
         try:
@@ -134,8 +98,7 @@ class ToolRegistry:
         return await self._finish(events, ToolResult.succeeded(name, data, safe_args=_safe(raw)))
 
     async def _finish(self, events: EventWriter | None, result: ToolResult) -> ToolResult:
-        """Record a failure in the trace; successes are described by their own
-        tool's event, which knows more than this layer does."""
+        """Record a failure in the trace; successes are described by their own tool's event."""
         if events is not None and not result.ok:
             await events.emit(
                 "error",
@@ -145,12 +108,7 @@ class ToolRegistry:
 
 
 def _safe(arguments: Mapping[str, Any]) -> dict[str, object]:
-    """Arguments as an event payload may carry them.
-
-    Values are stringified and capped. A tool argument is model-authored text —
-    a table name, a question, a SQL statement — so it is safe to record in the
-    tenant's own trace, but it is not safe to assume it is short.
-    """
+    """Arguments as an event payload may carry them."""
     trimmed: dict[str, object] = {}
     for key, value in arguments.items():
         text = value if isinstance(value, str | int | float | bool | type(None)) else str(value)
@@ -161,11 +119,7 @@ def _safe(arguments: Mapping[str, Any]) -> dict[str, object]:
 
 
 def _readable(error: ValidationError) -> str:
-    """A validation failure a model can act on.
-
-    pydantic's own rendering names types and urls; what the next attempt needs is
-    which field and what was wrong with it.
-    """
+    """A validation failure a model can act on."""
     parts = [
         f"{'.'.join(str(item) for item in problem['loc']) or '(root)'}: {problem['msg']}"
         for problem in error.errors()
@@ -174,27 +128,7 @@ def _readable(error: ValidationError) -> str:
 
 
 def default_registry() -> ToolRegistry:
-    """The V1 tool set that WP7.2 needs, in the order a run tends to use them.
-
-    Architecture 4.6 lists more — ``get_relationships``, ``stat_test`` — and each
-    arrives with the phase that can honestly implement it. A registered tool with
-    a stub behind it would be worse than an absent one, because the model would
-    call it and believe the answer. ``search_knowledge`` joined in WP10.1b, when
-    there was a corpus for it to search, and ``create_chart_spec`` in WP11.1.
-
-    **``create_chart_spec`` is registered but not called from inside the loop**,
-    and that is deliberate rather than an oversight of B-075's invariant. A chart
-    is of a *finished* answer: the request rides on `finalize`, and the runner
-    dispatches it here, through this registry, once the citations are verified.
-    So it is role-filtered, argument-validated, budgeted and traced like every
-    other tool — what differs is only which stage calls it.
-
-    **Ordered as a run tends to need them, and knowledge comes before SQL.**
-    That is not cosmetic: 5.5's division of labour is that a document says what a
-    term *means* and the database says what its *value* is, so a run that reaches
-    for SQL before checking whether the business has written down a definition
-    has already skipped the step this tool exists for.
-    """
+    """The V1 tool set that WP7.2 needs, in the order a run tends to use them."""
     from charie.agent.tools.catalog import DESCRIBE_TABLE, SEARCH_TABLES
     from charie.agent.tools.chart import CREATE_CHART_SPEC
     from charie.agent.tools.knowledge import SEARCH_KNOWLEDGE

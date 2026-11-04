@@ -1,13 +1,4 @@
-"""A catalog to validate against, without a database anywhere near it.
-
-The validator reads a ``Catalog`` and a ``Caps`` and nothing else — no session,
-no connector, no credential — which is what makes the highest test density in
-the repository affordable: every rule in architecture 7.5 can be asserted in
-milliseconds, on both dialects, against a fixture that is a few dictionaries.
-
-The shape mirrors the pizza demo database, so a case that fails here can be
-pasted into a real session and reproduced.
-"""
+"""A catalog to validate against, without a database anywhere near it."""
 
 from __future__ import annotations
 
@@ -24,9 +15,7 @@ from charie.dal.errors import PolicyViolation
 from charie.dal.policy import SourcePolicy
 from charie.dal.validator import validate
 
-#: schema -> table -> (column, type, policy). `customers.email` is masked and
-#: `customers.tax_id` denied, so both halves of a column policy have something
-#: to be asserted against in every clause position.
+#: schema -> table -> (column, type, policy).
 _TABLES: dict[str, dict[str, list[tuple[str, str, str]]]] = {
     "public": {
         "orders": [
@@ -52,10 +41,7 @@ _TABLES: dict[str, dict[str, list[tuple[str, str, str]]]] = {
             ("full_name", "text", "mask"),
         ],
     },
-    # A second schema, so "the same table name in two places" is a real case
-    # rather than a hypothetical one. Only `staff` is duplicated: if every name
-    # were, every test would be an ambiguity test and the interesting ones would
-    # be hidden among them.
+    # A second schema, so "the same table name in two places" is a real case rather than a...
     "archive": {
         "orders_2025": [
             ("id", "integer", "allow"),
@@ -123,12 +109,7 @@ def build_source(engine: str, *, max_rows: int = 1000) -> SourcePolicy:
 
 
 def refuse(sql: str, source: SourcePolicy) -> PolicyViolation:
-    """Assert that a statement is refused, and hand back the refusal.
-
-    Every negative case in this suite goes through here, so "it was rejected"
-    can never be satisfied by an unrelated exception: only a PolicyViolation
-    counts, and the caller then asserts which one.
-    """
+    """Assert that a statement is refused, and hand back the refusal."""
     with pytest.raises(PolicyViolation) as caught:
         validate(sql, source=source)
     return caught.value

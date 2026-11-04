@@ -1,10 +1,4 @@
-"""Walking the chain (architecture Part 4.9, 8.5).
-
-The gate for this phase asks for an injected-429 that triggers a fallback, and
-that is ``test_an_injected_429_moves_to_the_next_provider`` below — proven with
-fakes, which is the honest way to prove it: nobody can make a real provider
-return 429 on demand, and a test that waits for one to happen is not a test.
-"""
+"""Walking the chain (architecture Part 4.9, 8.5)."""
 
 from __future__ import annotations
 
@@ -59,11 +53,7 @@ async def test_the_primary_answers_and_nothing_else_is_touched() -> None:
 
 
 async def test_an_injected_429_moves_to_the_next_provider() -> None:
-    """The gate's fallback criterion.
-
-    The first provider fails with something retryable however many times the
-    policy allows, and the chain moves on rather than failing the call.
-    """
+    """The gate's fallback criterion."""
     tried: list[str] = []
 
     async def attempt(choice: ModelChoice) -> Completion:
@@ -76,15 +66,12 @@ async def test_an_injected_429_moves_to_the_next_provider() -> None:
 
     assert completion.provider == "second"
     assert completion.model == "second-strong"
-    # Retried on the primary before moving on: two attempts there, then one that
-    # worked. A chain that gave up after one try would be a chain that panics.
+    # Retried on the primary before moving on: two attempts there, then one that worked.
     assert tried == ["first", "first", "second"]
 
 
 async def test_a_non_retryable_failure_stops_the_chain_where_it_is() -> None:
-    """A 400 is our bug. It will be just as wrong at the next provider — walking
-    the chain would turn one clear error into three, bill for two of them, and
-    bury the cause."""
+    """A 400 is our bug. It will be just as wrong at the next provider."""
     tried: list[str] = []
 
     async def attempt(choice: ModelChoice) -> Completion:
@@ -106,8 +93,7 @@ async def test_a_chain_that_all_fails_raises_the_last_failure() -> None:
 
 
 async def test_a_single_provider_chain_still_retries() -> None:
-    """With one provider configured there is nowhere to fall back to, but 8.5's
-    retries still apply — most 429s clear on their own."""
+    """With one provider configured there is nowhere to fall back to."""
     tried = 0
 
     async def attempt(choice: ModelChoice) -> Completion:

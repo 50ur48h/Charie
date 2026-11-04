@@ -1,25 +1,6 @@
 "use client";
 
-/**
- * What we know about one database, and who may see it (plan WP4.3).
- *
- * Three things this screen refuses to blur together, because the product's
- * honesty depends on the distinction:
- *
- *   1. **Suspected is not decided.** The classifier's opinion and an Admin's
- *      decision are shown as separate facts. A column reading "masked" with
- *      "nobody has reviewed this" beside it is the truth; a single green tick
- *      would be a claim nobody made.
- *   2. **Masked is not absent.** A masked column is listed like any other, with
- *      its type and its role, because somebody asking "can I group by this"
- *      needs an answer even when they may not see the values.
- *   3. **A sample is a sample.** Counts say how many rows they came from, so
- *      "12% empty" is never mistaken for a statement about the whole table.
- *
- * The card is shown verbatim. It is the text the agent will be given, and a
- * person who wants to know why the agent answered oddly should be able to read
- * exactly what it read.
- */
+/** What we know about one database, and who may see it (plan WP4.3). */
 
 import {
   createColumnHelper,
@@ -121,14 +102,9 @@ function anchorOf(name: string): string {
   return `catalog-table-${name.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
 }
 
-// ---------------------------------------------------------------------------
-// The columns of one table, as a sortable TanStack table
-// ---------------------------------------------------------------------------
+// --- The columns of one table, as a sortable TanStack table ---
 
-/**
- * What a policy cell needs from the screen. Carried by context so the column
- * definitions below can live at module scope and stay stable between renders.
- */
+/** What a policy cell needs from the screen. */
 const PolicyControls = createContext<{
   canDecide: boolean;
   busy: boolean;
@@ -208,9 +184,7 @@ function PolicyCell({ column }: { column: CatalogColumn }) {
       ) : (
         <Badge tone={POLICY_TONES[column.policy] ?? "neutral"}>{column.policy}</Badge>
       )}
-      {/* Whether a person decided is a different fact from what was decided,
-          and the screen says both rather than implying review that never
-          happened. */}
+      {/* Whether a person decided is a different fact from what was decided. */}
       <span className="text-[12px] text-muted-foreground">
         {column.policy_decided ? "decided by an admin" : "nobody has reviewed this"}
       </span>
@@ -321,9 +295,7 @@ function ColumnsTable({ columns }: { columns: CatalogColumn[] }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// One table in the list
-// ---------------------------------------------------------------------------
+// --- One table in the list ---
 
 function TableRow({
   table,
@@ -431,8 +403,7 @@ export function CatalogBrowser({
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState<CardHit[] | null>(null);
   const [shown, setShown] = useState<string | null>(null);
-  //: Tables a person has opened or closed. Anything not in here follows the
-  //: default, which opens every table only when there are a handful of them.
+  // : Tables a person has opened or closed.
   const [opened, setOpened] = useState<Record<string, boolean>>({});
   const [filter, setFilter] = useState("");
 

@@ -1,15 +1,4 @@
-"""The org suite's shared harness: a real app, over real HTTP, on a real database.
-
-Here rather than inside one test module because two suites need it — the M2
-signup flow, and **B-017**'s recovery grants. A fixture that lives in a test file
-can only be shared by importing it, which makes the fixture look unused to a
-linter and reaches past a private name to do it. `conftest.py` is where pytest
-looks, so both suites simply ask for `api` and get one.
-
-`audit_rows` is public for the same reason: two suites read the audit log to
-prove that what happened was recorded, and a leading underscore on something
-another module is meant to call is a lie about its intended reach.
-"""
+"""The org suite's shared harness: a real app, over real HTTP, on a real database."""
 
 from __future__ import annotations
 
@@ -35,8 +24,7 @@ class _SubjectAsToken(TokenValidator):
     """The bearer token *is* the subject, so these tests are about the flow."""
 
     def __init__(self) -> None:
-        #: Subjects whose token carries no email claim — the Entra default until
-        #: an administrator adds the optional claim (B-009).
+        #: Subjects whose token carries no email claim.
         self.without_email: set[str] = set()
 
     async def validate(self, token: str) -> Principal:

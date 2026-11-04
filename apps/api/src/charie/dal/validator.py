@@ -1,50 +1,6 @@
-"""The SQL policy engine (architecture Part 7.1 diagram 6, 7.5).
+"""The SQL policy engine (architecture Part 7.1 diagram 6, 7.5)."""
 
-This module decides whether a piece of SQL may touch a customer's database. It
-is the security boundary named in Part 7: the agent has no other path to data,
-and nothing below here re-checks what is decided above it.
-
-**The order of the checks is part of the design.** Cheap and absolute first,
-so an attack is refused by the rule it actually broke rather than by whichever
-later rule happened to trip:
-
-1. one statement — the smuggling shape, refused before anything is inspected;
-2. the statement is a SELECT, or an EXPLAIN of one;
-3. no write, schema change or transaction control **anywhere** in the tree,
-   including inside a CTE, which is where a top-level-only check fails;
-4. no system schema, and no reach into another database on the same server;
-5. no function that cannot be vouched for;
-6. every table resolves against this organization's catalog;
-7. every column resolves too, with ``SELECT *`` expanded against the catalog
-   **before** the column rules are applied;
-8. a denied column is refused wherever it appears — projection, predicate, join
-   condition, ORDER BY, subquery, CTE body. A ``WHERE`` leaks values as surely
-   as a projection does.
-
-**Two properties of sqlglot carry more weight than they look.** Syntax it does
-not understand becomes an ``exp.Command`` rather than an error, and a function it
-does not know becomes an ``exp.Anonymous`` rather than a typed node. Both are
-refused. That inverts the usual arrangement: the escape hatches worth naming
-(``pg_read_file``, ``xp_cmdshell``, ``OPENROWSET``) are all anonymous, so the
-deny list is there to give a clearer refusal, not to be the barrier. The barrier
-is that a function this validator cannot name is a function it will not run.
-That is stricter than architecture 7.5's deny list, in the direction 7.5 asks
-for — see DECISIONS D-015.
-
-**What this module does and does not do.** It does not connect, execute, or mask
-a value. It does write the row limit into the statement, because emitting SQL is
-exactly what holding the grant means — the executor decides the *number* from
-policy and this module is what puts it in the text. It ends at a
-``ValidatedQuery`` — the only object a connector will run — plus the tables and
-columns the statement touches and a description of the result, which the
-executor needs for masking and the audit row.
-"""
-
-#
-# sqlglot 30 turned `expressions` into a package that re-exports its node
-# classes without an `__all__`, so pyright reports every `exp.Something` as a
-# private import. That is the library's packaging, not this module's typing, and
-# the suppression is kept to the one file that imports sqlglot at all.
+# sqlglot 30 turned `expressions` into a package that re-exports its node classes without an...
 # pyright: reportPrivateImportUsage=false
 
 from __future__ import annotations
@@ -79,32 +35,21 @@ __all__ = [
     "validate",
 ]
 
-#: This module is on ``SANCTIONED_VALIDATORS`` (connectors/base.py). Holding the
-#: grant is what lets it declare SQL fit to run, and it is the only module in the
-#: application that may.
+#: This module is on ``SANCTIONED_VALIDATORS`` (connectors/base.py).
 _GRANT = PolicyGrant(__name__)
 
 POLICY_DENY = "deny"
 POLICY_MASK = "mask"
 
-#: Ceilings on the *statement*, not on SQL. They exist because parsing,
-#: qualifying and generating are all recursive over the tree: a query that is
-#: deep rather than long can exhaust the interpreter before a single rule about
-#: its meaning is reached, which would be a way past every one of them. Both are
-#: far above any question a person would ask.
+#: Ceilings on the statement, not on SQL.
 MAX_SQL_LENGTH = 20_000
 MAX_NESTING_DEPTH = 50
 
-#: Schemas the engine keeps for itself. The agent reads structure from the
-#: catalog service, so it never has a reason to be in here, and an attempt is a
-#: probe rather than a mistake. ``pg_`` as a prefix covers ``pg_toast`` and the
-#: numbered ``pg_temp_N`` schemas without listing them.
+#: Schemas the engine keeps for itself.
 _SYSTEM_SCHEMAS = frozenset({"information_schema", "sys", "sysibm", "mysql", "performance_schema"})
 _SYSTEM_SCHEMA_PREFIXES = ("pg_",)
 
-#: Named only to refuse them better. Every one of these is already refused for
-#: being a function sqlglot cannot type; naming them turns "unknown function"
-#: into "this function is not permitted", which tells the agent to stop trying.
+#: Named only to refuse them better.
 _DENIED_FUNCTIONS = frozenset(
     {
         "pg_read_file",
@@ -135,18 +80,10 @@ _DENIED_FUNCTIONS = frozenset(
 )
 _DENIED_FUNCTION_PREFIXES = ("xp_", "sp_", "pg_", "lo_")
 
-#: Functions sqlglot cannot type that are nonetheless allowed. Empty, and meant
-#: to stay nearly so: an entry here is a standing decision that one specific
-#: engine function is safe, and it belongs in a PR that says why.
+#: Functions sqlglot cannot type that are nonetheless allowed.
 _ALLOWED_UNTYPED_FUNCTIONS: frozenset[str] = frozenset()
 
-#: Node classes that must not appear anywhere in the tree. ``DML`` and ``DDL``
-#: are sqlglot's own base classes, so a statement type added by a future release
-#: is covered the day it exists rather than the day someone remembers to list it.
-#: The rest have no shared base and are named individually.
-#: Typed as bare classes rather than as ``type[exp.Expression]``: sqlglot's DML
-#: and DDL are mixins that do not inherit from Expression, which is exactly why
-#: they are usable as categories here.
+#: Node classes that must not appear anywhere in the tree.
 _FORBIDDEN_NODES: tuple[type, ...] = (
     exp.DML,
     exp.DDL,
@@ -169,8 +106,7 @@ _FORBIDDEN_NODES: tuple[type, ...] = (
     exp.Use,
 )
 
-#: What a forbidden node is called when refusing it. sqlglot's class names are
-#: close enough to SQL keywords to show an agent, but not all of them.
+#: What a forbidden node is called when refusing it. sqlglot's class names are close enough to...
 _OPERATION_NAMES: dict[type, str] = {
     exp.Command: "this statement",
     exp.Into: "SELECT INTO",
@@ -205,21 +141,11 @@ class ColumnRef:
 
 @dataclass(frozen=True, slots=True)
 class Projection:
-    """One column of the result, and where its value comes from.
-
-    Masking works from this rather than from column names, because names
-    collide: ``SELECT c.email, s.email FROM …`` returns two columns called
-    ``email`` and the executor must mask by position, not by matching strings.
-
-    ``sensitive`` is not the same question as "is this a masked column". It asks
-    whether the *value in this cell* can carry one: ``UPPER(email)`` still spells
-    out the address, while ``COUNT(email)`` is a number that no policy is about.
-    """
+    """One column of the result, and where its value comes from."""
 
     #: The name the engine will return for this column.
     name: str
-    #: The catalog column, when the projection is one. None for expressions,
-    #: literals and aggregates.
+    #: The catalog column, when the projection is one.
     source: ColumnRef | None
     #: True when a masked column's value can be read out of this cell.
     sensitive: bool
@@ -227,22 +153,14 @@ class Projection:
 
 @dataclass(frozen=True, slots=True)
 class Validated:
-    """SQL that may run, and what it will touch.
-
-    ``query`` is the only part a connector accepts. The rest is for the executor
-    and the audit row: which tables were read, which columns, which of those
-    carry a ``mask`` policy, and which *result* columns those policies land on —
-    masking catalog samples at write time (D-013) said nothing about results.
-    """
+    """SQL that may run, and what it will touch."""
 
     query: ValidatedQuery
     tables: tuple[TableRef, ...]
     columns: tuple[ColumnRef, ...]
     masked: tuple[ColumnRef, ...]
     projections: tuple[Projection, ...] = ()
-    #: The row cap written into the SQL, when one was asked for. The executor
-    #: bounds the fetch as well; this is the half the *engine* enforces, so a
-    #: query that would have scanned a billion rows stops at the server.
+    #: The row cap written into the SQL, when one was asked for.
     row_limit: int | None = None
 
     @property
@@ -255,24 +173,7 @@ class Validated:
 
 
 def validate(sql: str, *, source: SourcePolicy, max_rows: int | None = None) -> Validated:
-    """Judge one statement against one data source. Raises ``PolicyViolation``.
-
-    The only entry point, and the only exception it raises is a violation — a
-    caller that has to catch anything else is a caller that will eventually not.
-
-    ``max_rows`` is the executor's decision and this module's job to apply: the
-    number comes from policy, and the SQL that carries it may only be emitted
-    here, because emitting SQL is what holding the grant means. An existing
-    smaller limit is kept — an agent asking for ten rows gets ten.
-
-    That is also what the ``RecursionError`` guard is for. Parsing, qualifying
-    and generating SQL are all recursive over the tree, so a statement that is
-    deep rather than long — a thousand nested parentheses, a chain of ANDs — can
-    exhaust the interpreter's stack instead of breaking a rule.
-    ``_refuse_if_too_complex`` refuses the ones that can be seen coming; this
-    catches the rest, and turns a process-level failure into an ordinary refusal
-    the agent can repair.
-    """
+    """Judge one statement against one data source."""
     try:
         return _validate(sql, source=source, max_rows=max_rows)
     except RecursionError:
@@ -295,10 +196,7 @@ def _validate(sql: str, *, source: SourcePolicy, max_rows: int | None) -> Valida
     columns, masked, origin = _apply_column_policy(qualified, source.catalog)
     projections = _projections(qualified, origin, masked)
 
-    # Last, so the limit lands on the statement that passed every rule rather
-    # than on one still being rewritten. EXPLAIN is left alone: a plan is one
-    # short result whatever the query would have returned, and TOP inside an
-    # EXPLAIN would be describing a different statement than the one asked about.
+    # Last, so the limit lands on the statement that passed every rule rather than on one still...
     row_limit = None if is_explain else _bound_rows(qualified, max_rows)
 
     canonical = qualified.sql(dialect=dialect, comments=False)
@@ -315,26 +213,12 @@ def _validate(sql: str, *, source: SourcePolicy, max_rows: int | None) -> Valida
     )
 
 
-# ---------------------------------------------------------------------------
-# 1-2. One statement, and it reads
-# ---------------------------------------------------------------------------
+# --- 1-2 ---
 
 
 def _parse_one_read_only(sql: str, dialect: str) -> tuple[exp.Expression, bool]:
-    """Parse in the source's own dialect and return the single read statement.
-
-    The boolean says whether it arrived wrapped in EXPLAIN. sqlglot has no node
-    for EXPLAIN — it falls back to a ``Command`` holding the rest as text — so
-    the inner statement is parsed on its own and put back together at the end.
-    That is also what makes ``EXPLAIN (ANALYZE) …`` fail: its options are not a
-    statement, and ANALYZE would execute the query rather than plan it.
-    """
-    # The refusal is built inside the handler and raised outside it. `from None`
-    # would only stop a traceback from *printing* the parser's error; the object
-    # would still hang off __context__, and sqlglot's message quotes the SQL it
-    # choked on — literal values included. Raising after the block leaves no
-    # chain at all, which is what test_a_violation_never_chains_the_parser_error
-    # asserts.
+    """Parse in the source's own dialect and return the single read statement."""
+    # The refusal is built inside the handler and raised outside it.
     _refuse_if_too_complex(sql, dialect)
 
     failure: PolicyViolation | None = None
@@ -351,8 +235,7 @@ def _parse_one_read_only(sql: str, dialect: str) -> tuple[exp.Expression, bool]:
             f"This is not valid {dialect} SQL{_where(error)}. Rewrite the query.",
         )
     except SqlglotError:
-        # Depth limits and tokenizer failures. Same answer, and for the same
-        # reason: nothing that cannot be parsed can be reasoned about.
+        # Depth limits and tokenizer failures.
         failure = PolicyViolation(
             ViolationCode.PARSE_ERROR, f"This could not be read as {dialect} SQL."
         )
@@ -372,10 +255,7 @@ def _parse_one_read_only(sql: str, dialect: str) -> tuple[exp.Expression, bool]:
         try:
             inner, nested = _parse_one_read_only(_explain_body(statement), dialect)
         except PolicyViolation as violation:
-            # A body that does not parse means the EXPLAIN is malformed, and
-            # "line 1, column 9" about a fragment nobody wrote is no help. The
-            # common case is EXPLAIN ANALYZE, which executes the query it claims
-            # to be planning, so the answer names the rule rather than the typo.
+            # A body that does not parse means the EXPLAIN is malformed, and "line 1.
             if violation.code is not ViolationCode.PARSE_ERROR:
                 raise
             explain_failure = PolicyViolation(
@@ -399,35 +279,11 @@ def _parse_one_read_only(sql: str, dialect: str) -> tuple[exp.Expression, bool]:
 
 
 def tables_named(sql: str, *, dialect: str) -> tuple[str, ...]:
-    """The tables a statement mentions, without validating or running anything.
-
-    Added for the capability check (architecture 4.3), which has to answer "can
-    these tables be joined at all" **before** the statement is sent — a check
-    that answered afterwards would have already spent the query it was meant to
-    prevent.
-
-    **This is not a substitute for `validate`, and grants nothing.** It does not
-    ground names against the catalog, does not consult a policy, does not
-    authorise and does not rewrite; it holds no `PolicyGrant` and produces no
-    `Validated`. Nothing may run on the strength of what it returns, and the only
-    thing a caller can do with it is refuse.
-
-    It lives here rather than in `agent/` because sqlglot is confined to this
-    module on purpose (see the pyright note at the top of the file), and a second
-    importer would quietly make that untrue.
-
-    Unparseable input returns **nothing** rather than raising: this runs before
-    the real validator, whose refusal for bad SQL is the one worth showing. A
-    statement too long or too deep to inspect is likewise not this function's
-    error to report.
-    """
+    """The tables a statement mentions, without validating or running anything."""
     with suppress(PolicyViolation, RecursionError, SqlglotError):
         _refuse_if_too_complex(sql, dialect)
         parsed = sqlglot.parse_one(sql, read=dialect)
-        # A CTE name parses as a table and is not one. Left in, it would be a
-        # table the catalog has never heard of, and the capability check would
-        # report a join gap against a name the customer's schema does not
-        # contain — a refusal invented out of the query's own scaffolding.
+        # A CTE name parses as a table and is not one.
         defined = {
             cte.alias_or_name.lower() for cte in parsed.find_all(exp.CTE) if cte.alias_or_name
         }
@@ -441,29 +297,7 @@ def tables_named(sql: str, *, dialect: str) -> tuple[str, ...]:
 
 
 def filtered_columns(sql: str, *, dialect: str) -> frozenset[str]:
-    """Columns this statement constrains, lowercased and unqualified.
-
-    Added for WP10.2c's critic rule, which asks whether a statement honoured a
-    semantic definition's required filters. It answers one narrow question — *is
-    this column constrained anywhere?* — over every predicate in the tree:
-    `WHERE`, `HAVING`, a join's `ON`, and the same inside a CTE or a subquery,
-    because a filter applied in a CTE is applied.
-
-    **Narrow on purpose, and the narrowness is the safety property.** It does not
-    check the operator and it does not check the values. A definition saying
-    *"revenue excludes cancelled orders"* is honoured by `status <> 'cancelled'`,
-    by `status NOT IN ('cancelled','refunded')` and by `status = 'completed'`,
-    and a check that insisted on one spelling would refuse the other two — a
-    **false block**, which `capability.py` and standing note 5 both call worse
-    than no check at all. What it catches is the statement that does not
-    constrain the column *at all*, which is certainly wrong and is exactly the
-    failure B-078 recorded.
-
-    Like `tables_named`, this grants nothing, authorises nothing and returns
-    **nothing** for input it cannot parse: it runs over SQL the DAL has already
-    validated and executed, and inventing a finding out of a parse failure would
-    be a critic reporting its own confusion as the answer's problem.
-    """
+    """Columns this statement constrains, lowercased and unqualified."""
     with suppress(PolicyViolation, RecursionError, SqlglotError):
         _refuse_if_too_complex(sql, dialect)
         parsed = sqlglot.parse_one(sql, read=dialect)
@@ -472,8 +306,7 @@ def filtered_columns(sql: str, *, dialect: str) -> frozenset[str]:
             *parsed.find_all(exp.Where),
             *parsed.find_all(exp.Having),
             *parsed.find_all(exp.Join),
-            # A qualifying predicate can also sit in a window's `QUALIFY`; it is
-            # rare and it is still a filter.
+            # A qualifying predicate can also sit in a window's `QUALIFY`.
             *parsed.find_all(exp.Qualify),
         ):
             found |= {
@@ -484,14 +317,7 @@ def filtered_columns(sql: str, *, dialect: str) -> frozenset[str]:
 
 
 def literals_in(sql: str, *, dialect: str) -> frozenset[str]:
-    """Every literal the statement contains, as text.
-
-    For the weaker half of the same rule: when a column *is* constrained, whether
-    the definition's own values appear at all. A statement filtering `status` but
-    mentioning neither 'cancelled' nor 'refunded' is doing something the
-    definition did not describe — which is worth a **warning**, and is not worth
-    a block, because `status = 'completed'` is that shape and is correct.
-    """
+    """Every literal the statement contains, as text."""
     with suppress(PolicyViolation, RecursionError, SqlglotError):
         _refuse_if_too_complex(sql, dialect)
         parsed = sqlglot.parse_one(sql, read=dialect)
@@ -499,34 +325,12 @@ def literals_in(sql: str, *, dialect: str) -> frozenset[str]:
     return frozenset()
 
 
-#: A bare ISO date. Deliberately strict: a string that merely contains digits
-#: and dashes is not a date, and a loose match here would put an id or a
-#: product code into a range comparison.
+#: A bare ISO date.
 _ISO_DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
 
 
 def date_literals(sql: str, *, dialect: str) -> tuple[str, ...]:
-    """Every date written into a statement, as ``YYYY-MM-DD`` strings.
-
-    Added for the critic (architecture 4.5), whose first deterministic check is
-    that *"date literals in executed SQL cover the claimed period"*. It reads a
-    statement that has **already run**, so unlike `tables_named` it is not
-    guarding anything — it is evidence for a check on the answer.
-
-    Reads the literal text rather than evaluating anything: `'2026-07-01'`,
-    `DATE '2026-07-01'` and `CAST('2026-07-01' AS DATE)` all reach here as a
-    string node whose value looks like a date, which is exactly what the check
-    wants to compare. An expression the model computed instead of writing down —
-    `CURRENT_DATE - 30` — deliberately yields nothing, and the critic treats a
-    statement with no literals as one that stated no range. That is the right
-    bias: **D-027** already forbids clock functions in the prompt, so the useful
-    signal here is a range written out and wrong, not a range left implicit.
-
-    Same placement argument as `tables_named`: sqlglot is confined to this module
-    (see the pyright note at the top), and this grants nothing — it holds no
-    `PolicyGrant`, produces no `Validated`, and the only thing a caller can do
-    with it is disagree with an answer.
-    """
+    """Every date written into a statement, as ``YYYY-MM-DD`` strings."""
     with suppress(PolicyViolation, RecursionError, SqlglotError):
         _refuse_if_too_complex(sql, dialect)
         parsed = sqlglot.parse_one(sql, read=dialect)
@@ -540,14 +344,7 @@ def date_literals(sql: str, *, dialect: str) -> tuple[str, ...]:
 
 
 def _refuse_if_too_complex(sql: str, dialect: str) -> None:
-    """Refuse what is too big or too deep to inspect, before inspecting it.
-
-    Both ceilings are about the *checker*, not about SQL: a statement that makes
-    the validator run out of stack has found a way past every rule below by
-    never reaching them. Depth is counted from the tokenizer's parentheses
-    rather than from the characters, so a literal like ``'((((((('`` is a string
-    and not a nesting level.
-    """
+    """Refuse what is too big or too deep to inspect, before inspecting it."""
     if len(sql) > MAX_SQL_LENGTH:
         raise PolicyViolation(
             ViolationCode.TOO_COMPLEX,
@@ -593,11 +390,7 @@ def _explain_body(statement: exp.Command) -> str:
 
 
 def _where(error: ParseError) -> str:
-    """The position of a parse failure, and nothing else from it.
-
-    sqlglot's message quotes the SQL around the error, which can include a
-    literal. The agent already has its own query; it needs the coordinates.
-    """
+    """The position of a parse failure, and nothing else from it."""
     for item in error.errors:
         line, column = item.get("line"), item.get("col")
         if isinstance(line, int) and isinstance(column, int):
@@ -612,17 +405,11 @@ def _operation_name(node: exp.Expr) -> str:
     return type(node).__name__.upper()
 
 
-# ---------------------------------------------------------------------------
-# 3. Nothing that writes, anywhere
-# ---------------------------------------------------------------------------
+# --- Nothing that writes, anywhere ---
 
 
 def _reject_forbidden_nodes(statement: exp.Expression) -> None:
-    """Walk the whole tree, not just the top of it.
-
-    ``WITH x AS (INSERT INTO t VALUES (1) RETURNING *) SELECT * FROM x`` parses
-    as a Select. A validator that checks only the statement type approves it.
-    """
+    """Walk the whole tree, not just the top of it."""
     for node in statement.walk():
         if isinstance(node, _FORBIDDEN_NODES):
             raise PolicyViolation(
@@ -633,9 +420,7 @@ def _reject_forbidden_nodes(statement: exp.Expression) -> None:
             )
 
 
-# ---------------------------------------------------------------------------
-# 4-5. Functions it cannot vouch for
-# ---------------------------------------------------------------------------
+# --- 4-5 ---
 
 
 def _reject_unvouched_functions(statement: exp.Expression) -> None:
@@ -658,27 +443,18 @@ def _reject_unvouched_functions(statement: exp.Expression) -> None:
         )
 
 
-# ---------------------------------------------------------------------------
-# 6. Every table is one the catalog knows
-# ---------------------------------------------------------------------------
+# --- Every table is one the catalog knows ---
 
 
 def _bind_tables(statement: exp.Expression, catalog: Catalog) -> dict[str, TableRef]:
-    """Resolve every table reference, and rewrite it to the catalog's spelling.
-
-    Returns the map the column pass needs: canonical ``schema.table`` string to
-    ``TableRef``. Rewriting is not cosmetic — after it, the statement names
-    exactly what the catalog described, so the optimizer's schema lookup and the
-    column policy lookup cannot disagree about which table a column came from.
-    """
+    """Resolve every table reference, and rewrite it to the catalog's spelling."""
     by_qualified, by_name = _catalog_index(catalog)
     cte_names = {cte.alias_or_name.lower() for cte in statement.find_all(exp.CTE)}
     bound: dict[str, TableRef] = {}
 
     for node in statement.find_all(exp.Table):
         if not isinstance(node.this, exp.Identifier):
-            # FROM generate_series(...) and friends: a function standing where a
-            # table belongs. There is no catalog row to check it against.
+            # FROM generate_series(...) and friends: a function standing where a table belongs.
             raise PolicyViolation(
                 ViolationCode.TABLE_FUNCTION,
                 "Only catalogued tables and views may be read, not table functions.",
@@ -692,9 +468,7 @@ def _bind_tables(statement: exp.Expression, catalog: Catalog) -> dict[str, Table
             )
 
         name, schema = node.name, node.db
-        # A bare name may be a CTE defined in this same statement, which is not a
-        # catalog object and was validated where it was written. A *qualified*
-        # name never is, so the shortcut cannot be used to smuggle one in.
+        # A bare name may be a CTE defined in this same statement.
         if not schema and name.lower() in cte_names:
             continue
 
@@ -722,14 +496,7 @@ def _bind_tables(statement: exp.Expression, catalog: Catalog) -> dict[str, Table
 def _catalog_index(
     catalog: Catalog,
 ) -> tuple[dict[tuple[str, str], CatalogTableView], dict[str, list[CatalogTableView]]]:
-    """Two lookups over the active snapshot, both case-folded.
-
-    Case folding is deliberate on both engines: PostgreSQL folds unquoted names
-    to lower case and SQL Server compares them case-insensitively by default, so
-    matching exactly would refuse ``FROM Orders`` against a table the user can
-    read by that name in any client. Two catalogued tables that differ only by
-    case therefore become ambiguous rather than a coin toss.
-    """
+    """Two lookups over the active snapshot, both case-folded."""
     by_qualified: dict[tuple[str, str], CatalogTableView] = {}
     by_name: dict[str, list[CatalogTableView]] = {}
     for table in catalog.tables:
@@ -781,27 +548,13 @@ def _is_system_schema(schema: str) -> bool:
     return folded in _SYSTEM_SCHEMAS or folded.startswith(_SYSTEM_SCHEMA_PREFIXES)
 
 
-# ---------------------------------------------------------------------------
-# 7. Stars expanded, columns qualified — against the catalog, before any rule
-#    about columns is applied
-# ---------------------------------------------------------------------------
+# --- Stars expanded, columns qualified — against the catalog, before any rule ---
 
 
 def _resolve_identifiers(
     statement: exp.Expression, source: SourcePolicy, tables: dict[str, TableRef]
 ) -> exp.Expression:
-    """Expand ``SELECT *`` and attach every column to the table it came from.
-
-    Done by sqlglot's qualifier against a schema built from the catalog — which
-    means a star becomes exactly the columns the catalog knows, and a column
-    that resolves to nothing is refused before any policy question is asked.
-
-    The qualifier is used for *resolution*, never as the guard: it happily
-    passes a query over a table it has never heard of, which is why tables were
-    bound first. Its failures are re-diagnosed here, because "could not be
-    resolved" is the same sentence for a column that does not exist and one that
-    exists on two of the query's tables, and an agent repairs those differently.
-    """
+    """Expand ``SELECT *`` and attach every column to the table it came from."""
     schema = _sqlglot_schema(source.catalog, tables, source.dialect)
     qualified: exp.Expression | None = None
     try:
@@ -813,8 +566,7 @@ def _resolve_identifiers(
             validate_qualify_columns=True,
         )
     except OptimizeError:
-        # Diagnosed and raised *outside* the handler, so the optimizer's own
-        # message — which quotes the query — is not left behind on __context__.
+        # Diagnosed and raised outside the handler, so the optimizer's own message.
         qualified = None
     if qualified is None:
         raise _diagnose(statement, source.catalog, tables)
@@ -822,12 +574,7 @@ def _resolve_identifiers(
 
 
 def _sqlglot_schema(catalog: Catalog, tables: dict[str, TableRef], dialect: str) -> MappingSchema:
-    """The catalog, in the shape the qualifier reads, holding only what is used.
-
-    Only the tables this statement names: a schema carrying every table in the
-    database would let the qualifier resolve a column against one the query
-    never mentioned, and quietly widen what a star expands to.
-    """
+    """The catalog, in the shape the qualifier reads, holding only what is used."""
     wanted = {(ref.schema, ref.table) for ref in tables.values()}
     schema: dict[str, dict[str, dict[str, str]]] = {}
     for table in catalog.tables:
@@ -836,22 +583,14 @@ def _sqlglot_schema(catalog: Catalog, tables: dict[str, TableRef], dialect: str)
         schema.setdefault(table.schema_name, {})[table.table_name] = {
             column.name: column.data_type for column in table.columns
         }
-    # cast: MappingSchema declares `dict[str, object]`, and a dict is invariant
-    # in its value type, so the nested shape it actually wants does not fit the
-    # annotation. The value is the shape sqlglot documents.
+    # cast: MappingSchema declares `dict[str, object]`, and a dict is invariant in its value type.
     return MappingSchema(cast("dict[str, object]", schema), dialect=dialect)
 
 
 def _diagnose(
     statement: exp.Expression, catalog: Catalog, tables: dict[str, TableRef]
 ) -> PolicyViolation:
-    """Say which column failed, and why, in the agent's terms.
-
-    The qualifier says "could not be resolved" for a column that does not exist
-    and for one that exists on two of the query's tables. Those are repaired
-    differently — add the column, or qualify the name — so they are told apart
-    here rather than passed along as one sentence.
-    """
+    """Say which column failed, and why, in the agent's terms."""
     used = set(tables.values())
     available: dict[str, set[str]] = {}
     exact_available: dict[str, set[str]] = {}
@@ -873,16 +612,13 @@ def _diagnose(
             aliases[node.alias_or_name.lower()] = TableRef(node.db, node.name)
 
     for column in statement.find_all(exp.Column):
-        # A quoted identifier means what it says, case included, so `"EMAIL"` is
-        # not `email` and reporting it as unknown is the truth rather than a
-        # near-miss the agent has to guess at.
+        # A quoted identifier means what it says, case included.
         exact = _is_quoted(column)
         wanted = column.name if exact else column.name.lower()
         if column.table:
             owner = aliases.get(column.table.lower())
             if owner is None or owner not in columns_of:
-                # An alias belonging to a CTE or a derived table: what it holds
-                # is decided by its own body, not by the catalog.
+                # An alias belonging to a CTE or a derived table.
                 continue
             known = columns_of[owner] if not exact else exact_columns_of.get(owner, set())
             if wanted not in known:
@@ -914,26 +650,13 @@ def _diagnose(
     )
 
 
-# ---------------------------------------------------------------------------
-# 8. What each column is allowed to be used for — anywhere it appears
-# ---------------------------------------------------------------------------
+# --- What each column is allowed to be used for — anywhere it appears ---
 
 
 def _apply_column_policy(
     qualified: exp.Expression, catalog: Catalog
 ) -> tuple[set[ColumnRef], set[ColumnRef], dict[int, ColumnRef]]:
-    """Check every column reference in every scope against its policy.
-
-    Scopes rather than a flat walk, because an alias means different things in
-    different parts of one statement: ``SELECT (SELECT x.a FROM b x) FROM c x``
-    has two ``x``. Resolving that by a single dictionary would attribute a column
-    to the wrong table — and therefore judge it by the wrong policy, which is the
-    one kind of mistake this module may not make.
-
-    The third return value maps each ``Column`` node to the catalog column it
-    resolved to, so the projection pass below can ask "what is this cell made
-    of" without doing the scope work a second time and possibly differently.
-    """
+    """Check every column reference in every scope against its policy."""
     policies = _policy_index(catalog)
     touched: set[ColumnRef] = set()
     masked: set[ColumnRef] = set()
@@ -943,8 +666,7 @@ def _apply_column_policy(
         for column in scope.columns:
             source = scope.sources.get(column.table)
             if not isinstance(source, exp.Table):
-                # A CTE or a derived table. Its own scope is in this same walk,
-                # and its columns were checked against real tables there.
+                # A CTE or a derived table. Its own scope is in this same walk.
                 continue
 
             ref = ColumnRef(source.db, source.name, column.name)
@@ -970,16 +692,9 @@ def _apply_column_policy(
     return touched, masked, origin
 
 
-# ---------------------------------------------------------------------------
-# What the result will look like, and what may be read out of each cell
-# ---------------------------------------------------------------------------
+# --- What the result will look like, and what may be read out of each cell ---
 
-#: Aggregates whose result is a count or a total rather than a member of the
-#: column. A masked value inside one of these cannot be read out of the answer,
-#: so the answer is not masked — masking a COUNT would replace a number nobody
-#: needs protecting with a string nobody can use. MIN, MAX and the string
-#: aggregates are deliberately absent: they return a value that was in the
-#: column, which is the thing a policy is about.
+#: Aggregates whose result is a count or a total rather than a member of the column.
 _VALUE_DESTROYING_AGGREGATES: tuple[type, ...] = (
     exp.Count,
     exp.Sum,
@@ -996,13 +711,7 @@ _VALUE_DESTROYING_AGGREGATES: tuple[type, ...] = (
 def _projections(
     qualified: exp.Expression, origin: dict[int, ColumnRef], masked: set[ColumnRef]
 ) -> tuple[Projection, ...]:
-    """Describe the result, one entry per column the engine will return.
-
-    A set operation is described by its arms together: the names come from the
-    first, and a cell is sensitive if *any* arm can put a masked value there —
-    ``SELECT city FROM a UNION SELECT email FROM b`` is one output column, and
-    half of it is an address.
-    """
+    """Describe the result, one entry per column the engine will return."""
     arms = [arm for arm in _select_arms(qualified) if isinstance(arm, exp.Select)]
     if not arms:
         return ()
@@ -1040,14 +749,7 @@ def _projected_column(expression: exp.Expr, origin: dict[int, ColumnRef]) -> Col
 def _carries_masked_value(
     expression: exp.Expr, origin: dict[int, ColumnRef], masked: set[ColumnRef]
 ) -> bool:
-    """Can a masked column's value be read out of this cell?
-
-    Yes for the column itself, and yes for anything built from it —
-    ``UPPER(email)``, ``email || '!'``, ``SUBSTRING(email, 1, 40)`` all spell the
-    address out. No when every mention of it sits inside an aggregate that
-    returns a count or a total instead of a value. Anything not understood
-    counts as yes.
-    """
+    """Can a masked column's value be read out of this cell?"""
     for column in expression.find_all(exp.Column):
         ref = origin.get(id(column))
         if ref is None or ref not in masked:
@@ -1066,22 +768,11 @@ def _inside_value_destroying_aggregate(column: exp.Column, root: exp.Expr) -> bo
     return False
 
 
-# ---------------------------------------------------------------------------
-# The row cap, written into the statement the engine will run
-# ---------------------------------------------------------------------------
+# --- The row cap, written into the statement the engine will run ---
 
 
 def _bound_rows(qualified: exp.Expression, max_rows: int | None) -> int | None:
-    """Clamp the outermost row limit, in place, and say what it ended up as.
-
-    One code path for both engines: sqlglot parses T-SQL's ``TOP n`` and
-    PostgreSQL's ``LIMIT n`` into the same node and emits each dialect's own
-    spelling, so nothing here asks which engine it is.
-
-    A smaller existing limit is kept. An agent that asked for ten rows means it,
-    and replacing that with a thousand would be this layer quietly making the
-    query more expensive than it was written to be.
-    """
+    """Clamp the outermost row limit, in place, and say what it ended up as."""
     if max_rows is None or not isinstance(qualified, exp.Query):
         return None
 

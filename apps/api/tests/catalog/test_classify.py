@@ -1,12 +1,4 @@
-"""The corpus the classifier is judged against.
-
-Two failure modes, and they are not symmetric. A **false negative** leaves
-personal data unmasked in our own database, which is the failure this whole
-subsystem exists to prevent. A **false positive** masks a harmless column until
-somebody clicks Allow. So the true-positive cases below are requirements, and
-the false-positive cases are a budget: the point of listing them is to notice
-when the rules start firing on everything.
-"""
+"""The corpus the classifier is judged against."""
 
 from __future__ import annotations
 
@@ -29,9 +21,7 @@ IBANS = ["GB82WEST12345698765432", "DE89370400440532013000", "FR1420041010050500
 HARMLESS = ["Wellington", "Auckland", "Christchurch"]
 
 
-# ---------------------------------------------------------------------------
-# What the name alone says
-# ---------------------------------------------------------------------------
+# --- What the name alone says ---
 
 
 @pytest.mark.parametrize(
@@ -67,14 +57,11 @@ def test_a_name_that_announces_itself(column: str, kind: str) -> None:
     ["id", "order_date", "total_amount", "status", "city", "quantity", "created_at", "store_id"],
 )
 def test_ordinary_names_are_left_alone(column: str) -> None:
-    """The false-positive budget. Every one of these masked would make the
-    catalog useless without protecting anybody."""
+    """The false-positive budget."""
     assert name_verdict(column) is None
 
 
-# ---------------------------------------------------------------------------
-# What the values say, whatever the column is called
-# ---------------------------------------------------------------------------
+# --- What the values say, whatever the column is called ---
 
 
 def test_a_column_of_addresses_is_caught_however_it_is_named() -> None:
@@ -101,13 +88,7 @@ def test_ibans_and_phones_are_recognised() -> None:
     ],
 )
 def test_a_date_is_not_a_phone_number(values: list[str]) -> None:
-    """Found by profiling the real pizza database, not by this corpus.
-
-    `2025-02-01` is ten characters of digits and separators, which an earlier
-    pattern read as a phone number — so every date column in the demo came back
-    "suspected" and would have been masked. Dates are what analysts filter on;
-    masking them makes a catalog useless while protecting nobody.
-    """
+    """Found by profiling the real pizza database, not by this corpus."""
     assert shape_verdict(values) is None
 
 
@@ -124,8 +105,7 @@ def test_a_date_is_not_a_phone_number(values: list[str]) -> None:
     ],
 )
 def test_shapes_are_only_asked_about_text(data_type: str, textual: bool) -> None:
-    """A numeric column of 16-digit order references is not a card number, and
-    a date column is not a phone book."""
+    """A numeric column of 16-digit order references is not a card number."""
     assert is_textual(data_type) is textual
 
 
@@ -149,8 +129,7 @@ def test_ordinary_values_are_left_alone() -> None:
 
 
 def test_a_mostly_clean_column_still_counts() -> None:
-    """Real columns have holes in them; a rule that needs perfect data never
-    fires on anything real."""
+    """Real columns have holes in them."""
     assert shape_verdict([*EMAILS, "", "n/a"]) == "email"
 
 
@@ -158,9 +137,7 @@ def test_a_column_with_one_stray_address_does_not() -> None:
     assert shape_verdict([*HARMLESS, "ada@example.com"]) is None
 
 
-# ---------------------------------------------------------------------------
-# The verdict, and what follows from it
-# ---------------------------------------------------------------------------
+# --- The verdict, and what follows from it ---
 
 
 def test_suspicion_is_enough() -> None:
@@ -178,8 +155,7 @@ def test_suspicion_is_enough() -> None:
 
 
 def test_confirmed_is_never_something_the_rules_award_themselves() -> None:
-    """`confirmed` is a person's word (architecture M4). The classifier may only
-    ever reach `suspected`, however sure it is."""
+    """`confirmed` is a person's word (architecture M4)."""
     for values, name in ((EMAILS, "email"), (CARDS, "card_number"), (HARMLESS, "city")):
         verdict = classify_column(
             name=name, data_type="text", is_pk=False, values=values, distinct=3, sampled=3
@@ -211,9 +187,7 @@ def test_a_key_whose_values_are_personal_still_is() -> None:
     assert verdict.sensitivity == "suspected"
 
 
-# ---------------------------------------------------------------------------
-# Semantic role
-# ---------------------------------------------------------------------------
+# --- Semantic role ---
 
 
 @pytest.mark.parametrize(
@@ -243,9 +217,7 @@ def test_free_text_is_not_a_dimension() -> None:
     )
 
 
-# ---------------------------------------------------------------------------
-# Masking
-# ---------------------------------------------------------------------------
+# --- Masking ---
 
 
 def test_a_masked_address_keeps_its_shape_and_loses_its_content() -> None:
@@ -264,8 +236,7 @@ def test_nothing_recoverable_survives_a_generic_mask(value: str) -> None:
 
     assert value not in masked
     assert len(masked) <= 6
-    # The first and last characters are all that remain, and only for values
-    # long enough that they identify nobody on their own.
+    # The first and last characters are all that remain.
     assert masked.startswith(value[0])
 
 

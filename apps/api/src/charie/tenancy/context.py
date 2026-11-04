@@ -1,15 +1,4 @@
-"""Who the current request belongs to.
-
-Built once per request from the validated JWT (Phase 2) and read by the tenancy
-session, so no code path can reach data without first saying which organization
-it is acting for.
-
-The honest limit of this design, stated plainly: RLS keys off a session variable
-that this process sets. It therefore protects against a repository that forgets a
-``WHERE`` clause — the common, quiet bug — and not against code that deliberately
-sets the wrong organization. Guarding *that* is the job of the auth context and
-the route guards above it (architecture Part 6.2).
-"""
+"""Who the current request belongs to."""
 
 from __future__ import annotations
 

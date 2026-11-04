@@ -20,22 +20,12 @@ export const viewport: Viewport = {
   themeColor: "#f4f6f1",
 };
 
-/**
- * Set the palette and light/dark before the first paint (D-046).
- *
- * React cannot help here by construction: the attributes have to be on
- * `<html>` before the browser paints anything, and the earliest React can run is
- * after hydration. Nothing in it is dynamic — the only interpolations are two
- * compile-time constants from our own module — and it writes attributes rather
- * than markup. Wrapped in try/catch because a browser with site data blocked
- * throws on `localStorage` rather than returning null.
- */
+/** Set the palette and light/dark before the first paint (D-046). */
 const THEME_SCRIPT = `try{var d=document.documentElement,t=localStorage.getItem(${JSON.stringify(THEME_STORAGE_KEY)}),p=localStorage.getItem(${JSON.stringify(PALETTE_STORAGE_KEY)});if(t==="dark"){d.setAttribute("data-theme","dark")}if(p&&p!=="sage"&&/^[a-z]+$/.test(p)){d.setAttribute("data-palette",p)}}catch(e){}`;
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    // `suppressHydrationWarning` because the script above legitimately changes
-    // this element between the server's HTML and hydration.
+    // `suppressHydrationWarning` because the script above legitimately changes this element...
     <html lang="en" suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />

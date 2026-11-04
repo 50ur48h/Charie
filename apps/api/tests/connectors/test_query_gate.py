@@ -1,16 +1,4 @@
-"""The gate that stands between the agent and arbitrary SQL.
-
-Architecture Part 5.1 wants "run unvalidated SQL" to be impossible rather than
-discouraged. Python cannot give that literally, so the property is built from
-three checks that *can* hold, and this file is where each one is asserted:
-
-1. ``execute`` accepts only a ``ValidatedQuery`` — a signature, checked by
-   pyright at every call site.
-2. A ``ValidatedQuery`` needs a grant, and a grant needs a name from a short
-   list — a runtime refusal.
-3. Nothing in ``src`` builds either one except the two modules that may — a scan
-   of the source tree, so a fourth caller cannot appear quietly.
-"""
+"""The gate that stands between the agent and arbitrary SQL."""
 
 from __future__ import annotations
 
@@ -33,13 +21,11 @@ from charie.connectors.sqlserver import SqlServerConnector
 
 SRC = Path(__file__).resolve().parents[2] / "src" / "charie"
 
-#: The only files in src/ allowed to name these constructors: the module that
-#: defines them, and the module that holds the grant.
+#: The only files in src/ allowed to name these constructors: the module that defines them.
 CONSTRUCTION_SITES = {
     SRC / "connectors" / "base.py",
     SRC / "connectors" / "introspection.py",
-    # WP5.1. The SQL policy engine is the second holder of the grant, and the
-    # only one that ever sees a statement the model wrote.
+    # WP5.1. The SQL policy engine is the second holder of the grant.
     SRC / "dal" / "validator.py",
 }
 
@@ -83,9 +69,7 @@ def test_its_repr_does_not_carry_the_sql_or_the_parameters() -> None:
 
 @pytest.mark.parametrize("connector", [PostgresConnector, SqlServerConnector])
 def test_execute_accepts_only_a_validated_query(connector: type[Connector]) -> None:
-    """The signature is the first layer, so assert the signature — on every
-    connector, because a new engine is the natural place for the gate to be
-    quietly widened to `str`."""
+    """The signature is the first layer, so assert the signature — on every connector."""
     hints = typing.get_type_hints(connector.execute)
 
     assert hints["query"] is ValidatedQuery
@@ -93,9 +77,7 @@ def test_execute_accepts_only_a_validated_query(connector: type[Connector]) -> N
 
 
 def test_the_sql_server_templates_come_from_the_same_grant() -> None:
-    """Both dialects live in one module on purpose: a second introspection
-    module would have meant a third name on SANCTIONED_VALIDATORS, widening the
-    list of things allowed to declare SQL runnable in order to add a file."""
+    """Both dialects live in one module on purpose."""
     query = introspection.tsql_tables()
 
     assert query.origin == "charie.connectors.introspection"
@@ -103,8 +85,7 @@ def test_the_sql_server_templates_come_from_the_same_grant() -> None:
 
 
 def test_no_sql_server_template_takes_a_parameter() -> None:
-    """T-SQL has no array parameter, and building an IN list would mean putting
-    schema names into a statement. The connector filters afterwards instead."""
+    """T-SQL has no array parameter, and building an IN list would mean putting schema names..."""
     for build in (
         introspection.tsql_schemas,
         introspection.tsql_tables,
@@ -120,12 +101,7 @@ def test_no_sql_server_template_takes_a_parameter() -> None:
 
 
 def test_only_sanctioned_modules_build_queries() -> None:
-    """A scan, because the runtime check can be satisfied by naming a lie.
-
-    Anything in ``src`` that constructs a grant or a query must be one of the two
-    modules that are allowed to. Phase 5 adds ``dal/validator.py`` here, in the
-    same PR that adds it to SANCTIONED_VALIDATORS.
-    """
+    """A scan, because the runtime check can be satisfied by naming a lie."""
     pattern = re.compile(r"\b(PolicyGrant|ValidatedQuery)\s*\(")
     offenders: list[str] = []
 

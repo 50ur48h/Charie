@@ -1,46 +1,4 @@
-"""Turning text into vectors, and writing down what that cost (architecture 5.5).
-
-The one place in this package that spends money, so it is the one place that has
-to obey WP6.1's rule: **no path spends tokens without writing a `usage_ledger`
-row.** Embedding a corpus costs more than the chat calls that later answer
-questions about it, and a spend outside the ledger makes *"what did this
-organization spend"* unanswerable from the one table built to answer it.
-
-Four things are deliberate.
-
-**Batched, and the batch is a ceiling rather than a target.** One request per
-chunk is a round trip and a rate-limit slot each; one request for a whole book is
-a request that times out and loses everything in it. `EMBEDDINGS_BATCH` bounds it
-at both ends, and a failed batch loses one batch.
-
-**The width is checked on the way in, not trusted.** A provider that returns
-1024 floats for a `vector(1536)` column produces an insert error deep inside
-ingest, pointing at a constraint rather than at the model id that caused it. So
-the first response is measured against `EMBEDDINGS_DIMENSIONS` and a mismatch
-raises here, naming both numbers and the model.
-
-**Order is a contract.** The provider returns one vector per input and the caller
-pairs them with chunks positionally, so a reordered response would attach every
-vector to the wrong text — silently, and in a way no test of "did it embed"
-would catch. The response is sorted by its own `index` field rather than assumed
-to arrive in order.
-
-**Metered under its own role and tier** (`embed`/`embed`, revision 0017), never
-under `small`. D-018's ladder does not apply: there is one embedding model, and
-filing its tokens beside intake calls would make any spend-by-tier query wrong.
-
-This module deliberately does **not** go through `llm/service.py`. That front
-door resolves a role to a tier to a chat model, repairs structured output and
-runs the fallback chain — none of which an embedding call has or wants. What it
-shares is the part that matters: the same key, the same settings, the same
-ledger, and — since **B-073** — the same per-run ceiling.
-
-**`get_embedder` is the only way to build one, for B-040's reason.** An embedder
-is a spending credential, and the test guard that stops a suite reaching a real
-provider works by wrapping the one function that hands one out. A caller that
-constructed `OpenAIEmbedder` directly would be a caller no guard could see, so
-everything in the application asks here.
-"""
+"""Turning text into vectors, and writing down what that cost (architecture 5.5)."""
 
 from __future__ import annotations
 
@@ -66,35 +24,25 @@ __all__ = [
     "reset_embedder",
 ]
 
-#: What `response.json()` actually hands back. Named rather than spelled out at
-#: each use, so the casts below read as "this is provider JSON, and nothing here
-#: may assume its shape" rather than as type noise.
+#: What `response.json()` actually hands back.
 JsonObject = dict[str, Any]
 
 BASE_URL = "https://api.openai.com/v1"
 EMBEDDINGS = "/embeddings"
 
-#: Long enough for a full batch of chunks, short enough that a hung provider
-#: does not hold an ingest open indefinitely.
+#: Long enough for a full batch of chunks.
 TIMEOUT_SECONDS = 60.0
 
 HTTP_OK = 200
 HTTP_TOO_MANY_REQUESTS = 429
 HTTP_SERVER_ERROR = 500
 
-#: Truncated for B-030's reason: provider error text describes the *request*, but
-#: that is an assumption about somebody else's API rather than a guarantee, and
-#: this text reaches the ledger and the logs.
+#: Truncated for B-030's reason: provider error text describes the request.
 ERROR_TEXT_LIMIT = 300
 
 
 class EmbeddingError(LLMError):
-    """An embedding call failed, already sanitized.
-
-    A subclass of `LLMError` so a caller that already handles provider failure
-    handles this too, and so `retryable` means the same thing it means
-    everywhere else.
-    """
+    """An embedding call failed, already sanitized."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -107,22 +55,7 @@ class EmbeddingBatch:
 
 
 class Embedder(Protocol):
-    """What ingest and retrieval need from a provider. Deliberately narrow.
-
-    A **structural** protocol rather than a base class, and narrow on purpose:
-    the stub used in tests satisfies it by having the members, not by inheriting
-    from it, so nothing in the test suite can accidentally acquire real
-    behaviour from a shared parent. That is **B-040**'s lesson applied to the
-    one path in `knowledge/` that spends money — a suite that can reach a real
-    provider is a suite that can spend it.
-
-    ``is_stub`` is the same bit ``ProviderCaps.is_stub`` carries on the chat
-    side, and it exists for the same one reason: it is what the test guard reads
-    to decide whether letting this object out would spend real money. A stub
-    that did not declare itself would be indistinguishable from a real client,
-    and the guard would have to fall back to type checks that a new
-    implementation would silently defeat.
-    """
+    """What ingest and retrieval need from a provider."""
 
     @property
     def is_stub(self) -> bool:  # pragma: no cover - protocol
@@ -133,11 +66,7 @@ class Embedder(Protocol):
 
 
 class OpenAIEmbedder:
-    """The OpenAI embeddings endpoint, and nothing more.
-
-    Thin for the same reason `llm/openai.py` is thin: everything a second
-    provider could disagree about lives outside it.
-    """
+    """The OpenAI embeddings endpoint, and nothing more."""
 
     def __init__(
         self,
@@ -152,9 +81,7 @@ class OpenAIEmbedder:
         key = api_key if api_key is not None else _key_from(resolved)
         chosen = model if model is not None else resolved.embeddings_model
         if not chosen:
-            # No default in code, for D-017's reason: a model id compiled into a
-            # release is stale within months, and a stale one either 404s or
-            # returns vectors of a width the column will not accept.
+            # No default in code, for D-017's reason.
             raise EmbeddingError(
                 "EMBEDDINGS_MODEL is not set, so nothing can be embedded. "
                 "Set it to a model this key may call — verify with GET /v1/models."
@@ -189,8 +116,7 @@ class OpenAIEmbedder:
                 "the embedding provider did not respond in time", retryable=True
             ) from None
         except httpx.HTTPError:
-            # Not chained and not detailed, for the reason `llm/openai.py` gives:
-            # an httpx error's repr can carry the full URL.
+            # Not chained and not detailed, for the reason `llm/openai.py` gives.
             raise EmbeddingError("could not reach the embedding provider", retryable=True) from None
 
         if response.status_code != HTTP_OK:
@@ -203,9 +129,7 @@ class OpenAIEmbedder:
         if not isinstance(raw, list):
             raise EmbeddingError("the embedding provider returned no data")
 
-        # **Sorted by the provider's own index**, never assumed to be in order.
-        # A reordered response would attach every vector to the wrong text,
-        # silently, and no test of "did it embed" would catch it.
+        # Sorted by the provider's own index, never assumed to be in order.
         rows: list[JsonObject] = [
             cast(JsonObject, row) for row in cast(list[object], raw) if isinstance(row, dict)
         ]
@@ -217,9 +141,7 @@ class OpenAIEmbedder:
             if not isinstance(embedding, list):
                 raise EmbeddingError("the embedding provider returned a row with no vector")
             vector = tuple(_as_float(value) for value in cast(list[object], embedding))
-            # Checked here, where the model id is in scope, rather than at the
-            # insert — which would report a column constraint and say nothing
-            # about why.
+            # Checked here, where the model id is in scope, rather than at the insert.
             if len(vector) != self._expected:
                 raise EmbeddingError(
                     f"{self._model} returned {len(vector)} dimensions but this deployment "
@@ -235,9 +157,7 @@ class OpenAIEmbedder:
             tokens = _as_int(reported.get("prompt_tokens")) or _as_int(reported.get("total_tokens"))
         return EmbeddingBatch(
             vectors=tuple(vectors),
-            # No output tokens: an embedding produces a vector, not text. Left at
-            # zero rather than folded into the input count, so the ledger's two
-            # columns keep meaning what they mean for every other row.
+            # No output tokens: an embedding produces a vector, not text.
             usage=Usage(input_tokens=tokens, output_tokens=0, estimated=tokens == 0),
             model=self._model,
         )
@@ -246,27 +166,12 @@ class OpenAIEmbedder:
         await self._client.aclose()
 
 
-#: The embedder this process built, keyed by the model id it was built for. One
-#: instance rather than one per call, for the reason the provider registry gives:
-#: it holds an HTTP connection pool, and rebuilding it per call is a TLS
-#: handshake per search. Keyed by model so a caller that passes different
-#: settings gets an embedder for *its* model rather than the first one asked for.
+#: The embedder this process built, keyed by the model id it was built for.
 _INSTANCES: dict[str, Embedder] = {}
 
 
 def get_embedder(settings: Settings | None = None) -> Embedder | None:
-    """The embedder this deployment is configured for, or None if it has none.
-
-    **None is a supported answer, not a failure.** A deployment with no
-    embedding key still ingests documents and still searches them lexically —
-    that is what `embedding` being nullable buys — so the absence of
-    configuration degrades retrieval rather than breaking it. Raising here would
-    make an optional capability a boot requirement.
-
-    **This is the one place an embedder is built**, which is what makes B-040's
-    guard possible: the test suite wraps this function, and a caller that
-    constructed `OpenAIEmbedder` for itself would be invisible to it.
-    """
+    """The embedder this deployment is configured for, or None if it has none."""
     resolved = settings if settings is not None else get_settings()
     model = resolved.embeddings_model
     if not model or resolved.openai_api_key is None:
@@ -276,9 +181,7 @@ def get_embedder(settings: Settings | None = None) -> Embedder | None:
     if cached is not None:
         return cached
 
-    # Before the first vector is written rather than at the insert that would
-    # reject it: a mismatch here names both numbers and the migration that fixed
-    # one of them.
+    # Before the first vector is written rather than at the insert that would reject it.
     check_dimensions(resolved)
     built = OpenAIEmbedder(settings=resolved)
     _INSTANCES[model] = built
@@ -299,25 +202,7 @@ async def embed_texts(
     actor_user_id: uuid.UUID | None = None,
     settings: Settings | None = None,
 ) -> list[tuple[float, ...]]:
-    """Embed everything, in batches, and meter every call including the failures.
-
-    Returns one vector per input, in input order — the contract ingest pairs
-    chunks against.
-
-    **A failing batch is metered before it raises**, which is the same rule
-    `llm/service.py` follows: a provider that died mid-generation has still
-    consumed tokens, and a ledger that only records successes understates the
-    bill exactly when someone is trying to find out why it is high.
-
-    **``run_id`` is what makes an embedding call part of a run's bill**
-    (**B-073**). D-019's ceiling is checked before each batch against that run's
-    own ledger rows, exactly as `llm/service.complete` checks it before each
-    chat call — so an agent that searches its documents on every iteration
-    cannot spend past the cap by spending somewhere the cap was not looking.
-    A call with no run is not capped, which is the same hole `llm/budget.py`
-    states plainly: there is nothing to accumulate against. Ingest is that case,
-    and it is bounded by the size of the upload rather than by a loop.
-    """
+    """Embed everything, in batches, and meter every call including the failures."""
     resolved = settings if settings is not None else get_settings()
     size = max(1, resolved.embeddings_batch)
     model = getattr(embedder, "model", resolved.embeddings_model or "unknown")
@@ -325,9 +210,7 @@ async def embed_texts(
     out: list[tuple[float, ...]] = []
     for start in range(0, len(texts), size):
         window = list(texts[start : start + size])
-        # Before the call, never after: a ceiling enforced afterwards is a
-        # report. `RunCostExceededError` is an `LLMError`, so a caller that
-        # already handles a provider failure handles exhaustion too.
+        # Before the call, never after: a ceiling enforced afterwards is a report.
         await budget.assert_within_limit(
             org_id=org_id, run_id=run_id, model=str(model), settings=resolved
         )
@@ -371,24 +254,12 @@ async def embed_texts(
 
 
 def _as_int(value: object) -> int:
-    """A provider's number, or zero.
-
-    Never raises: a usage block arriving in an unexpected shape should cost the
-    ledger its precision, not the caller its embeddings. The row still gets
-    written, with `estimated` set, which is the distinction WP6.1 built that flag
-    for.
-    """
+    """A provider's number, or zero."""
     return int(value) if isinstance(value, int | float) else 0
 
 
 def _as_float(value: object) -> float:
-    """One component of a vector, and this one *does* raise.
-
-    The opposite call from `_as_int`, deliberately: a malformed usage count is a
-    cosmetic loss, while a malformed vector is a wrong answer to every future
-    search that touches it. Better to lose the batch than to store a coordinate
-    somebody invented.
-    """
+    """One component of a vector, and this one does raise."""
     if not isinstance(value, int | float):
         raise EmbeddingError("the embedding provider returned a non-numeric vector component")
     return float(value)
@@ -416,12 +287,7 @@ def _failure(response: httpx.Response) -> EmbeddingError:
 
 
 def _detail(response: httpx.Response) -> str:
-    """The provider's own words about what it refused, truncated.
-
-    Everything here is `object` until proven otherwise: this text reaches the
-    ledger and the logs, so the one thing it must not do is raise on the way to
-    describing a failure.
-    """
+    """The provider's own words about what it refused, truncated."""
     try:
         body = cast(object, response.json())
     except ValueError:
@@ -432,17 +298,11 @@ def _detail(response: httpx.Response) -> str:
             message: object = cast(JsonObject, error).get("message")
             if message is not None:
                 return str(message)[:ERROR_TEXT_LIMIT]
-    # Falls back to the raw body rather than to a re-serialised parse of it: the
-    # text is what the provider actually sent, and re-encoding a half-understood
-    # structure to describe a failure is a second thing that can go wrong while
-    # the first is being reported.
+    # Falls back to the raw body rather than to a re-serialised parse of it.
     return response.text[:ERROR_TEXT_LIMIT]
 
 
-#: A last guard against the two constants drifting. The column's width is set by
-#: a migration and the setting is what the provider is checked against; if they
-#: ever disagree, every insert fails at runtime with a constraint error. Asserted
-#: at import so the process refuses to start instead.
+#: A last guard against the two constants drifting.
 def check_dimensions(settings: Settings | None = None) -> None:
     """Raise if configuration and the column disagree about the vector's width."""
     resolved = settings if settings is not None else get_settings()

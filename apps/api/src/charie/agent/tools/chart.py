@@ -1,28 +1,4 @@
-"""The chart tool: a picture of a result this run already has (WP11.1, B-048).
-
-Architecture Part 3 removed the code sandbox from V1 and replaced it with
-**spec-based charts** — the agent emits a validated Vega-Lite spec, the browser
-renders it, and nothing executes server-side. This is the tool the model calls;
-`agent/charts.py` is the judgement it delegates to.
-
-**It charts a result, never a claim.** The only thing it accepts is an
-`execution_id` this run produced, and the values come from the stored artifact —
-already masked by the DAL on the way in. So a chart cannot show a number no query
-returned, which is the same rule citations follow and for the same reason: a
-picture nobody can trace back to a query is decoration that looks like evidence
-(**B-048**).
-
-**Another run's execution is not chartable.** The lookup is scoped to this
-organization by row-level security and to this run by `run_id`, so a model that
-names an id from somewhere else gets a refusal rather than somebody else's data
-in a picture.
-
-**A refusal is a result, not an error.** `ToolError` is for a tool that could not
-do its job; declining to draw is the tool doing exactly its job. The model sees
-the reason and may ask for a different chart, and the reader is told why there is
-no picture — which is the whole point of `charts.decide` returning a sentence
-rather than None.
-"""
+"""The chart tool: a picture of a result this run already has (WP11.1, B-048)."""
 
 from __future__ import annotations
 
@@ -78,13 +54,7 @@ class CreateChartOut(BaseModel):
 async def _frame_for(
     *, org_id: uuid.UUID, run_id: uuid.UUID, execution_id: uuid.UUID
 ) -> Frame | None:
-    """The stored result for one of this run's executions, or None.
-
-    None covers every way a result can be absent — an id from another run, an
-    artifact whose retention has passed, a query that never stored one — because
-    the caller says the same thing to a reader in all three cases and a picture
-    is not the place to explain a retention policy.
-    """
+    """The stored result for one of this run's executions, or None."""
     async with org_session(org_id) as session:
         row = (
             await session.execute(
@@ -111,17 +81,7 @@ async def _frame_for(
     stored = json.loads(payload)
     columns = tuple(str(name) for name in stored.get("columns", []))
     rows = tuple(tuple(row) for row in stored.get("rows", []))
-    # **B-103.** A `Decimal` cannot be a JSON number without either a raw-text
-    # injection the standard library will not do or a `float` that rounds a
-    # customer's money, so it is stored as a string — and the writer records
-    # what the column held. Rebuilding the Decimal from that string is exact at
-    # any size and precision, and it is *reading a declaration* rather than
-    # deciding that text which looks numeric is a number, which would turn a
-    # postcode into a measure.
-    #
-    # Absent for anything written before the type was recorded. Those stay
-    # strings and the chart declines — see `_stale_numeric` for why that is the
-    # honest outcome rather than an unlucky one.
+    # B-103.
     types = tuple(str(kind) for kind in stored.get("column_types", ()))
     if types:
         rows = tuple(
@@ -135,14 +95,7 @@ async def _frame_for(
 
 
 def _as_number(value: object) -> object:
-    """A stored numeric cell, back as a number. Exact, or left alone.
-
-    `Decimal` rather than `float`: this is money as often as not, and the whole
-    reason the value travelled as a string is that rounding it was unacceptable.
-    A value that will not parse is returned untouched rather than dropped — the
-    column's type says a number was intended, and a cell that is not one is a
-    fact the chart layer should see rather than a `None` it cannot explain.
-    """
+    """A stored numeric cell, back as a number."""
     if isinstance(value, str):
         try:
             return Decimal(value)
@@ -157,8 +110,7 @@ async def _create_chart_spec(context: ToolContext, params: BaseModel) -> BaseMod
     try:
         execution_id = uuid.UUID(args.execution_id)
     except ValueError:
-        # Not a refusal about the data: the model named something that is not an
-        # execution id at all, and telling it so is what lets it correct itself.
+        # Not a refusal about the data: the model named something that is not an execution id at...
         raise ToolError(
             f"{args.execution_id!r} is not a query id from this run.",
             code="no_such_execution",
@@ -177,17 +129,7 @@ async def _create_chart_spec(context: ToolContext, params: BaseModel) -> BaseMod
             code="no_result",
         )
 
-    # **The platform chooses the form; the model chose the result** (WP13.20).
-    # `shape_of` reads the frame that actually came back and says what it should
-    # be drawn as — a date against a number is a line, a category against a
-    # number is a bar, and a spare category becomes a *series* rather than a
-    # second answer. Decided here because this is where the frame is already
-    # loaded, and reading it twice for a picture would be a round trip for
-    # nothing.
-    #
-    # **Overridden, not removed.** `ChartAsk` keeps its fields: narrowing a
-    # schema that is `extra="forbid"` is D-044's trap, and the cost of leaving
-    # them is a few tokens the model spends being ignored.
+    # The platform chooses the form; the model chose the result (WP13.20).
     shape = shape_of(frame)
     if not shape.draws:
         return CreateChartOut(
@@ -219,7 +161,6 @@ CREATE_CHART_SPEC = Tool(
     ),
     params=CreateChartIn,
     handler=_create_chart_spec,
-    # It reads a result this run already paid for and touches no customer
-    # database, so it costs a step rather than a query.
+    # It reads a result this run already paid for and touches no customer database.
     budget_cost=1,
 )

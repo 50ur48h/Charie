@@ -1,27 +1,6 @@
 "use client";
 
-/**
- * The organization's own documents (plan WP10.1b, architecture 5.5).
- *
- * The screen adds no behaviour. Everything it shows is a row the API already
- * returns, which is what architecture 3.1 means by a deliberately thin
- * frontend. Three rules shape it rather than decorate it.
- *
- *   1. **A Reader is not shown controls they cannot use** (B-008). Uploading,
- *      re-indexing and deleting are Contributor-or-Admin; the API refuses and
- *      audits them anyway, and offering the button teaches people the product
- *      is broken rather than that they lack permission. Unknown role fails
- *      closed, which costs a Contributor one page load.
- *   2. **A part-indexed document says so in words.** `embedded_count` below
- *      `chunk_count` means the text is searchable by wording but not yet by
- *      meaning — a real and temporary state the API reports deliberately, and
- *      rounding it up to "indexed" would hide the one thing somebody waiting on
- *      a large upload wants to know.
- *   3. **A failure is rendered as the thing to act on**, not as another line of
- *      metadata. `failure_reason` is written for whoever uploaded the file — a
- *      scanned PDF says it needs OCR — so it is shown as-is rather than
- *      replaced with a generic message.
- */
+/** The organization's own documents (plan WP10.1b, architecture 5.5). */
 
 import { BookOpen, CircleAlert, FileText, FileUp, RotateCw, Trash2, Upload, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -52,13 +31,7 @@ const KINDS: Record<string, string> = {
   "application/pdf": "PDF",
 };
 
-/**
- * How much of a document is searchable, in words.
- *
- * Deliberately three outcomes rather than two. "Indexed" alone would claim a
- * document is fully searchable when its vectors have not arrived, and that is
- * the state a large upload spends the longest in.
- */
+/** How much of a document is searchable, in words. */
 export function indexingSummary(document: KnowledgeDocument): string {
   if (document.status === "failed") {
     return document.chunk_count > 0
@@ -75,16 +48,7 @@ export function indexingSummary(document: KnowledgeDocument): string {
   );
 }
 
-/**
- * How far through indexing a document is, or `null` when there is no honest
- * fraction to draw.
- *
- * **A meter needs two real numbers** (docs/design.md). Before any passage is
- * stored the denominator does not exist, so there is nothing to draw and the
- * words carry it instead — a bar at 0% would be claiming a total nobody knows.
- * A failed document gets no meter either: it is not part-way anywhere, it has
- * stopped.
- */
+/** How far through indexing a document is, or `null` when there is no honest fraction to draw. */
 function indexedFraction(document: KnowledgeDocument): number | null {
   if (document.status === "failed" || document.chunk_count === 0) return null;
   return Math.min(1, document.embedded_count / document.chunk_count);
@@ -108,8 +72,7 @@ export function Documents({ orgId, role }: { orgId: string; role: string | null 
   const session = useSession();
   const api = useMemo(() => createApi(session.getToken), [session.getToken]);
 
-  // Uploading a document changes what every future run is told a term means, so
-  // it is Contributor-or-Admin (architecture 10.2). Unknown role fails closed.
+  // Uploading a document changes what every future run is told a term means.
   const canWrite = role === "admin" || role === "contributor";
 
   const [documents, setDocuments] = useState<KnowledgeDocument[] | null>(null);
@@ -162,9 +125,7 @@ export function Documents({ orgId, role }: { orgId: string; role: string | null 
     if (!file) return;
     await run(async () => {
       await api.uploadDocument(orgId, file, title);
-      // Cleared inside the action, so it only happens on success: a failed
-      // upload leaves the chosen file in place and the person can retry without
-      // finding it again.
+      // Cleared inside the action, so it only happens on success.
       setFile(null);
       setTitle("");
       if (fileInput.current) fileInput.current.value = "";
@@ -367,9 +328,7 @@ export function Documents({ orgId, role }: { orgId: string; role: string | null 
                       ) : null}
                     </div>
 
-                    {/* Drawn only from `chunk_count` and `embedded_count`, and
-                        only when both exist. The words above say the same thing
-                        and are what a reader with no colour or no meter gets. */}
+                    {/* Drawn only from `chunk_count` and `embedded_count`. */}
                     {fraction !== null && (
                       <span
                         className="mt-2.5 block h-1.5 max-w-[320px] overflow-hidden rounded-full bg-surface-2"
@@ -386,8 +345,7 @@ export function Documents({ orgId, role }: { orgId: string; role: string | null 
                       </span>
                     )}
 
-                    {/* The one thing on this row a person has to act on, so it
-                        is not styled as another line of metadata. */}
+                    {/* The one thing on this row a person has to act on. */}
                     {document.failure_reason ? (
                       <div className="mt-3 flex items-start gap-2.5 rounded-md bg-bad-soft/60 px-3.5 py-2.5 text-[13px] leading-relaxed text-text-2">
                         <CircleAlert aria-hidden="true" className="mt-[3px] size-4 shrink-0 text-bad-ink" />

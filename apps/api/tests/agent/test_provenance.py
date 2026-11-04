@@ -1,11 +1,4 @@
-"""Which rows are observed and which are modelled (D-053, D-058, B-157).
-
-The ranking rule's shape is the thing these tests hold. A straight sort by
-provenance is the obvious implementation and it is wrong on the very dataset that
-motivated the feature: `source_mode` splits MiseQ's *dimensions* as sharply as
-its facts, so sorting the whole bundle would put seven real dimensions ahead of
-`fact_waste` on a question about waste.
-"""
+"""Which rows are observed and which are modelled (D-053, D-058, B-157)."""
 
 from __future__ import annotations
 
@@ -27,9 +20,7 @@ def _reorder(*cards: tuple[str, bool, tuple[str, ...]]) -> list[str]:
     return [card[0] for card in out]
 
 
-# ---------------------------------------------------------------------------
-# Reading the label
-# ---------------------------------------------------------------------------
+# --- Reading the label ---
 
 
 def test_the_modes_come_from_what_the_profiler_measured() -> None:
@@ -46,28 +37,20 @@ def test_an_unprofiled_column_says_nothing_either() -> None:
 
 
 def test_a_table_is_judged_by_its_weakest_mode() -> None:
-    """`fact_recipe_portion` really does hold 369 synthetic rows and 367 derived
-    ones. An answer resting on it can rest on either, so the caveat is about the
-    worse of the two."""
+    """`fact_recipe_portion` really does hold 369 synthetic rows and 367 derived ones."""
     assert rank_of(["derived", "synthetic"]) == rank_of(["synthetic"])
 
 
 def test_an_unlabelled_table_ranks_with_the_observed_ones() -> None:
-    """Absence of a label is not evidence of modelling. Demoting every unlabelled
-    table would demote the whole of any database that does not use this
-    convention — which is most of them."""
+    """Absence of a label is not evidence of modelling."""
     assert rank_of([]) == rank_of(["real"])
 
 
-# ---------------------------------------------------------------------------
-# The ranking rule
-# ---------------------------------------------------------------------------
+# --- The ranking rule ---
 
 
 def test_observed_data_comes_first_among_tables_that_could_each_answer() -> None:
-    """**B-157 in miniature.** Retrieval put the back-cast first because its name
-    contains the word the question used; both tables offer measures, so the
-    observed one is what the model sees first."""
+    """B-157 in miniature."""
     assert _reorder(
         _card("fact_sale_monthly_history", measures=True, modes=("synthetic",)),
         _card("fact_sale", measures=True, modes=("real",)),
@@ -75,11 +58,7 @@ def test_observed_data_comes_first_among_tables_that_could_each_answer() -> None
 
 
 def test_a_dimension_never_overtakes_the_table_that_answers_the_question() -> None:
-    """**The measurement that killed the obvious implementation.** On MiseQ,
-    `dim_calendar`, `dim_outlet` and `dim_vertical` are `real` while `fact_waste`
-    is `synthetic`. A straight sort would put all three ahead of it — and with
-    `CARDS_KEPT_IN_FULL` at five, the one table that answers a waste question
-    would lose its detail to a three-row dimension."""
+    """The measurement that killed the obvious implementation."""
     order = _reorder(
         _card("fact_waste", measures=True, modes=("synthetic",)),
         _card("dim_calendar", measures=False, modes=("real",)),
@@ -92,8 +71,7 @@ def test_a_dimension_never_overtakes_the_table_that_answers_the_question() -> No
 
 
 def test_nothing_is_dropped_however_modelled_it_is() -> None:
-    """Context, not a prohibition (D-058). 2023-2024 exists nowhere else in this
-    database, so a question about it must still be answerable."""
+    """Context, not a prohibition (D-058). 2023-2024 exists nowhere else in this database."""
     order = _reorder(
         _card("fact_sale_monthly_history", measures=True, modes=("synthetic",)),
         _card("fact_sale", measures=True, modes=("real",)),
@@ -115,9 +93,7 @@ def test_one_candidate_is_left_exactly_where_it_was() -> None:
     assert _reorder(_card("fact_waste", measures=True, modes=("synthetic",))) == ["fact_waste"]
 
 
-# ---------------------------------------------------------------------------
-# What the reader is told
-# ---------------------------------------------------------------------------
+# --- What the reader is told ---
 
 
 def test_an_answer_built_from_modelled_rows_says_so_in_words() -> None:

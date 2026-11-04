@@ -1,21 +1,4 @@
-"""users.email becomes nullable, and fabricated addresses are erased (B-009)
-
-An identity provider sends an ``email`` claim only when its app registration asks
-for one. Entra External ID does not send it by default. With a NOT NULL column,
-just-in-time provisioning had to invent something, and wrote
-``<subject>@unknown.invalid`` — a value that looks like an address, is not one,
-and would be trusted by every later feature that reads the column.
-
-A column that cannot say "unknown" makes something up. This revision lets it say
-so, and deletes the addresses that were invented before it could.
-
-``.invalid`` is reserved by RFC 2606 and can never be a real address, so the
-cleanup below cannot match a genuine one.
-
-Revision ID: 0005
-Revises: 0004
-Create Date: 2026-08-12
-"""
+"""users.email becomes nullable, and fabricated addresses are erased (B-009)"""
 
 from __future__ import annotations
 
@@ -38,9 +21,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    # Restoring NOT NULL means restoring the fiction, because that is what the
-    # previous schema required. Written explicitly so that a downgrade is a
-    # decision someone reads rather than a constraint error they work around.
+    # Restoring NOT NULL means restoring the fiction.
     op.execute(
         f"UPDATE users SET email = external_subject || '{FABRICATED_SUFFIX}' WHERE email IS NULL"
     )

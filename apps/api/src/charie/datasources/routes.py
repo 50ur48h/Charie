@@ -1,15 +1,4 @@
-"""Data-source routes (architecture Part 10.2).
-
-Managing data sources is Admin-only (Part 6.2). Listing them is not: every member
-needs to know which databases their questions can reach, and the list carries
-nothing a Reader may not see.
-
-The response models are the enforcement point for "credentials are never echoed".
-There is no field on ``DataSourceOut`` that could carry one — not optional, not
-nullable, absent — so echoing a password would take a schema change and a review,
-not a slip. ``test_no_response_model_exposes_a_credential`` walks the OpenAPI
-schema and fails if one ever appears.
-"""
+"""Data-source routes (architecture Part 10.2)."""
 
 from __future__ import annotations
 
@@ -30,9 +19,7 @@ from charie.orgs.service import ConflictError
 
 router = APIRouter(prefix="/v1", tags=["data sources"])
 
-#: Mirrors ``models.DATA_SOURCE_ENGINES``; a test asserts the two agree. Spelled
-#: as a Literal so an unknown engine is a 422 with a list of what is accepted,
-#: rather than a 500 from a CHECK constraint at the far end.
+#: Mirrors ``models.DATA_SOURCE_ENGINES``; a test asserts the two agree.
 Engine = Literal["pg", "mssql"]
 
 TLS_MODE_FIELD = Field(
@@ -166,11 +153,7 @@ def _not_found() -> HTTPException:
 
 
 def _refused(error: TlsPolicyError) -> HTTPException:
-    """A TLS mode this address may not use is the caller's mistake to fix.
-
-    422 rather than 400: it is the same class of answer pydantic gives for a
-    field it will not accept, and the message names the modes that would work.
-    """
+    """A TLS mode this address may not use is the caller's mistake to fix."""
     return HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error))
 
 
@@ -284,12 +267,7 @@ async def delete_data_source(
 async def test_data_source(
     context: Annotated[RequestContext, Depends(require_admin)], data_source_id: DataSourceId
 ) -> TestResultOut:
-    """Answers 200 for an unusable data source too.
-
-    "Your credentials can write to 14 tables" is a successful test with a bad
-    result, not a failed request, and an admin needs the detail either way. The
-    row records what was found; the response says it in words.
-    """
+    """Answers 200 for an unusable data source too."""
     try:
         health = await service.test_data_source(
             org_id=context.org_id,

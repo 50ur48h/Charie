@@ -1,16 +1,4 @@
-"""The Key Vault backend, and the translation that must not collide.
-
-Two things are worth testing here and they are not the same thing. The provider's
-behaviour — store, fetch, delete, and what a missing secret does — is ordinary.
-The **name translation is not ordinary**, because a lossy one would let two data
-sources resolve to a single secret, and the failure that produces is one customer
-holding another's database credential. That is why `secret_name_for` refuses
-characters it could technically fold, and why most of this file is about refusal.
-
-The client is a fake rather than a mock of the SDK's surface: what is under test
-is this module's logic, and a fake that stores bytes in a dict cannot drift from
-an SDK signature the way a hand-written mock silently can.
-"""
+"""The Key Vault backend, and the translation that must not collide."""
 
 from __future__ import annotations
 
@@ -74,9 +62,7 @@ def _provider(client: FakeSecretClient) -> KeyVaultSecretsProvider:
     )
 
 
-# --------------------------------------------------------------------------
-# The translation. Most of the risk in this module lives here.
-# --------------------------------------------------------------------------
+# --- The translation ---
 
 
 def test_a_reference_becomes_a_legible_vault_name() -> None:
@@ -86,23 +72,13 @@ def test_a_reference_becomes_a_legible_vault_name() -> None:
 
 @pytest.mark.parametrize("bad", [f"ds/{ORG}/some.source/credentials", f"ds/{ORG}/a_b/credentials"])
 def test_characters_that_would_collide_are_refused_not_folded(bad: str) -> None:
-    """The point of the whole module.
-
-    `.` and `_` are legal in a reference and illegal in a vault name. Folding
-    them onto `-` would map `a.b`, `a/b` and `a_b` to one secret — two customers'
-    credentials at one address. Refusing is the only safe direction.
-    """
+    """The point of the whole module."""
     with pytest.raises(InvalidSecretRefError, match="share one secret"):
         secret_name_for(bad)
 
 
 def test_the_fold_that_is_refused_would_really_have_collided() -> None:
-    """Asserts the hazard, not just the guard.
-
-    Without this, the test above passes just as well against a rule that refuses
-    for no reason. These two references are distinct and their naive translations
-    are identical.
-    """
+    """Asserts the hazard, not just the guard."""
     a, b = f"ds/{ORG}/a.b/credentials", f"ds/{ORG}/a/b/credentials"
     assert a != b
     assert a.replace("/", "-").replace(".", "-") == b.replace("/", "-").replace(".", "-")
@@ -113,9 +89,7 @@ def test_a_traversing_reference_never_reaches_the_vault() -> None:
         secret_name_for("ds/../../etc/passwd")
 
 
-# --------------------------------------------------------------------------
-# The three operations.
-# --------------------------------------------------------------------------
+# --- The three operations ---
 
 
 @pytest.mark.asyncio
@@ -140,11 +114,7 @@ async def test_the_stored_value_is_json_under_the_translated_name() -> None:
 
 @pytest.mark.asyncio
 async def test_an_unchanged_credential_serialises_identically() -> None:
-    """Key Vault versions on every write, so a stable encoding is not cosmetic.
-
-    Re-registering a source with the same credential should not add a version,
-    and a dict whose keys arrive in a different order is the same credential.
-    """
+    """Key Vault versions on every write, so a stable encoding is not cosmetic."""
     client = FakeSecretClient()
     provider = _provider(client)
 
@@ -179,8 +149,7 @@ async def test_unreadable_json_is_not_found_rather_than_a_crash() -> None:
 
 @pytest.mark.asyncio
 async def test_deleting_something_that_is_not_there_is_success() -> None:
-    """The interface requires it: callers reach delete cleaning up after a
-    data source that is already gone, and a raise leaves them nothing to do."""
+    """The interface requires it: callers reach delete cleaning up after a data source that..."""
     await _provider(FakeSecretClient()).delete(REF)
 
 
@@ -196,26 +165,18 @@ async def test_delete_removes_it() -> None:
 
 
 def test_a_vault_url_is_required() -> None:
-    """Without one there is nowhere to put credentials, and the API must say so
-    rather than construct a client that fails later on a request path."""
+    """Without one there is nowhere to put credentials."""
     with pytest.raises(RuntimeError, match="KEY_VAULT_URL"):
         KeyVaultSecretsProvider(vault_url="")
 
 
-# --------------------------------------------------------------------------
-# Reachability: the factory really selects this backend (AGENTS.md's rule).
-# --------------------------------------------------------------------------
+# --- Reachability: the factory really selects this backend (AGENTS.md's rule) ---
 
 
 def test_the_factory_builds_this_provider_when_the_deployment_asks_for_it(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The live path, not the constructor.
-
-    A provider that works when a test instantiates it directly and is never
-    chosen by `build_secrets_provider` is the defect AGENTS.md names — B-083,
-    B-100, B-109. This asserts the selection, so the branch cannot rot.
-    """
+    """The live path, not the constructor."""
     built: dict[str, Any] = {}
 
     class _Recorder(KeyVaultSecretsProvider):

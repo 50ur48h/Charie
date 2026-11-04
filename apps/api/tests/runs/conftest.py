@@ -1,15 +1,4 @@
-"""Fixtures for the runs suite.
-
-Against a real platform database, for the same reason the meter and the audit
-hook are: the properties worth testing here are the ones the database enforces —
-the CHECK constraint pairing a terminal status with a finish time, the unique
-index behind idempotency, the unique ``(run_id, seq)`` behind the replay
-contract, and row-level security over five new tenant tables.
-
-Two users in one organization, always. Ownership is the access rule for
-conversations (architecture 6.2 grants every role "view *own* conversations"),
-and a fixture with one user could not tell a working check from an absent one.
-"""
+"""Fixtures for the runs suite."""
 
 from __future__ import annotations
 
@@ -31,8 +20,7 @@ class Tenant:
 
     org_id: uuid.UUID
     user_id: uuid.UUID
-    #: A second member of the same organization. Same tenant, different person —
-    #: which is the case row-level security cannot help with.
+    #: A second member of the same organization.
     other_user_id: uuid.UUID
 
 

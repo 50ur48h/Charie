@@ -1,10 +1,4 @@
-"""The front door: `dal.run` records on every path (architecture Part 7.1).
-
-No database here on purpose. What is under test is the *wiring* — which recorder
-runs for which outcome, and that none of them can be skipped — and that is a
-property of this module rather than of any table. The recorders themselves are
-tested against a real database in `test_audit_hook.py`.
-"""
+"""The front door: `dal.run` records on every path (architecture Part 7.1)."""
 
 from __future__ import annotations
 
@@ -29,9 +23,7 @@ class Recorder:
 
     def __init__(self) -> None:
         self.calls: list[tuple[str, dict[str, Any]]] = []
-        #: What the stubbed ``record_success`` hands back. `dal.run` puts this on
-        #: the returned `Execution` so a citation can name a row (WP7.2a), so a
-        #: stub returning None would be a stub of the wrong shape.
+        #: What the stubbed ``record_success`` hands back.
         self.execution_id = uuid.uuid4()
 
     def hook(self, name: str) -> Any:
@@ -99,14 +91,7 @@ async def test_a_query_that_ran_is_recorded_as_a_success(
 async def test_the_recorded_row_id_comes_back_on_the_execution(
     recorder: Recorder, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """What makes a citation checkable (architecture 4.2, WP7.2a).
-
-    A finding may only cite a real ``query_executions`` row, so the agent has to
-    learn the id of the row this call just wrote. The executor cannot supply it —
-    it does not do the writing — so the front door is the only layer that can,
-    and the alternative was the agent re-finding its own row by hash, which is a
-    guess dressed as a reference.
-    """
+    """What makes a citation checkable (architecture 4.2, WP7.2a)."""
     _executes(monkeypatch, _execution())
 
     execution = await run(store=object())  # pyright: ignore[reportArgumentType]
@@ -117,8 +102,7 @@ async def test_the_recorded_row_id_comes_back_on_the_execution(
 async def test_an_execution_the_front_door_did_not_record_has_no_id(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """None is the honest answer, not a placeholder: the executor on its own
-    wrote no row, and nothing but the front door should be calling it."""
+    """None is the honest answer, not a placeholder: the executor on its own wrote no row."""
     _executes(monkeypatch, _execution())
 
     assert _execution().execution_id is None
@@ -127,8 +111,7 @@ async def test_an_execution_the_front_door_did_not_record_has_no_id(
 async def test_a_refusal_is_recorded_and_then_re_raised(
     recorder: Recorder, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The caller gets exactly the violation it would have got without any of
-    this, and the trail has the row either way."""
+    """The caller gets exactly the violation it would have got without any of this."""
     violation = PolicyViolation(ViolationCode.DENIED_COLUMN, "no", subject="a.b.c")
     _executes(monkeypatch, violation)
 
@@ -153,8 +136,7 @@ async def test_a_connector_failure_is_recorded_and_then_re_raised(
 async def test_the_refusal_row_carries_the_submitted_sql(
     recorder: Recorder, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A refused statement has no canonical form — canonicalising is what it did
-    not get to — so what is stored is what was asked for."""
+    """A refused statement has no canonical form — canonicalising is what it did not get to."""
     _executes(monkeypatch, PolicyViolation(ViolationCode.SYSTEM_SCHEMA, "no", subject="pg_catalog"))
 
     with pytest.raises(PolicyViolation):
@@ -185,8 +167,7 @@ async def test_the_failure_row_carries_a_hash_of_what_was_sent(
 async def test_who_ran_it_and_which_run_are_carried_through(
     recorder: Recorder, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`who` is what makes the trail answer architecture 8.2's question, and it
-    is the field most easily lost between layers."""
+    """`who` is what makes the trail answer architecture 8.2's question."""
     _executes(monkeypatch, _execution())
     actor, run_id = uuid.uuid4(), uuid.uuid4()
 
@@ -200,8 +181,7 @@ async def test_who_ran_it_and_which_run_are_carried_through(
 async def test_every_outcome_writes_exactly_one_record(
     recorder: Recorder, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Not two, and never none. A second row would double-count an access; none
-    would leave a query invisible."""
+    """Not two, and never none. A second row would double-count an access."""
     for outcome in (
         _execution(),
         PolicyViolation(ViolationCode.DENIED_COLUMN, "no"),

@@ -1,15 +1,4 @@
 -- Pizza chain demo database — schema v0 (plan WP0.4, architecture Part 9.2).
---
--- This schema is a fixture with two deliberate properties. Do not "fix" either.
---
---   1. There is NO order_items table. ORDERS and MENU_ITEMS exist, but nothing
---      links them, so item-level sales are genuinely unanswerable. Phase 8's
---      capability check must detect this and refuse honestly instead of
---      inventing a join. See implementation-plan §6 WP8.2.
---   2. customers.email and customers.phone are real-shaped PII. Phase 4's
---      classifier must find them and default their column policy to `mask`.
---
--- Reseeding drops and rebuilds everything, so the dataset is reproducible.
 
 DROP TABLE IF EXISTS payments CASCADE;
 DROP TABLE IF EXISTS orders CASCADE;

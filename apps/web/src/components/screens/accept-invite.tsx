@@ -26,8 +26,7 @@ export function AcceptInvite() {
   const api = useMemo(() => createApi(session.getToken), [session.getToken]);
   const params = useSearchParams();
 
-  // Seeded from the link on first render rather than in an effect: the value
-  // is known immediately, and setting it afterwards would re-render for nothing.
+  // Seeded from the link on first render rather than in an effect: the value is known immediately.
   const [token, setToken] = useState(() => params.get("token") ?? "");
   const [joined, setJoined] = useState<Joined | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -40,9 +39,7 @@ export function AcceptInvite() {
       const result = await api.acceptInvitation(token.trim());
       setJoined({ orgId: result.org_id, orgName: result.org_name, role: result.role });
     } catch (cause) {
-      // The API answers every bad token identically on purpose — unknown,
-      // expired and already-used are indistinguishable, or this becomes an
-      // oracle for guessing tokens. Pass its wording straight through.
+      // The API answers every bad token identically on purpose — unknown.
       setError(cause instanceof Error ? cause.message : "That invitation could not be accepted");
     } finally {
       setBusy(false);

@@ -1,18 +1,8 @@
-/**
- * Reading a table cell the way a reader would: is it a number, which way does
- * it point, and what does it sort by.
- */
+/** Reading a table cell the way a reader would: is it a number, which way does it point. */
 
 const MINUS = /[−–]/g;
 
-/**
- * Whether a cell holds a number rather than words.
- *
- * Deliberately strict: a sign, a currency mark, digits, separators and a
- * percent sign. "2025-12" is a period and not a number, and "Ayam Penyet"
- * obviously is not — anything it cannot be sure about stays left, because a
- * wrongly right-aligned word is worse than a left-aligned number.
- */
+/** Whether a cell holds a number rather than words. */
 export function looksNumeric(text: string): boolean {
   const value = text.trim().replace(MINUS, "-");
   if (value.length === 0) return false;
@@ -58,13 +48,7 @@ const UP_WORDS =
 const DOWN_WORDS =
   /\b(down|fell|fallen|falling|drop(?:ped|s)?|declined?|declines|declining|decreased?|decreases|decreasing|lower|lost|loss(?:es)?|shrank|shrunk|slump(?:ed)?|plunged?|dipped|behind|short(?:fall)?)\b/i;
 
-/**
- * Which way an emphasised phrase points, if it carries a number and a
- * direction — "up 6.2%", "Downtown Austin, down 18.2%", "−$21.4K".
- *
- * Only a phrase with a number qualifies: a bold name stays bold. A phrase that
- * points both ways, or neither, stays neutral.
- */
+/** Which way an emphasised phrase points, if it carries a number and a direction — "up 6.2%". */
 export function markTone(text: string): "up" | "down" | null {
   if (!/\d/.test(text)) return null;
   const value = text.replace(MINUS, "-");

@@ -1,17 +1,4 @@
-"""The embedding client, against a stub transport (WP10.1a).
-
-No network and no key: every test here drives `OpenAIEmbedder` through an
-`httpx.MockTransport`, which is what lets them assert on the **request** as well
-as the response. B-040's rule applies with full force — a suite that can reach a
-real provider is a suite that can spend real money, and embedding is the one path
-in `knowledge/` that costs anything.
-
-The test worth reading first is
-``test_a_reordered_response_is_paired_by_index_not_by_arrival``. Every other
-failure here is loud; that one is silent. If the provider returns vectors out of
-order and the code trusts arrival order, every chunk gets somebody else's vector,
-retrieval quietly returns nonsense, and nothing about the ingest looks wrong.
-"""
+"""The embedding client, against a stub transport (WP10.1a)."""
 
 from __future__ import annotations
 
@@ -87,12 +74,7 @@ async def test_one_vector_comes_back_per_text() -> None:
 
 
 async def test_a_reordered_response_is_paired_by_index_not_by_arrival() -> None:
-    """**The silent failure this module is most exposed to.**
-
-    The provider is free to return its rows in any order and says which is which
-    in `index`. Trusting arrival order attaches every vector to the wrong text,
-    retrieval returns nonsense, and nothing about the ingest looks wrong.
-    """
+    """The silent failure this module is most exposed to."""
     # Arrives second-then-first, and says so.
     embedder = _embedder(_ok([_vector(0.2), _vector(0.1)], indices=[1, 0]))
 
@@ -119,8 +101,7 @@ async def test_the_request_names_the_configured_model_and_sends_the_texts() -> N
 
 
 async def test_a_wrong_width_is_refused_where_the_model_id_is_still_in_scope() -> None:
-    """Rather than at the insert, which would report a column constraint and say
-    nothing about which model caused it or what the deployment expects."""
+    """Rather than at the insert, which would report a column constraint and say nothing..."""
     embedder = _embedder(_ok([_vector(0.1, size=1024)]))
 
     with pytest.raises(EmbeddingError) as caught:
@@ -133,8 +114,7 @@ async def test_a_wrong_width_is_refused_where_the_model_id_is_still_in_scope() -
 
 
 async def test_a_non_numeric_component_loses_the_batch_rather_than_being_coerced() -> None:
-    """The opposite call from a malformed usage count: that is a cosmetic loss,
-    while an invented coordinate is a wrong answer to every future search."""
+    """The opposite call from a malformed usage count: that is a cosmetic loss."""
 
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(
@@ -146,9 +126,7 @@ async def test_a_non_numeric_component_loses_the_batch_rather_than_being_coerced
 
 
 async def test_a_rate_limit_is_retryable_and_a_bad_request_is_not() -> None:
-    """The same distinction `llm/fallback.py` walks the chain on: a 429 may well
-    succeed next time, a 400 is our bug and would be our bug at the next
-    provider too."""
+    """The same distinction `llm/fallback.py` walks the chain on."""
 
     def refuse(status: int):
         def handler(request: httpx.Request) -> httpx.Response:
@@ -193,8 +171,7 @@ async def test_an_empty_input_costs_no_request_at_all() -> None:
 
 
 async def test_a_missing_model_id_refuses_before_any_call() -> None:
-    """No default in code (D-017): a stale model id either 404s or returns
-    vectors of a width the column will not accept."""
+    """No default in code (D-017): a stale model id either 404s or returns vectors of a width..."""
     with pytest.raises(EmbeddingError) as caught:
         OpenAIEmbedder(api_key="k", settings=_settings(embeddings_model=None))
 
@@ -209,8 +186,7 @@ async def test_a_missing_key_refuses_before_any_call() -> None:
 
 
 async def test_usage_is_reported_and_marked_estimated_when_absent() -> None:
-    """`estimated` is what keeps a ledger from silently mixing measured and
-    guessed numbers, which is what every cost total rests on (WP6.1)."""
+    """`estimated` is what keeps a ledger from silently mixing measured and guessed numbers."""
 
     def without_usage(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"data": [{"index": 0, "embedding": _vector(0.1)}]})
@@ -221,15 +197,12 @@ async def test_usage_is_reported_and_marked_estimated_when_absent() -> None:
     assert measured.usage.input_tokens == 42
     assert measured.usage.estimated is False
     assert guessed.usage.estimated is True
-    # An embedding produces a vector, not text: folding anything into the output
-    # column would make it mean something different here than everywhere else.
+    # An embedding produces a vector, not text.
     assert measured.usage.output_tokens == 0
 
 
 def test_the_configured_width_and_the_column_are_checked_against_each_other() -> None:
-    """They are set in two places — a migration and a setting — and if they ever
-    disagree every insert fails at runtime with a constraint error. This says so
-    at startup instead, naming both numbers."""
+    """They are set in two places — a migration and a setting."""
     from charie.knowledge.embeddings import check_dimensions
 
     check_dimensions(_settings())
@@ -240,25 +213,13 @@ def test_the_configured_width_and_the_column_are_checked_against_each_other() ->
     assert "1024" in str(caught.value) and "1536" in str(caught.value)
 
 
-# ---------------------------------------------------------------------------
-# The one door an embedder comes out of (B-073)
-# ---------------------------------------------------------------------------
-#
-# These take the `embedder_factory` fixture — the real `get_embedder`, not the
-# guarded one the session installs — because what they are about is what the
-# *product* answers. Nothing here reaches a network: building a client is not
-# calling one, and no test below embeds anything.
+# --- The one door an embedder comes out of (B-073) ---
+# These take the `embedder_factory` fixture — the real `get_embedder`.
 
 
 @pytest.fixture(autouse=True)
 def forget_built_embedders() -> Iterator[None]:
-    """No built instance survives a test, in either direction.
-
-    The factory caches, so one test's embedder would otherwise answer another
-    test's call — and an instance built from one set of settings answering
-    against another is the cross-test coupling that makes a suite stop meaning
-    what it says.
-    """
+    """No built instance survives a test, in either direction."""
     from charie.knowledge.embeddings import reset_embedder
 
     reset_embedder()
@@ -269,43 +230,35 @@ def forget_built_embedders() -> Iterator[None]:
 def test_a_deployment_with_no_embedding_model_gets_no_embedder(
     embedder_factory: Callable[..., Any],
 ) -> None:
-    """None is an answer, not a failure. Retrieval degrades to lexical, which is
-    what `knowledge_chunks.embedding` being nullable is for — raising here would
-    turn an optional capability into a boot requirement."""
+    """None is an answer, not a failure."""
     assert embedder_factory(_settings(embeddings_model=None)) is None
 
 
 def test_a_deployment_with_no_key_gets_no_embedder(
     embedder_factory: Callable[..., Any],
 ) -> None:
-    """The same answer for the other half of the configuration. A model id with
-    no key behind it cannot embed anything, and finding that out at the first
-    upload rather than here would fail a document instead of a search."""
+    """The same answer for the other half of the configuration."""
     assert embedder_factory(_settings(openai_api_key=None)) is None
 
 
 def test_a_configured_deployment_gets_one_embedder_that_admits_it_is_real(
     embedder_factory: Callable[..., Any],
 ) -> None:
-    """`is_stub` is the bit the B-040 guard reads, so it is asserted here rather
-    than assumed: a real client that failed to declare itself would be waved
-    through by the guard that exists to stop exactly this object."""
+    """`is_stub` is the bit the B-040 guard reads, so it is asserted here rather than assumed."""
     configured = _settings(openai_api_key=SecretStr("test-key"))
 
     embedder = embedder_factory(configured)
 
     assert embedder is not None
     assert embedder.is_stub is False
-    # One instance, not one per call: it holds a connection pool, and rebuilding
-    # it per search would be a TLS handshake per question.
+    # One instance, not one per call: it holds a connection pool.
     assert embedder_factory(configured) is embedder
 
 
 def test_a_width_that_disagrees_with_the_column_is_refused_at_the_door(
     embedder_factory: Callable[..., Any],
 ) -> None:
-    """Before the first vector rather than at the insert that would reject it.
-    A constraint error names a column; this names both numbers and the model."""
+    """Before the first vector rather than at the insert that would reject it."""
     with pytest.raises(EmbeddingError) as caught:
         embedder_factory(
             _settings(openai_api_key=SecretStr("test-key"), embeddings_dimensions=1024)

@@ -1,13 +1,4 @@
-"""What the coverage check will and will not say (B-157, D-058 as amended).
-
-The narrowing is the thing these tests are mostly about. This check catches an
-answer resting on a window the catalog does not describe; it does **not** catch a
-false coverage statement in general, because nothing reads the answer's prose.
-`test_a_false_sentence_over_a_correct_result_is_not_caught` is that limit written
-down as a passing test rather than as a sentence in a docstring nobody re-reads —
-someone who later reads "coverage check" and assumes the broader thing will find
-it asserted here that it is not.
-"""
+"""What the coverage check will and will not say (B-157, D-058 as amended)."""
 
 from __future__ import annotations
 
@@ -27,9 +18,7 @@ def _available(*columns: tuple[str, str, str]) -> Period | None:
     return available_period([(kind, low, high) for kind, low, high in columns])
 
 
-# ---------------------------------------------------------------------------
-# What the catalog says exists
-# ---------------------------------------------------------------------------
+# --- What the catalog says exists ---
 
 
 def test_the_available_period_is_the_widest_across_dated_columns() -> None:
@@ -42,19 +31,12 @@ def test_the_available_period_is_the_widest_across_dated_columns() -> None:
 
 
 def test_a_number_column_is_not_a_period_however_much_it_looks_like_one() -> None:
-    """`bigint` from 2020 to 2024 is a range, not a range of dates. The subset of
-    `_RANGED_TYPES` this module accepts is what keeps `qty` out of a sentence
-    about time."""
+    """`bigint` from 2020 to 2024 is a range, not a range of dates."""
     assert _available(("bigint", "2020", "2024")) is None
 
 
 def test_a_text_period_column_contributes_nothing_and_that_is_deliberate() -> None:
-    """**The case B-157 turned on.** `fact_sale_monthly_history.year_month` is
-    TEXT holding `2023-01`, so the profiler gives it no range at all (B-051: an
-    absent figure is safe and a sampled one is not). Widening `wants_range` to
-    text to fix this would reopen exactly that, so the table the wrong answer came
-    from stays invisible to this side of the comparison — and the check still
-    works, because the *other* tables in the bundle are dated."""
+    """The case B-157 turned on."""
     assert _available(("text", "2023-01", "2024-12")) is None
     assert _available(
         ("text", "2023-01", "2024-12"), ("date", "2025-01-01", "2025-12-31")
@@ -65,9 +47,7 @@ def test_an_unprofiled_column_has_no_range_rather_than_an_empty_one() -> None:
     assert available_period([("date", None, None)]) is None
 
 
-# ---------------------------------------------------------------------------
-# What the answer covered
-# ---------------------------------------------------------------------------
+# --- What the answer covered ---
 
 
 def test_the_answered_period_comes_from_the_rows_that_came_back() -> None:
@@ -78,9 +58,7 @@ def test_the_answered_period_comes_from_the_rows_that_came_back() -> None:
 
 
 def test_a_truncated_result_abstains_rather_than_reporting_its_last_row() -> None:
-    """B-051 in one argument. The last row of a capped result is a floor, and a
-    coverage sentence built on one is a fact about our row limit wearing the
-    clothes of a fact about the customer's data."""
+    """B-051 in one argument. The last row of a capped result is a floor."""
     period, reason = period_of_values(["2025-01-01", "2025-02-01"], truncated=True)
 
     assert period is None
@@ -94,14 +72,11 @@ def test_values_that_are_not_periods_abstain_with_a_reason() -> None:
     assert reason, "an abstention with no reason is indistinguishable from a pass"
 
 
-# ---------------------------------------------------------------------------
-# The comparison
-# ---------------------------------------------------------------------------
+# --- The comparison ---
 
 
 def test_an_answer_outside_what_the_catalog_records_is_reported() -> None:
-    """B-157's first screenshot, in miniature: 24 figures for 2023-2024 while
-    every dated column in the bundle ran through 2025."""
+    """B-157's first screenshot, in miniature."""
     coverage = describe(
         answered=Period(earliest="2023-01", latest="2024-12"),
         available=Period(earliest="2025-01", latest="2025-12"),
@@ -113,10 +88,7 @@ def test_an_answer_outside_what_the_catalog_records_is_reported() -> None:
 
 
 def test_an_ordinary_question_about_one_month_says_nothing_at_all() -> None:
-    """**Why the rule is containment and not "narrower".** *"Sales last month"*
-    returns one month out of a year and is completely correct; a check that
-    caveated it would be teaching people to skip caveats, which is the failure
-    D-034's budget caveat and B-146's coverage floor were both written against."""
+    """Why the rule is containment and not "narrower"."""
     coverage = describe(
         answered=Period(earliest="2025-12", latest="2025-12"),
         available=Period(earliest="2025-01", latest="2025-12"),
@@ -144,9 +116,7 @@ def test_an_unprofiled_source_abstains_and_says_which_kind_of_nothing_it_is() ->
 
 
 def test_an_abstention_carries_its_reason_into_the_trace_payload() -> None:
-    """The owner's requirement, asserted on the payload rather than on the object:
-    a run where the check could not fire must be distinguishable from one where it
-    fired and passed, and the trace is where a person looks."""
+    """The owner's requirement, asserted on the payload rather than on the object."""
     period, reason = period_of_values([], truncated=True)
     payload = describe(answered=period, available=None, reason=reason).as_payload()
 
@@ -167,15 +137,7 @@ def test_a_pass_is_told_apart_from_an_abstention_in_the_payload() -> None:
 
 
 def test_a_false_sentence_over_a_correct_result_is_not_caught() -> None:
-    """**The narrowing, written as a test so it cannot be forgotten.**
-
-    A model that answers correctly from 2025 rows and then writes *"we only hold
-    2023 data"* passes this check, because nothing here reads what it wrote. That
-    is the deliberate limit (owner, 2026-08-27): parsing a range assertion out of
-    prose would produce a number-shaped verdict from evidence that cannot carry
-    one, and a check that fails silently on phrasing is worse than a narrower
-    check that fails loudly.
-    """
+    """The narrowing, written as a test so it cannot be forgotten."""
     coverage = describe(
         answered=Period(earliest="2025-01", latest="2025-12"),
         available=Period(earliest="2025-01", latest="2025-12"),
@@ -187,15 +149,11 @@ def test_a_false_sentence_over_a_correct_result_is_not_caught() -> None:
     )
 
 
-# ---------------------------------------------------------------------------
-# What the planner is told
-# ---------------------------------------------------------------------------
+# --- What the planner is told ---
 
 
 def test_the_planner_is_told_the_range_and_told_it_is_not_a_limit() -> None:
-    """The capability note is not enforcement and must not read like it. It exists
-    to stop B-157's refusal being written — three months of 2025 declared missing
-    while `dim_calendar` held every one of them."""
+    """The capability note is not enforcement and must not read like it."""
     note = coverage_note(Period(earliest="2025-01", latest="2025-12"))
 
     assert "2025-01" in note and "2025-12" in note
@@ -208,23 +166,14 @@ def test_there_is_no_note_when_there_is_no_measurement() -> None:
 
 
 def test_a_value_that_merely_starts_like_a_period_is_not_one() -> None:
-    """**Every cell of the answer's result passes through the parser**, not just
-    the date column — the check does not know which column is which, and asking
-    it to guess would be name-matching by another route.
-
-    So the pattern is anchored at both ends and the month is 01-12. The loose
-    version matched a prefix, which would have read an order code like
-    `2024-0012` as *"the year 2024, month 00"* and dragged a whole coverage
-    sentence along behind it.
-    """
+    """Every cell of the answer's result passes through the parser, not just the date column."""
     period, _ = period_of_values(["INV-2024-01", "2024-0012", "2024-13", "ORD-99"], truncated=False)
 
     assert period is None
 
 
 def test_a_real_period_beside_noise_is_still_found() -> None:
-    """The other half: anchoring must not make the parser so strict that a genuine
-    date column stops being read because the row it sits in also holds a code."""
+    """The other half: anchoring must not make the parser so strict that a genuine date..."""
     period, _ = period_of_values(
         ["ORD-99", "2025-03-04", "Harbour", "2025-07-01 00:00:00"], truncated=False
     )
@@ -232,9 +181,7 @@ def test_a_real_period_beside_noise_is_still_found() -> None:
     assert period == Period(earliest="2025-03", latest="2025-07")
 
 
-# ---------------------------------------------------------------------------
-# The period a question asked for (D-051)
-# ---------------------------------------------------------------------------
+# --- The period a question asked for (D-051) ---
 
 
 def test_a_question_inside_the_data_is_covered() -> None:
@@ -251,14 +198,12 @@ def test_a_question_reaching_past_the_end_keeps_the_part_that_exists() -> None:
 
 
 def test_a_question_entirely_outside_the_data_is_none() -> None:
-    """*"Sales last month"* asked on 2026-08-28 resolves to July 2026 against
-    data ending 2025-12-31 — the live defect D-051 was filed for."""
+    """ "Sales last month" asked on 2026-08-28 resolves to July 2026 against data ending..."""
     assert asked_for(("2026-07-01", "2026-08-01"), ("2025-01-01", "2025-12-31")).verdict == "none"
 
 
 def test_a_question_naming_no_period_does_not_fire() -> None:
-    """The common case, and the safe one: most questions name no period, and a
-    check that fired on them would caveat every answer."""
+    """The common case, and the safe one: most questions name no period."""
     assert asked_for(None, ("2025-01-01", "2025-12-31")).verdict == "unknown"
 
 
@@ -267,9 +212,7 @@ def test_an_unprofiled_source_cannot_judge_a_period() -> None:
 
 
 def test_the_held_window_is_days_not_months() -> None:
-    """**Why this comparison is finer than the answer-window one.** Both sides
-    here are real dates, and rounding to months would call a question about
-    December covered by data that stops on the 15th."""
+    """Why this comparison is finer than the answer-window one."""
     held = held_days([("date", "2025-01-01", "2025-12-15")])
 
     assert held == ("2025-01-01", "2025-12-15")
@@ -290,8 +233,7 @@ def test_the_note_names_both_periods_when_none_of_it_exists() -> None:
 
 
 def test_the_note_tells_the_planner_that_narrowing_is_correct() -> None:
-    """The instruction has to agree with what the critic will accept, or the
-    platform tells the model to narrow and then blocks it for narrowing."""
+    """The instruction has to agree with what the critic will accept."""
     note = coverage_note(
         None, asked_for(("2025-11-01", "2026-03-01"), ("2025-01-01", "2025-12-31"))
     )
@@ -300,8 +242,7 @@ def test_the_note_tells_the_planner_that_narrowing_is_correct() -> None:
 
 
 def test_one_note_rather_than_two_when_a_period_was_named() -> None:
-    """The general fact and the specific one compete for the same L0 slot, and
-    shipping both is the padding that teaches people to skip the layer."""
+    """The general fact and the specific one compete for the same L0 slot."""
     general = coverage_note(Period(earliest="2025-01", latest="2025-12"), None)
     specific = coverage_note(
         Period(earliest="2025-01", latest="2025-12"),

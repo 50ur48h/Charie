@@ -1,21 +1,6 @@
 "use client";
 
-/**
- * How Charie looks in this browser: a palette and light or dark (D-046).
- *
- * **Sage on light is the default, and the operating system does not get a
- * vote.** Both choices are a person's, stored per browser and applied before
- * first paint by the script in `layout.tsx`, so nobody sees a flash of the
- * wrong colours on the way in.
- *
- * Three pieces have to agree, and they are deliberately small:
- *
- *   1. `globals.css` defines each palette under `[data-palette]` and dark under
- *      `[data-theme="dark"]`.
- *   2. The pre-paint script in `layout.tsx` sets those attributes.
- *   3. This module is the only thing that writes them afterwards, and the only
- *      thing that writes storage.
- */
+/** How Charie looks in this browser: a palette and light or dark (D-046). */
 
 import { useCallback, useEffect, useMemo, useSyncExternalStore } from "react";
 
@@ -76,8 +61,7 @@ export function useTheme(): ThemeChoice {
     themeStore.set(next);
   }, []);
 
-  // Keyed on the value rather than done inside `setTheme`, so a change made in
-  // another tab (which arrives through the `storage` event) is applied too.
+  // Keyed on the value rather than done inside `setTheme`, so a change made in another tab.
   useEffect(() => {
     applyTheme(theme);
   }, [theme]);
@@ -111,12 +95,7 @@ export function usePalette(): PaletteChoice {
   return useMemo(() => ({ palette, setPalette }), [palette, setPalette]);
 }
 
-/**
- * Subscribe to palette and mode changes made anywhere on the page.
- *
- * Charts are drawn on a canvas and cannot read CSS variables live, so they
- * redraw when either attribute on `<html>` changes.
- */
+/** Subscribe to palette and mode changes made anywhere on the page. */
 export function useAppearanceVersion(): string {
   const theme = useSyncExternalStore(themeStore.subscribe, themeStore.get, themeStore.getServer);
   const palette = useSyncExternalStore(

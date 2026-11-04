@@ -41,8 +41,7 @@ async def test_a_result_can_be_written_and_read_back(tmp_path: Path) -> None:
 
 
 async def test_an_artifact_that_is_gone_is_none_rather_than_an_error(tmp_path: Path) -> None:
-    """Expired, swept, or never written all answer the same way: the caller has
-    to handle absence anyway, so absence is not exceptional."""
+    """Expired, swept, or never written all answer the same way."""
     store = LocalArtifactStore(tmp_path)
     org_id = uuid.uuid4()
 
@@ -50,8 +49,7 @@ async def test_an_artifact_that_is_gone_is_none_rather_than_an_error(tmp_path: P
 
 
 async def test_another_organizations_reference_is_refused(tmp_path: Path) -> None:
-    """Keys carry the tenant, and something has to check them or they are
-    decoration (architecture Part 6.4)."""
+    """Keys carry the tenant, and something has to check them or they are decoration."""
     store = LocalArtifactStore(tmp_path)
     mine, theirs = uuid.uuid4(), uuid.uuid4()
     reference = await store.put(org_id=theirs, execution_id=uuid.uuid4(), payload=b"secret")
@@ -67,8 +65,7 @@ async def test_another_organizations_reference_is_refused(tmp_path: Path) -> Non
 async def test_a_reference_cannot_climb_out_of_its_own_prefix(
     reference: str, tmp_path: Path
 ) -> None:
-    """The prefix check alone would pass all of these — they start with the
-    right organization and then leave."""
+    """The prefix check alone would pass all of these."""
     store = LocalArtifactStore(tmp_path)
     org_id, other = uuid.uuid4(), uuid.uuid4()
 
@@ -99,8 +96,7 @@ def test_the_encoded_result_is_readable_json() -> None:
 
 
 def test_values_a_driver_invents_are_stored_as_text() -> None:
-    """Decimals, dates and UUIDs each arrive as their own type from one engine
-    or the other. This copy is for reading, not for arithmetic."""
+    """Decimals, dates and UUIDs each arrive as their own type from one engine or the other."""
     payload = json.loads(encode(frame((uuid.UUID(int=1), datetime(2026, 7, 1, tzinfo=UTC)))))
 
     assert payload["rows"] == [

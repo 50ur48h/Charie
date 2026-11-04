@@ -1,9 +1,4 @@
-"""What the LLM suite is configured with.
-
-A module rather than fixtures, so a test that needs to name a model id or build
-its own settings can import the same values the fixtures use — the shape
-``tests/dal/catalog_fixture.py`` established.
-"""
+"""What the LLM suite is configured with."""
 
 from __future__ import annotations
 
@@ -14,29 +9,12 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from charie.config import Settings
 
-#: One provider, three tiers, obviously fake model ids. Named after their tier so
-#: that a test asserting on a model id is really asserting on the tier that was
-#: chosen for the role.
+#: One provider, three tiers, obviously fake model ids.
 FAKE_MODELS = {"fake": {"small": "fake-small", "mid": "fake-mid", "strong": "fake-strong"}}
 
 
 def build_settings(**overrides: object) -> Settings:
-    """Settings with one configured provider and no prices.
-
-    No prices on purpose: the default state of this system is that a model is
-    unpriced, so the tests that care about cost add them explicitly and the rest
-    prove that an unpriced call records a null rather than a zero.
-
-    **Hermetic in two ways, and both are required.** ``_env_file=None`` switches
-    off the repository's ``.env`` for these settings, and every LLM field is then
-    passed explicitly. The second alone is not enough: pydantic-settings
-    *deep-merges* dict-typed fields across sources, so an explicit
-    ``llm_role_map={}`` is merged with whatever ``.env`` holds rather than
-    replacing it, and ``llm_models`` would quietly gain every real provider the
-    developer had configured. A machine with working local configuration would
-    otherwise assert different things from CI — which is precisely what happened
-    the first time this file was written without it.
-    """
+    """Settings with one configured provider and no prices."""
     values: dict[str, object] = {
         "env": "ci",
         "build_env": "dev",
@@ -55,14 +33,7 @@ def build_settings(**overrides: object) -> Settings:
 
 
 async def seed_run(url: URL, org_id: uuid.UUID) -> uuid.UUID:
-    """A real conversation and a real run, and the run's id.
-
-    From revision 0012 ``usage_ledger.run_id`` is a foreign key to ``agent_runs``
-    (WP7.1), so a ledger row can no longer name a run that was never created. The
-    invented uuids these tests used before were exactly the thing the constraint
-    was added to stop: a cost attributed to nothing, which no screen could ever
-    resolve and no per-run ceiling could bound.
-    """
+    """A real conversation and a real run, and the run's id."""
     run_id = uuid.uuid4()
     engine = create_async_engine(url)
     try:

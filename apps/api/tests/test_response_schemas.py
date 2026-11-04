@@ -1,14 +1,4 @@
-"""No response model may carry a credential.
-
-Plan WP3.1 asks for a "grep-style test asserting no response schema exposes
-credential fields". This is that test, done through the OpenAPI document rather
-than through grep, so it sees what the API actually promises to return — every
-response of every route, following ``$ref`` through nested models.
-
-Request models are deliberately out of scope: ``CreateDataSourceIn`` *must* have a
-password field. The asymmetry is the whole point — credentials go in and never
-come back out.
-"""
+"""No response model may carry a credential."""
 
 from __future__ import annotations
 
@@ -17,8 +7,7 @@ from typing import Any, cast
 from charie.config import Settings
 from charie.main import create_app
 
-#: Substrings that make a field name suspicious. Deliberately broad: the cost of
-#: a false positive is one line in the allowlist below, reviewed once.
+#: Substrings that make a field name suspicious.
 CREDENTIAL_WORDS = (
     "password",
     "passwd",
@@ -33,9 +22,7 @@ CREDENTIAL_WORDS = (
     "conn_str",
 )
 
-#: Fields that look like credentials and are not, each with the reason it is
-#: allowed to exist. Adding a line here is a decision someone must argue for in
-#: review — which is exactly the friction this test is for.
+#: Fields that look like credentials and are not, each with the reason it is allowed to exist.
 ALLOWED: dict[tuple[str, str], str] = {
     ("InvitationOut", "token"): (
         "The invitation token, shown once at creation and stored only as a hash. "

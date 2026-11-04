@@ -1,10 +1,4 @@
-"""Turning a model's text into an object (architecture 4.3).
-
-Parsing is deliberately tolerant of two things models always do — fencing the
-JSON, and wrapping it in prose — and deliberately intolerant of everything else.
-The line matters: each extra tolerance is this module inventing content, and the
-whole product rests on the claim that it does not.
-"""
+"""Turning a model's text into an object (architecture 4.3)."""
 
 from __future__ import annotations
 
@@ -32,8 +26,7 @@ def test_a_bare_object_parses() -> None:
 
 
 def test_a_fenced_object_parses() -> None:
-    """Models add fences even when told not to; refusing would be pedantry with
-    a price tag — a second call, for a reply that was correct."""
+    """Models add fences even when told not to; refusing would be pedantry with a price tag."""
     text = 'Here you go:\n```json\n{"steps": ["a"], "confident": true}\n```'
 
     parsed = parse(Plan, text)
@@ -66,8 +59,7 @@ def test_broken_json_is_refused_and_says_where() -> None:
 
 
 def test_a_bare_json_array_is_not_an_object_and_is_refused() -> None:
-    """A list is valid JSON and still not an answer: every schema in this
-    product is an object with named fields."""
+    """A list is valid JSON and still not an answer."""
     with pytest.raises(StructuredOutputError, match="no JSON object"):
         parse(Plan, '["a", "b"]')
 
@@ -95,8 +87,7 @@ def test_the_instruction_carries_the_schema_and_is_a_system_message() -> None:
 
 
 def test_the_repair_conversation_keeps_the_question_and_adds_the_complaint() -> None:
-    """A repair must not quietly change what was asked — otherwise the second
-    answer is to a different question and nobody can tell."""
+    """A repair must not quietly change what was asked."""
     original = [Message(role="user", content="plan this")]
 
     repaired = repair_messages(

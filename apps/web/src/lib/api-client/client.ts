@@ -1,12 +1,4 @@
-/**
- * Typed fetch helper for the Charie API.
- *
- * The browser talks to the API directly (architecture Part 3.1) — no BFF, no
- * server-side proxy — so the base URL is public configuration and nothing
- * secret passes through this module. The bearer token is supplied per call by
- * the session, which is why `createApi` takes a token getter rather than a
- * token: a token read once would be the one that expires.
- */
+/** Typed fetch helper for the Charie API. */
 
 import {
   isAccepted,
@@ -88,13 +80,7 @@ interface RequestOptions {
   signal?: AbortSignal | null | undefined;
 }
 
-/**
- * A multipart body is passed through untouched, and its Content-Type is left
- * unset on purpose: the browser has to write the header itself because only it
- * knows the boundary string it generated. Setting `multipart/form-data` by hand
- * produces a request the server cannot parse, and the error it gives back is
- * about a missing part rather than about a missing boundary.
- */
+/** A multipart body is passed through untouched, and its Content-Type is left unset on purpose. */
 function isMultipart(body: unknown): body is FormData {
   return typeof FormData !== "undefined" && body instanceof FormData;
 }
@@ -131,8 +117,7 @@ async function request(path: string, options: RequestOptions = {}): Promise<unkn
   }
 
   if (!response.ok) {
-    // The API's own message when it gave one: "Your role does not permit this
-    // action" is far more use to a person than "403".
+    // The API's own message when it gave one.
     const detail = (payload as { detail?: unknown } | null)?.detail;
     throw new ApiError(
       typeof detail === "string" ? detail : `API returned ${response.status} for ${path}`,
@@ -168,13 +153,7 @@ export interface Api {
   changeRole(orgId: string, userId: string, role: string): Promise<void>;
   removeMember(orgId: string, userId: string): Promise<void>;
   dataSources(orgId: string): Promise<DataSource[]>;
-  /**
-   * The database this organization asks questions of (D-045).
-   *
-   * Readable by any member — the chat screen has to know whether asking is
-   * possible before it offers a composer. Setting it is Admin-only and the API
-   * refuses anyone else, whatever the browser believes.
-   */
+  /** The database this organization asks questions of (D-045). */
   activeDataSource(orgId: string): Promise<ActiveDataSource>;
   showRunCost(orgId: string): Promise<boolean>;
   setShowRunCost(orgId: string, visible: boolean): Promise<boolean>;
@@ -198,19 +177,11 @@ export interface Api {
     decision: { policy: string; reason?: string | undefined },
   ): Promise<void>;
   documents(orgId: string): Promise<KnowledgeDocument[]>;
-  /**
-   * Uploads a file and indexes it. Takes a `File` rather than bytes so the
-   * browser writes its own multipart boundary — see `isMultipart` in this file.
-   */
+  /** Uploads a file and indexes it. */
   uploadDocument(orgId: string, file: File, title?: string): Promise<KnowledgeDocument>;
   reindexDocument(orgId: string, documentId: string): Promise<KnowledgeDocument>;
   removeDocument(orgId: string, documentId: string): Promise<void>;
-  /**
-   * The semantic layer (WP10.2d). **Every one of these is Admin** — an accepted
-   * definition constrains generated SQL, so it is a privileged object rather
-   * than content. A screen that calls them for a Reader earns a 403 the API
-   * records; `useOrgRole` is what stops it being offered (B-008).
-   */
+  /** The semantic layer (WP10.2d). */
   definitions(
     orgId: string,
     dataSourceId: string,
@@ -242,13 +213,7 @@ export interface Api {
       caveat_column?: string | undefined;
     },
   ): Promise<DefinitionProposal[]>;
-  /**
-   * Bless a proposal, and say what it requires.
-   *
-   * The filters are what turn prose into a constraint (D-033), and an empty
-   * list is a real answer rather than a missing one: an Admin may accept a
-   * definition as prose, which puts it in front of the model without binding it.
-   */
+  /** Bless a proposal, and say what it requires. */
   acceptProposal(
     orgId: string,
     dataSourceId: string,
@@ -257,15 +222,7 @@ export interface Api {
     synonyms?: string[] | undefined,
   ): Promise<SemanticDefinition>;
   rejectProposal(orgId: string, dataSourceId: string, definitionId: string): Promise<void>;
-  /**
-   * Correct a definition that is already in force (**B-088**).
-   *
-   * **Only the fields that changed are sent**, and that is the contract rather
-   * than an optimisation: the API reads an absent field as *leave it alone* and
-   * a present one as *replace it*, so resending a description nobody edited is
-   * how a description quietly loses a sentence. `expression: null` clears the
-   * formula, which is the one place where absent and null differ.
-   */
+  /** Correct a definition that is already in force (B-088). */
   updateDefinition(
     orgId: string,
     dataSourceId: string,
@@ -277,21 +234,9 @@ export interface Api {
       required_filters?: RequiredFilter[] | undefined;
     },
   ): Promise<SemanticDefinition>;
-  /**
-   * Take a definition out of force, keeping what it said.
-   *
-   * Retired rather than deleted, like everything else in this layer: an answer
-   * checked against it last month is still explainable this month.
-   */
+  /** Take a definition out of force, keeping what it said. */
   retireDefinition(orgId: string, dataSourceId: string, definitionId: string): Promise<void>;
-  /**
-   * Bring a retired definition back into force (**B-094**).
-   *
-   * `requiredFilters` is for the case that would otherwise be a dead end: a
-   * retired definition cannot be edited, so one whose catalog has moved on is
-   * repaired in the same act that brings it back. Omit it to keep what the
-   * definition was retired holding, which is the ordinary case.
-   */
+  /** Bring a retired definition back into force (B-094). */
   reinstateDefinition(
     orgId: string,
     dataSourceId: string,
@@ -425,9 +370,7 @@ export function createApi(getToken: () => Promise<string | null>): Api {
       const payload = await call(`/v1/orgs/${orgId}/show-run-cost`);
       const visible = (payload as { visible?: unknown } | null)?.visible;
       if (typeof visible !== "boolean") {
-        // Narrowed like every other response here: a switch that silently read
-        // as `undefined` would look exactly like "off", which is the one wrong
-        // answer that hides something and explains nothing.
+        // Narrowed like every other response here.
         throw new Error("The API returned something that is not a show-run-cost setting.");
       }
       return visible;
@@ -444,8 +387,7 @@ export function createApi(getToken: () => Promise<string | null>): Api {
       // What the API says it stored, not what we asked it to store.
       return saved;
     },
-    // A PUT, mirroring the API: null is a real value here, meaning "no choice",
-    // and a PATCH of a partial body could not tell that from a field left out.
+    // A PUT, mirroring the API: null is a real value here, meaning "no choice".
     async setActiveDataSource(orgId, dataSourceId) {
       return narrow(
         await call(`/v1/orgs/${orgId}/active-data-source`, {
@@ -456,9 +398,7 @@ export function createApi(getToken: () => Promise<string | null>): Api {
         "active data source",
       );
     },
-    // The credential travels in a POST body and nowhere else — never a query
-    // string, which would put it in browser history, in a referrer header, and
-    // in every access log between here and the API.
+    // The credential travels in a POST body and nowhere else — never a query string.
     async registerDataSource(orgId, source) {
       return narrow(
         await call(`/v1/orgs/${orgId}/data-sources`, { method: "POST", body: source }),
@@ -496,8 +436,7 @@ export function createApi(getToken: () => Promise<string | null>): Api {
     async uploadDocument(orgId, file, title) {
       const form = new FormData();
       form.append("file", file);
-      // Only when given: an empty `title` part would beat the API's own default
-      // of the filename, and land a document called "" in the list.
+      // Only when given: an empty `title` part would beat the API's own default of the filename.
       if (title !== undefined && title.trim().length > 0) form.append("title", title.trim());
       return narrow(
         await call(`/v1/orgs/${orgId}/documents`, { method: "POST", body: form }),
@@ -562,10 +501,7 @@ export function createApi(getToken: () => Promise<string | null>): Api {
             method: "POST",
             body: {
               required_filters: requiredFilters,
-              // Omitted rather than sent empty when the Admin typed nothing:
-              // the API reads an absent field as "keep what the import found"
-              // and an empty list as "replace it with none", and stripping a
-              // metric's own label would make it unreachable (B-085).
+              // Omitted rather than sent empty when the Admin typed nothing.
               ...(synonyms && synonyms.length > 0 ? { synonyms } : {}),
             },
           },
@@ -578,9 +514,7 @@ export function createApi(getToken: () => Promise<string | null>): Api {
       return narrow(
         await call(`/v1/orgs/${orgId}/data-sources/${dataSourceId}/definitions/${definitionId}`, {
           method: "PATCH",
-          // `changes` is passed through as the caller built it. The screen is
-          // what decides which fields moved, because it is the only place that
-          // knows what the Admin actually touched.
+          // `changes` is passed through as the caller built it.
           body: changes,
         }),
         isSemanticDefinition,
@@ -598,9 +532,7 @@ export function createApi(getToken: () => Promise<string | null>): Api {
           `/v1/orgs/${orgId}/data-sources/${dataSourceId}/definitions/${definitionId}/reinstate`,
           {
             method: "POST",
-            // Omitted rather than sent empty when there is nothing to correct:
-            // the API reads an absent list as "as it was retired" and an empty
-            // one as "replace them with none", which is a different request.
+            // Omitted rather than sent empty when there is nothing to correct.
             body: requiredFilters ? { required_filters: requiredFilters } : {},
           },
         ),
@@ -677,8 +609,7 @@ export function createApi(getToken: () => Promise<string | null>): Api {
         "conversation",
       );
     },
-    // A POST to `…/archive` rather than a DELETE, mirroring the API: nothing is
-    // removed, and the reverse direction exists, which a DELETE could not offer.
+    // A POST to `…/archive` rather than a DELETE, mirroring the API: nothing is removed.
     async archiveConversation(orgId, conversationId, archived) {
       return narrow(
         await call(`/v1/orgs/${orgId}/conversations/${conversationId}/archive`, {
@@ -689,9 +620,7 @@ export function createApi(getToken: () => Promise<string | null>): Api {
         "conversation",
       );
     },
-    // `data_source_id` is what makes a thread answerable in an organization with
-    // more than one database (D-022). Omitting it is legal and means "the single
-    // source, if there is one" — so it is only sent when the caller chose.
+    // `data_source_id` is what makes a thread answerable in an organization with more than one...
     async createConversation(orgId, options = {}) {
       const body: Record<string, string> = {};
       if (options.title) body.title = options.title;
@@ -716,9 +645,7 @@ export function createApi(getToken: () => Promise<string | null>): Api {
       }
       return payload;
     },
-    // The idempotency key is required by the API and generated by the caller, so
-    // a double-tapped send returns the run that already exists instead of paying
-    // for a second one.
+    // The idempotency key is required by the API and generated by the caller.
     async ask(orgId, conversationId, content, idempotencyKey) {
       return narrow(
         await call(`/v1/orgs/${orgId}/conversations/${conversationId}/messages`, {
@@ -736,9 +663,7 @@ export function createApi(getToken: () => Promise<string | null>): Api {
         "run",
       );
     },
-    // One request for the whole thread rather than one per assistant message
-    // (**B-106**): the number of round trips to render a conversation should not
-    // grow with how much somebody has used it.
+    // One request for the whole thread rather than one per assistant message (B-106).
     async conversationRuns(orgId, conversationId) {
       const payload = await call(`/v1/orgs/${orgId}/conversations/${conversationId}/runs`);
       if (!Array.isArray(payload) || !payload.every(isRun)) {
@@ -760,21 +685,7 @@ export function createApi(getToken: () => Promise<string | null>): Api {
         "execution",
       );
     },
-    /**
-     * Follow a run's trace as it happens (architecture 10.3).
-     *
-     * **`fetch` rather than `EventSource`, and that is a security decision.**
-     * `EventSource` cannot set headers, so the only way to authenticate it is a
-     * token in the query string — which this codebase has already refused once,
-     * for the data-source password, and for the same reasons: query strings land
-     * in browser history, in referrer headers and in every access log between
-     * here and the API. Streaming the response body costs a manual frame parser
-     * and a reconnect loop, and keeps **one** auth path rather than two.
-     *
-     * Reconnection is ours for the same reason. `Last-Event-ID` is sent on the
-     * way back, so the server resumes from the durable rows and nothing is
-     * missed — the property the whole design rests on.
-     */
+    /** Follow a run's trace as it happens (architecture 10.3). */
     async streamRunEvents(orgId, runId, { after = 0, onEvent, signal }) {
       let lastSeq = after;
       while (!signal.aborted) {
@@ -800,8 +711,7 @@ export function createApi(getToken: () => Promise<string | null>): Api {
             const { done, value } = await reader.read();
             if (done) break;
             buffered += decoder.decode(value, { stream: true });
-            // Frames are separated by a blank line; anything after the last one
-            // is a partial frame and waits for the next chunk.
+            // Frames are separated by a blank line.
             const frames = buffered.split("\n\n");
             buffered = frames.pop() ?? "";
             for (const frame of frames) {
@@ -816,19 +726,16 @@ export function createApi(getToken: () => Promise<string | null>): Api {
                 if (typeof event.seq === "number" && event.seq > lastSeq) lastSeq = event.seq;
                 onEvent(event);
               } catch {
-                // One unparseable frame is one missing step, not a reason to
-                // tear down a stream that is otherwise delivering.
+                // One unparseable frame is one missing step.
               }
             }
           }
-          // The server closes the stream when the run ends, so a clean end of
-          // body means there is nothing more coming.
+          // The server closes the stream when the run ends.
           return;
         } catch (cause) {
           if (signal.aborted) return;
           if (cause instanceof ApiError && cause.status >= 400 && cause.status < 500) throw cause;
-          // A dropped connection: wait, then resume from `lastSeq`. The rows are
-          // durable, so nothing is lost by having been away.
+          // A dropped connection: wait, then resume from `lastSeq`.
           await new Promise((resolve) => setTimeout(resolve, 1000));
         }
       }

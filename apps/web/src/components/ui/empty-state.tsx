@@ -1,10 +1,4 @@
-/**
- * A place nobody has filled yet — not a page that failed (docs/design.md).
- *
- * A mark, a title saying what belongs here, a line of why, and **exactly one
- * action**. The action slot is also where a Reader is told who can act instead:
- * never a disabled control, which looks operable and is not (B-008).
- */
+/** A place nobody has filled yet — not a page that failed (docs/design.md). */
 
 import type { ReactNode } from "react";
 

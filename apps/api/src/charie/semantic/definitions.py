@@ -1,36 +1,4 @@
-"""What a metric means here, and the half of it a check can act on (arch 5.4).
-
-**Prose informs the model; a structured definition binds it** (DECISIONS
-**D-033**). WP10.2a let the agent read a policy document mid-run; WP10.2b made an
-answer that rested on one say that nothing had checked it. This module is the
-other half — the kind of definition the critic can enforce — and the split runs
-through every object here.
-
-`description` and `expression` are **for the prompt**. They are what make a model
-compute the metric correctly in the first place, and they are prose: nothing
-parses them and nothing pretends to.
-
-`required_filters` is **for the critic**. Each one names a table, a column, an
-operator and its values, which is exactly enough for an AST check to ask whether
-a statement honoured it. **B-078** is why the two are separate rather than one
-paragraph: given a definition it had only *read*, a live model wrote it into its
-SQL and then reasoned its way back out two iterations later, answering 1,054
-where the document said 747 — and nothing could object.
-
-**A definition is validated against the catalog when it is written.** A filter
-naming a column that does not exist is a definition that would silently never
-match, and finding that out during a run — as a critic finding nobody can act on
-— is the worst moment to find it. So `validate` runs at the door, and the error
-names the column.
-
-**Matching is by name and synonym, against the question.** A metric nobody can
-name is a metric nobody gets, and `net_revenue` is not what anyone types. The
-match is deliberately narrow — a whole-word occurrence of the name or one of its
-synonyms — because the alternative failure is worse than missing: a definition
-applied to a question it is not about becomes a critic rule enforcing a filter
-the answer never needed, which is a **false block**, and standing note 5 calls
-that this component's characteristic failure.
-"""
+"""What a metric means here, and the half of it a check can act on (arch 5.4)."""
 
 from __future__ import annotations
 
@@ -71,35 +39,20 @@ __all__ = [
 STATUS_ACTIVE = "active"
 STATUS_RETIRED = "retired"
 
-#: The operators a filter may use. Closed, and small on purpose: every one of
-#: these has an unambiguous reading in a `WHERE` clause, and an operator the
-#: critic cannot check is one the product would claim to enforce and not.
+#: The operators a filter may use.
 FILTER_OPERATORS: tuple[str, ...] = ("in", "not_in", "eq", "ne", "gt", "gte", "lt", "lte")
 
-#: Operators whose meaning is carried by their values. `status not in
-#: ('cancelled')` is about the word 'cancelled'; `total_amount > 40` is about the
-#: number, and both are values — the distinction that matters to the critic is
-#: only whether there are any, which every operator here has.
+#: Operators whose meaning is carried by their values.
 _NEEDS_VALUES = frozenset(FILTER_OPERATORS)
 
 
 class DefinitionError(ValueError):
-    """A definition that could not be accepted, with the reason in its message.
-
-    A `ValueError` because it is a fact about the input rather than about the
-    system: the caller wrote a filter naming a column this database does not
-    have, and the answer is to fix the definition.
-    """
+    """A definition that could not be accepted, with the reason in its message."""
 
 
 @dataclass(frozen=True, slots=True)
 class RequiredFilter:
-    """One predicate a statement must honour to be computing this metric.
-
-    ``table`` and ``column`` are unqualified names as the catalog holds them.
-    ``values`` are compared as text: a statement's literals are read out of the
-    AST, and `40` and `'40'` are the same thing to a reader of SQL.
-    """
+    """One predicate a statement must honour to be computing this metric."""
 
     table: str
     column: str
@@ -156,36 +109,19 @@ class Definition:
     expression: str | None = None
     required_filters: tuple[RequiredFilter, ...] = ()
     synonyms: tuple[str, ...] = ()
-    #: What this definition makes the **answer** say (revision 0033). The prompt
-    #: gets `description`, the critic gets `required_filters`, and before this
-    #: there was nowhere for a limit on what may be *claimed* — so a rule like
-    #: *"never label SUM(value_myr) as total waste cost"* reached the model and
-    #: stopped there. None for most definitions, which is the honest default.
+    #: What this definition makes the answer say (revision 0033).
     caveat: str | None = None
-    #: Which state of this definition the caller is holding (B-088). Defaulted
-    #: because most callers reason about what a metric means rather than about
-    #: which edit said so; the ones that have to cite it read it here.
+    #: Which state of this definition the caller is holding (B-088).
     version: int = 1
 
     @property
     def names(self) -> tuple[str, ...]:
-        """Everything this definition answers to, lowercased.
-
-        The bare name with underscores replaced too: nobody types `net_revenue`
-        into a question, and a definition that only answers to its own key is one
-        the layer will almost never apply.
-        """
+        """Everything this definition answers to, lowercased."""
         spoken = {self.name.lower(), self.name.lower().replace("_", " ")}
         return tuple(sorted(spoken | {synonym.lower() for synonym in self.synonyms}))
 
     def render(self) -> str:
-        """How the definition reaches the prompt (L3).
-
-        The filters are stated **as rules rather than as suggestions**, and they
-        say that they are checked. A model told a constraint is enforced complies
-        with it more often than one told a preference — and when it does not, the
-        critic is what the sentence was promising.
-        """
+        """How the definition reaches the prompt (L3)."""
         lines = [f"### {self.name}", self.description.strip()]
         if self.expression:
             lines.append(f"Computed as: {self.expression}")
@@ -200,22 +136,12 @@ class Definition:
 
 
 def _word(term: str) -> re.Pattern[str]:
-    """A whole-word matcher for a term that may contain spaces.
-
-    Whole-word because substring matching turns `orders` into a match inside
-    `reorders`, and a definition applied to a question it is not about is a
-    critic rule enforcing a filter the answer never needed — a false block.
-    """
+    """A whole-word matcher for a term that may contain spaces."""
     return re.compile(rf"(?<!\w){re.escape(term)}(?!\w)", re.IGNORECASE)
 
 
 def matching(definitions: Sequence[Definition], question: str) -> tuple[Definition, ...]:
-    """The definitions this question is about, in the order they were given.
-
-    Narrow on purpose — see the module docstring. A question that names no metric
-    gets none, and that is the common case: most questions are about rows rather
-    than about a defined measure.
-    """
+    """The definitions this question is about, in the order they were given."""
     if not question.strip():
         return ()
     found: list[Definition] = []
@@ -226,13 +152,7 @@ def matching(definitions: Sequence[Definition], question: str) -> tuple[Definiti
 
 
 def validate(definition: Definition, policy: SourcePolicy) -> None:
-    """Refuse a definition this database cannot support, naming what is wrong.
-
-    Checked at the door rather than at the point of use, because a filter naming
-    a column that does not exist would never match anything — and would surface
-    as a critic finding during somebody's run, which is both too late and
-    unactionable by the person reading it.
-    """
+    """Refuse a definition this database cannot support, naming what is wrong."""
     known = {
         (table.table_name.lower(), column.name.lower())
         for table in policy.catalog.tables
@@ -253,13 +173,7 @@ def validate(definition: Definition, policy: SourcePolicy) -> None:
 
 
 def _satisfies(value: str, item: RequiredFilter) -> bool | None:
-    """Whether a single known value passes this filter. None when undecidable.
-
-    Values are compared as text, exactly as ``RequiredFilter`` documents, with a
-    numeric comparison attempted for the ordering operators because `40` and
-    `'40'` are the same thing to a reader of SQL and `9` sorts before `10` only
-    if you know they are numbers.
-    """
+    """Whether a single known value passes this filter."""
     if item.op in ("in", "eq"):
         return value in item.values
     if item.op in ("not_in", "ne"):
@@ -280,32 +194,7 @@ def _satisfies(value: str, item: RequiredFilter) -> bool | None:
 
 
 def non_constraining(definition: Definition, policy: SourcePolicy) -> tuple[RequiredFilter, ...]:
-    """The required filters that currently exclude no row at all (**B-171**).
-
-    **A definition whose filters cannot partition anything still badges
-    `enforced`**, and that badge is a claim: prose says plainly that the critic
-    checks nothing, while `enforced` says it checks something. `edible_waste`
-    made exactly that claim through a MiseQ version change — `edible_flag`
-    split 3,005.75 kg from 2,522.76 in v6.4 and is `1` on all 35,398 rows in
-    v6.7, so the same definition went from constraining to decorative with no
-    edit and no signal.
-
-    **Derived, never stored.** A stored flag is the failure being described: it
-    would be written when the definition was created and go quietly wrong the
-    next time the data moved. Computed from the active catalog, it is right
-    whenever it is read and needs no re-check on discovery.
-
-    **Profiling already knows.** `distinct_est == 1` says the column holds one
-    value, so no predicate over it can separate one row from another. What
-    `top_values` adds is *which* way: a filter the single value satisfies
-    excludes nothing, and one it fails excludes everything — a louder bug that
-    shows up as an empty answer, and not the one this reports.
-
-    Silent where the profiler has not run, or where the operator cannot be
-    decided against a single value. An unprofiled column is unknown, and
-    reporting unknown as *excludes nothing* would be the same overstatement in
-    the other direction.
-    """
+    """The required filters that currently exclude no row at all (B-171)."""
     columns = {
         (table.table_name.lower(), column.name.lower()): column
         for table in policy.catalog.tables
@@ -338,21 +227,7 @@ async def create(
     actor_user_id: uuid.UUID | None = None,
     policy: SourcePolicy | None = None,
 ) -> Definition:
-    """Write a definition, after checking this database can support it.
-
-    **Validated at the door.** A filter naming a column that does not exist would
-    never match anything, and the run that discovered it would report a critic
-    finding nobody could act on. `policy` is optional only so a caller that
-    already loaded one need not load it twice; skipping the check is not on
-    offer.
-
-    The name is lowercased, because "Net Revenue" and "net_revenue" are one
-    metric and a catalog of near-duplicates is worse than no catalog.
-
-    Routes and the admin UI are WP10.2d's. This exists now because a table
-    nothing can write to is a table nothing exercises — and because the critic
-    rule it feeds has to be provable against a real row.
-    """
+    """Write a definition, after checking this database can support it."""
     from charie.dal.policy import source_policy
 
     resolved = policy if policy is not None else await source_policy(org_id, data_source_id)
@@ -386,10 +261,7 @@ async def create(
         )
         session.add(row)
         if status == STATUS_ACTIVE:
-            # A proposal is not a version: it binds nothing while it waits, and
-            # numbering sentences an Admin has not agreed to would make version 1
-            # mean two different things. `accept` writes the first version of an
-            # imported one, at the moment it takes effect.
+            # A proposal is not a version: it binds nothing while it waits.
             record_version(session, row, change="created", actor_user_id=actor_user_id)
             audit(
                 session,
@@ -411,20 +283,7 @@ async def create(
 async def definitions_for(
     org_id: uuid.UUID, data_source_id: uuid.UUID, *, status: str = STATUS_ACTIVE
 ) -> tuple[Definition, ...]:
-    """Every definition for one data source in one state, by name.
-
-    **Active by default, and every caller that binds anything uses the default.**
-    A proposal has not been blessed by an Admin and must not constrain anything
-    (B-059's rule, since an imported definition is a privileged object); a
-    retired one is out of force and is kept so that a run which cited it can
-    still explain itself.
-
-    Asking for the retired ones is a screen's business, not the agent's
-    (**B-094**). They vanished from every view, so an Admin could not see there
-    was anything to bring back — which turned a mis-clicked retire into a `psql`
-    job. Nothing about being listed puts a retired definition back into force;
-    `reinstate` is the only thing that does.
-    """
+    """Every definition for one data source in one state, by name."""
     async with org_session(org_id) as session:
         rows = (
             (
@@ -445,13 +304,7 @@ async def definitions_for(
 
 @dataclass(frozen=True, slots=True)
 class Version:
-    """One state a definition has been in force in (**B-088**, revision 0022).
-
-    The whole state rather than a diff, because the question this answers —
-    *"what did this metric require when that answer was written"* — is asked by
-    somebody looking at an answer they distrust, and a reconstruction they have
-    to replay is one they will not perform.
-    """
+    """One state a definition has been in force in (B-088, revision 0022)."""
 
     version: int
     change: str
@@ -467,13 +320,7 @@ class Version:
 
 
 class Keep:
-    """The sentinel meaning *"this field was not sent"*.
-
-    Needed for exactly one field. ``expression`` is nullable, so ``None`` is a
-    real value — *this metric has no formula* — and an edit that used ``None``
-    for both "unchanged" and "clear it" could not express one of them. The other
-    fields have no such ambiguity and use ``None`` for "unchanged".
-    """
+    """The sentinel meaning "this field was not sent"."""
 
     __slots__ = ()
 
@@ -495,15 +342,7 @@ def record_version(
     change: str,
     actor_user_id: uuid.UUID | None,
 ) -> None:
-    """Append the state ``row`` is now in to its history.
-
-    Staged on the caller's session rather than opening its own, for the reason
-    ``audit`` gives: a change without its history row, or a history row for a
-    change that did not happen, are both worse than either alone.
-
-    Call it **after** the row's fields and ``version`` are set — it snapshots
-    what is there.
-    """
+    """Append the state ``row`` is now in to its history."""
     session.add(
         SemanticDefinitionVersion(
             org_id=row.org_id,
@@ -534,40 +373,13 @@ async def update(
     required_filters: Sequence[Mapping[str, object]] | None = None,
     actor_user_id: uuid.UUID | None = None,
 ) -> Definition:
-    """Correct an **active** definition, validating it exactly as ``accept`` does.
-
-    **B-088.** Until this existed a definition was write-once: no edit, no
-    un-accept, and ``accept`` refuses anything that is not still ``proposed``, so
-    the only way to give a filter the column it should have had was to delete the
-    row in psql and import the table again. For a feature whose premise is that
-    an Admin decides what binds, being unable to revise that decision is a hole
-    in the premise — and the likeliest moment to get a filter wrong is the first
-    time you write one, which is exactly when you were locked out.
-
-    **The same validation as at the door, not a lighter one.** An edit changes
-    what the platform enforces on generated SQL, so a filter naming a column this
-    database does not have is refused here for the same reason it is refused on
-    the way in: it would never match, and the run that discovered it would report
-    a critic finding nobody could act on. The check runs before anything is
-    written, so a rejected edit leaves the definition exactly as it was.
-
-    **Omitted is not empty.** ``None`` leaves a field alone; a list replaces it.
-    Sending an empty ``required_filters`` is a real request — *stop enforcing
-    this, keep the prose* — and one an Admin has to be able to make, since the
-    alternative way to un-bind a wrong filter would again be the database.
-
-    The name is not editable, deliberately: it is what a question is matched
-    against and what a run trace recorded, so renaming it would silently change
-    which questions the definition answers and orphan every citation of it. Say
-    it differently in ``synonyms``, which is what the matcher actually reads.
-    """
+    """Correct an active definition, validating it exactly as ``accept`` does."""
     from charie.dal.policy import source_policy
 
     async with org_session(org_id) as session:
         row = await session.get(SemanticDefinition, definition_id)
         if row is None or row.status != STATUS_ACTIVE:
-            # Proposals are not edited, they are accepted — with the filters and
-            # synonyms the accept route already takes. A retired one is history.
+            # Proposals are not edited, they are accepted.
             raise LookupError("No such definition")
 
         current = _definition_of(row)
@@ -603,9 +415,7 @@ async def update(
             if before != after
         )
         if not changed:
-            # Nothing to record. A version saying the same as the one before it
-            # is noise in the only history anybody consults under suspicion, and
-            # an audit row for a no-op edit is a false lead.
+            # Nothing to record.
             return current
 
         row.description = edited.description
@@ -623,10 +433,7 @@ async def update(
             action="semantic.definition_updated",
             object_type="semantic_definition",
             object_id=str(row.id),
-            # Which fields moved and which version to read, not the values. The
-            # version row already holds the content in full and is the right home
-            # for it; copying a customer own literals into a second table would
-            # widen where they live for no gain.
+            # Which fields moved and which version to read, not the values.
             details={
                 "name": row.name,
                 "changed": list(changed),
@@ -641,14 +448,7 @@ async def update(
 async def retire(
     *, org_id: uuid.UUID, definition_id: uuid.UUID, actor_user_id: uuid.UUID | None = None
 ) -> None:
-    """Take an active definition out of force, keeping what it said.
-
-    Retired rather than deleted, like everything else in this layer: an answer
-    that was checked against this definition last month should still be
-    explainable this month, and the row is what explains it. ``definitions_for``
-    loads active ones alone, so the metric stops binding and stops reaching the
-    prompt the moment this returns.
-    """
+    """Take an active definition out of force, keeping what it said."""
     async with org_session(org_id) as session:
         row = await session.get(SemanticDefinition, definition_id)
         if row is None or row.status != STATUS_ACTIVE:
@@ -676,41 +476,13 @@ async def reinstate(
     required_filters: Sequence[Mapping[str, object]] | None = None,
     actor_user_id: uuid.UUID | None = None,
 ) -> Definition:
-    """Bring a retired definition back into force (**B-094**).
-
-    **The verb `retire` had no opposite, and three correct rules made that a dead
-    end**: `accept` takes only proposals, `update` takes only active ones, and an
-    import skips a name any row already holds — deliberately, so a crawler cannot
-    re-propose what an Admin turned down. A mis-clicked retire was therefore
-    recoverable only in the database, which is the shape of the hole **B-088**
-    was filed for one verb earlier. The owner hit it on their first real use.
-
-    **Validated before it takes effect, exactly as an edit is.** A definition
-    retired last month names columns in a catalog that has moved on since, and
-    putting one back into force with a filter that matches nothing would be worse
-    than leaving it retired: it would bind, silently, to nothing.
-
-    **Which is why the filters can be corrected here.** A retired definition
-    cannot be edited — `update` refuses anything that is not active — so a
-    definition whose filters no longer resolve would otherwise be permanently
-    unreinstatable, a second dead end behind the first. Passing
-    ``required_filters`` replaces them as part of the same act; omitting them
-    keeps what the definition was retired holding, which is the ordinary case
-    and the one the acceptance test exercises.
-
-    Recorded as its own change rather than as an `updated` (revision 0023): a
-    history that called this an edit would read as though somebody had changed
-    the wording, and the gap between retired and active is what a reader needs
-    to see.
-    """
+    """Bring a retired definition back into force (B-094)."""
     from charie.dal.policy import source_policy
 
     async with org_session(org_id) as session:
         row = await session.get(SemanticDefinition, definition_id)
         if row is None or row.status != STATUS_RETIRED:
-            # A proposal that was rejected is `retired` too, and is deliberately
-            # not reinstatable here: it never took effect, so there is no state
-            # to return it to. `version` is 1 only when a row has been in force.
+            # A proposal that was rejected is `retired` too.
             raise LookupError("No such retired definition")
 
         definition = _definition_of(row)
@@ -746,11 +518,7 @@ async def reinstate(
 
 
 async def versions_for(org_id: uuid.UUID, definition_id: uuid.UUID) -> tuple[Version, ...]:
-    """Everything this definition has said, oldest first.
-
-    Oldest first because it reads as a life rather than as a feed: what it
-    started as, what somebody changed, and what it is now.
-    """
+    """Everything this definition has said, oldest first."""
     async with org_session(org_id) as session:
         rows = (
             (
@@ -782,11 +550,7 @@ async def versions_for(org_id: uuid.UUID, definition_id: uuid.UUID) -> tuple[Ver
 
 
 def _readable_filters(raw: Sequence[dict[str, object]]) -> list[RequiredFilter]:
-    """The filters a stored row carries, skipping any that cannot be read.
-
-    Skipped rather than fatal for the reason ``_definition_of`` gives: one
-    malformed filter must not take a whole definition out of the answer.
-    """
+    """The filters a stored row carries, skipping any that cannot be read."""
     filters: list[RequiredFilter] = []
     for item in raw:
         with suppress(DefinitionError):
@@ -797,10 +561,7 @@ def _readable_filters(raw: Sequence[dict[str, object]]) -> list[RequiredFilter]:
 def _definition_of(row: SemanticDefinition) -> Definition:
     filters: list[RequiredFilter] = []
     for raw in row.required_filters:
-        # A row that cannot be read is skipped rather than fatal: the
-        # definition's prose is still worth putting in front of the model, and a
-        # malformed filter that took the whole metric out of the prompt would
-        # turn a bad edit into a silently unguided run.
+        # A row that cannot be read is skipped rather than fatal.
         with suppress(DefinitionError):
             filters.append(RequiredFilter.of(raw))
     return Definition(

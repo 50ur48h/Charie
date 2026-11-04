@@ -1,9 +1,4 @@
-"""The evidence and display contract for a business performance review (B-188).
-
-The existing Markdown renderer already supports interleaved cards and charts.
-These instructions make those components reachable from a real investigation;
-they do not change the SQL policy, budgets or the critic's evidence checks.
-"""
+"""The evidence and display contract for a business performance review (B-188)."""
 
 from __future__ import annotations
 

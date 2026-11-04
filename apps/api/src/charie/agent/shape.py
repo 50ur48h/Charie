@@ -1,38 +1,4 @@
-"""What form a result should take, decided by the platform (WP13.20).
-
-Until now the model chose the chart and the platform only validated it:
-`ChartAsk` carries `mark`, `x`, `y` and `series`, all model-filled, and
-`charts.decide` either builds a spec or writes a refusal. So the *form* of an
-answer was free-styled, and a bar chart, a line chart and no chart at all were
-one temperature sample apart. The owner's line is that the platform should choose
-the form from **the shape of the result**.
-
-**From the values, never from the names.** `charts.kind_of` already classifies a
-column as quantitative, temporal or nominal by looking at what is in it — a
-column called `order_date` holding `Q1`/`Q2` is not a date — and this module adds
-no name-reading of its own. That is the same rule `inference.py` holds to, one
-layer up.
-
-**What it decides, and the one case it was built for.** A temporal axis against a
-number is a **line**; a category against a number is a **bar**, because a bar is
-what a comparison between categories reads as and a line drawn between two
-unrelated categories implies a progression that does not exist. And a *third*
-column that is a category becomes a **series** rather than a second answer —
-*outlet A and outlet B monthly* is one chart with two lines, which is the case
-the owner named and the case `ChartAsk.series` was built for and never used.
-
-**Whether to draw at all stays with the model.** This module answers *what form*,
-not *whether* — a chart forced onto every answer is its own kind of noise, and
-"is a picture worth it here" is a judgement about the question rather than about
-the result's shape. The model's `of` is untouched.
-
-**The model's fields are overridden, not removed.** Narrowing `ChartAsk` to stop
-it sending a mark would mean deleting model-filled fields from a schema that is
-`extra="forbid"`, and **D-044 is the warning**: removing `FinalizeIn.answered`
-broke three producers found separately over two hours, one of which ships in the
-product image. The fields stay and their values are replaced, which costs a few
-tokens of output and no migration, no fixture sweep and no risk.
-"""
+"""What form a result should take, decided by the platform (WP13.20)."""
 
 from __future__ import annotations
 
@@ -45,12 +11,7 @@ __all__ = ["Shape", "shape_of"]
 
 @dataclass(frozen=True, slots=True)
 class Shape:
-    """The form a result should take, and why — the *why* being for the trace.
-
-    ``mark`` empty means no chart, and ``reason`` then says what about the result
-    made a picture the wrong answer. B-087's discipline applied to form: say the
-    thing that did not happen.
-    """
+    """The form a result should take, and why — the why being for the trace."""
 
     mark: str = ""
     x: str = ""
@@ -77,19 +38,11 @@ def _distinct(frame: Frame, name: str) -> int:
 
 
 def shape_of(frame: Frame) -> Shape:
-    """The form this result should take.
-
-    Order matters: the temporal axis is tried before the categorical one, because
-    a result carrying both a date and a category is a series over time rather
-    than a comparison between categories — *revenue by month per outlet* is a
-    line chart with one line each, and drawing it as bars grouped by outlet
-    throws the time axis away.
-    """
+    """The form this result should take."""
     if not frame.rows or not frame.columns:
         return Shape(reason="the result has no rows to draw")
     if frame.truncated:
-        # `decide` refuses this too. Saying it here as well means the reason a
-        # reader sees is about the data rather than about a mark nobody chose.
+        # `decide` refuses this too.
         return Shape(
             reason="the result was cut off at the row limit, so a chart of it "
             "would look complete while being partial"
@@ -113,8 +66,7 @@ def shape_of(frame: Frame) -> Shape:
             return Shape(
                 reason=f"{x} has more distinct values than a chart has room for",
             )
-        # A remaining category splits the marks rather than starting a second
-        # answer. Only when it is small enough to read as a legend.
+        # A remaining category splits the marks rather than starting a second answer.
         rest = [
             name
             for name in kinds["nominal"]

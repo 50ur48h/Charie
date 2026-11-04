@@ -1,52 +1,4 @@
-"""What periods this database can speak about, and whether an answer stayed inside them.
-
-**This is deliberately narrower than "the coverage claim is checked", and the
-narrowing is the first thing to read** (D-058 as amended, B-157). It catches *an
-answer resting on a window the catalog does not describe*. It does **not** catch
-a false statement about coverage in general: nothing here reads the answer's
-prose, so a model that writes *"we only hold 2023 data"* over a correct 2025
-result is not caught by this and never will be.
-
-That limit is a choice rather than an omission. The alternative was to parse a
-range assertion out of model-written prose, and a number-shaped verdict drawn
-from evidence that cannot carry one is the same mistake as trusting a similarity
-score because it has a number attached (owner, 2026-08-27). **A check that fails
-silently on phrasing is worse than a narrower check that fails loudly**, so this
-one measures two things it can actually measure and says plainly when it can
-measure neither.
-
-**Both sides are measurements, never claims.**
-
-* *Available* comes from `CatalogColumn.min_val`/`.max_val`, which the profiler
-  takes from the engine's own aggregate and never from a sample — B-051 forbids a
-  derived range, and that is what makes this side worth comparing against.
-* *Answered* comes from the rows the run actually returned, and only when the
-  result was **not truncated**. A truncated result's last row is a floor, not a
-  latest, and a coverage sentence built on one would be exactly the confident
-  half-truth this module exists to prevent.
-
-**Abstention is an outcome, not a silence.** A source nobody profiled, a result
-that was truncated, a period column the profiler gives no range to — each ends
-with a reason a person can read, because a run where the check could not fire
-must be distinguishable from a run where it fired and passed. That is D-031's
-rule for embeddings applied here, and it is why `Coverage.status` has three
-values rather than two.
-
-**Months, not days.** The two sides come from different places and often
-different precisions: a `date` column profiles as `2025-01-01` while a text period
-column holds `2023-01`. Comparing at month granularity is the finest thing both
-can honestly express, and it is also the grain a coverage sentence is read at.
-Anything that does not look like a year and a month is not compared at all.
-
-**What triggers it, and why not "narrower".** The rule is *not contained*: the
-answer covers a period the catalog's dated columns do not. "Narrower" was the
-obvious first rule and it fires on every ordinary question — *"sales last month"*
-legitimately returns one month out of a year — which would have taught people to
-skip the caveat, the failure B-146's coverage floor and D-034's budget caveat were
-both written against. Containment is quiet on that question and loud on B-157's,
-where an answer built from a 2023-2024 back-cast sat beside a catalog that
-records 2025 and nothing else.
-"""
+"""What periods this database can speak about, and whether an answer stayed inside them."""
 
 from __future__ import annotations
 
@@ -68,20 +20,10 @@ __all__ = [
     "period_of_values",
 ]
 
-#: Column types whose low/high is a period rather than a magnitude. Deliberately
-#: a subset of `profiler._RANGED_TYPES`: an integer column has a range too, and
-#: `2020` to `2024` on a column called `qty` is not a period.
+#: Column types whose low/high is a period rather than a magnitude.
 TIME_TYPES: tuple[str, ...] = ("date", "timestamp", "datetime", "smalldatetime", "time")
 
 #: A year and a month, which is the finest grain both sides can honestly express.
-#: `2025-01-01`, `2025-01-01 00:00:00` and `2023-01` all reduce to the same thing;
-#: `opening`, `7.30 pm` and `Q1` reduce to nothing and are never compared.
-#:
-#: **Anchored at both ends, and the month is 01-12** — the loose version matched a
-#: prefix, and every cell of the answer's result passes through here. An order
-#: code like `2024-0012` would have become "the year 2024, month 00" and dragged
-#: a coverage sentence with it. A value is a period or it is not; something that
-#: merely *starts* like one is not.
 _MONTH = re.compile(r"^(\d{4})-(0[1-9]|1[0-2])(?:-\d{2})?(?:[ T][\d:.+\-]*)?$")
 
 
@@ -103,17 +45,7 @@ class Period:
 
 @dataclass(frozen=True, slots=True)
 class Coverage:
-    """The verdict, and enough of the measurement to argue with it.
-
-    ``status`` is one of:
-
-    * ``"outside"`` — the answer covers a period the catalog does not describe.
-      The only status that produces a limitation.
-    * ``"contained"`` — the answer sits inside what the catalog records. Nothing
-      to say, and saying nothing is correct.
-    * ``"abstained"`` — the check could not run, and ``reason`` says why in words
-      meant for a person.
-    """
+    """The verdict, and enough of the measurement to argue with it."""
 
     status: str
     reason: str = ""
@@ -121,10 +53,7 @@ class Coverage:
     available: Period | None = None
 
     def as_payload(self) -> dict[str, object]:
-        """For the trace. **The reason travels with the status**, because a run
-        where this could not fire has to be distinguishable from one where it
-        fired and passed — otherwise the absence of a caveat means two different
-        things and a reader cannot tell which."""
+        """For the trace. The reason travels with the status."""
         return {
             "status": self.status,
             "reason": self.reason,
@@ -147,13 +76,7 @@ def _span(values: Sequence[object]) -> Period | None:
 
 
 def available_period(columns: Sequence[tuple[str, str | None, str | None]]) -> Period | None:
-    """The widest period the catalog records, over ``(data_type, min, max)``.
-
-    Only columns whose type is a time, and only where the profiler stored both
-    ends. A source nobody has profiled produces nothing here, which the caller
-    reports as an abstention rather than as an empty range — *no profile* and
-    *no dates* are different facts and the second one is a claim.
-    """
+    """The widest period the catalog records, over ``(data_type, min, max)``."""
     ends: list[object] = []
     for data_type, minimum, maximum in columns:
         if not any(kind in data_type.lower() for kind in TIME_TYPES):
@@ -163,13 +86,7 @@ def available_period(columns: Sequence[tuple[str, str | None, str | None]]) -> P
 
 
 def period_of_values(values: Sequence[object], *, truncated: bool) -> tuple[Period | None, str]:
-    """The period a result covers, or the reason it cannot be said.
-
-    ``truncated`` is the whole of B-051 in one argument: the DAL caps what comes
-    back, and the last row of a capped result is a floor rather than a latest.
-    A coverage sentence built on one would read as a fact about the customer's
-    data while being a fact about our row limit.
-    """
+    """The period a result covers, or the reason it cannot be said."""
     if truncated:
         return None, "the result was cut off at the row limit, so its last period is not its latest"
     period = _span(values)
@@ -201,20 +118,7 @@ def describe(answered: Period | None, available: Period | None, *, reason: str =
 
 
 def coverage_note(available: Period | None, asked: Asked | None = None) -> str:
-    """What the planner is told as fact (architecture 4.3), or nothing.
-
-    **One note, not two.** The general fact — *this database holds these
-    periods* — and the specific one — *the period you asked for is not among
-    them* — compete for the same L0 slot, and shipping both would be the padding
-    that teaches people to skip the layer. So the specific sentence is said when
-    there is one, and the general sentence otherwise.
-
-    **Not enforcement, and the module says so**: the composer's limitation and
-    the refusal are what hold. This is the half that stops the wrong sentence
-    being written at all — B-157's refusal, three months of 2025 declared missing
-    while `dim_calendar` held every one of them, is a sentence a planner shown
-    this range would not have written.
-    """
+    """What the planner is told as fact (architecture 4.3), or nothing."""
     if asked is not None and asked.held is not None and asked.asked is not None:
         low, high = asked.held
         first, last = asked.asked[0], _before(asked.asked[1])
@@ -246,13 +150,7 @@ def coverage_note(available: Period | None, asked: Asked | None = None) -> str:
 
 
 def limitation(coverage: Coverage) -> str:
-    """The sentence a reader gets, and only for ``outside``.
-
-    Says both measurements rather than a verdict, because the useful thing for a
-    person is the pair — *this answer is about that period, and the catalog
-    describes this other one* — and because a reader who disagrees can go and
-    look at either.
-    """
+    """The sentence a reader gets, and only for ``outside``."""
     if coverage.status != "outside" or coverage.answered is None or coverage.available is None:
         return ""
     return (
@@ -263,35 +161,15 @@ def limitation(coverage: Coverage) -> str:
     )
 
 
-# ---------------------------------------------------------------------------
-# The period a question asked for, against the period the data holds (D-051)
-# ---------------------------------------------------------------------------
+# --- The period a question asked for, against the period the data holds (D-051) ---
 
-#: A full ISO date, which is what a profiled `date` column stores and what
-#: `critic.stated_range` resolves a question to. Kept apart from `_MONTH`
-#: deliberately: **this comparison is done at day precision and the other one is
-#: not**, and the reason is which sides are being compared. An answer's own rows
-#: may hold a text period like `2023-01`, so months are the finest grain both
-#: sides can honestly express there. Here both sides are real dates, and rounding
-#: to months would call a question about December *covered* by data that stops on
-#: the 15th.
+#: A full ISO date, which is what a profiled `date` column stores and what `critic.stated_range`...
 _DAY = re.compile(r"^(\d{4}-\d{2}-\d{2})")
 
 
 @dataclass(frozen=True, slots=True)
 class Asked:
-    """What a question wanted, against what the catalog holds.
-
-    ``verdict`` is one of:
-
-    * ``"covered"`` — every day asked for is inside the data.
-    * ``"partial"`` — some of it is. ``overlap`` is the part that exists, and it
-      is what an honest answer narrows to.
-    * ``"none"`` — no day asked for exists. **The correct ending is a refusal**
-      naming both periods; a confident zero is not (D-051).
-    * ``"unknown"`` — the question named no period, or nothing is profiled. The
-      common case, and the check must not fire on it.
-    """
+    """What a question wanted, against what the catalog holds."""
 
     verdict: str
     asked: tuple[str, str] | None = None
@@ -320,19 +198,12 @@ def held_days(columns: Sequence[tuple[str, str | None, str | None]]) -> tuple[st
 
 
 def asked_for(wanted: tuple[str, str] | None, held: tuple[str, str] | None) -> Asked:
-    """Compare the period a question named with the period the data holds.
-
-    ``wanted`` is half-open — ``critic.stated_range``'s own convention, kept
-    rather than converted, because the check and the critic have to resolve one
-    period or they will disagree and the critic will block the corrected answer.
-    ``held`` is inclusive, because that is what a profiled min and max are.
-    """
+    """Compare the period a question named with the period the data holds."""
     if wanted is None or held is None:
         return Asked(verdict="unknown", asked=wanted, held=held)
     start, end_exclusive = wanted
     low, high = held
-    # `high` is the last day that exists; the asked range ends the day before
-    # `end_exclusive`.
+    # `high` is the last day that exists; the asked range ends the day before `end_exclusive`.
     last_asked = min(_before(end_exclusive), high)
     first_asked = max(start, low)
     if first_asked > last_asked:

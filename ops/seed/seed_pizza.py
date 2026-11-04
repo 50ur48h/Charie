@@ -2,28 +2,7 @@
 # requires-python = ">=3.12"
 # dependencies = ["psycopg[binary]>=3.2", "python-dotenv>=1.0"]
 # ///
-"""Build the pizza-chain demo dataset (plan WP0.4, architecture Part 9.2).
-
-Run it with ``make seed``. It is a standalone uv script rather than part of
-``apps/api`` because it is a fixture generator, not product code — the API must
-never depend on it.
-
-Three properties are load-bearing for later phases and are asserted at the end
-of every run, so drift fails here rather than in a Phase 8 demo:
-
-* **Reproducible.** One fixed RNG seed and one fixed end date, so reseeding
-  yields byte-identical data. Nothing reads the wall clock.
-* **Large enough to be honest.** More than 50 000 orders, so query plans,
-  timeouts and profiling budgets meet a realistic table.
-* **A real decline to find.** Revenue in the last eight weeks is ~12% below the
-  eight before it, caused entirely by delivery orders at one store. Phase 8's
-  research loop has to locate that, and Phase 9's evals depend on the number.
-
-Every run also writes ``ops/seed/truths.json``: the dataset's ground truth, which
-the Phase 9 eval harness reads instead of hardcoding expected answers. That file
-is committed, and ``--check`` regenerates it and fails if the two disagree, so
-the fixture and the numbers the evals trust can never drift apart silently.
-"""
+"""Build the pizza-chain demo dataset (plan WP0.4, architecture Part 9.2)."""
 
 from __future__ import annotations
 
@@ -48,10 +27,7 @@ REPO_ROOT: Final = Path(__file__).resolve().parents[2]
 SCHEMA_FILE: Final = Path(__file__).with_name("pizza_schema.sql")
 TRUTHS_FILE: Final = Path(__file__).with_name("truths.json")
 
-# --------------------------------------------------------------------------
-# Fixed generation parameters. Changing any of these changes the dataset, and
-# therefore the expected answers in ops/evals — treat them as a contract.
-# --------------------------------------------------------------------------
+# --- Fixed generation parameters ---
 RNG_SEED: Final = 20260810
 START_DATE: Final = date(2025, 2, 1)
 END_DATE: Final = date(2026, 7, 31)
@@ -61,8 +37,7 @@ N_CUSTOMERS: Final = 8_000
 LOYAL_CUSTOMERS: Final = 800  # the ~10% who order most often
 ORDERS_PER_DAY: Final = 118.0
 GROWTH_OVER_PERIOD: Final = 0.10  # gentle upward trend across the 18 months
-# Kept small on purpose: a strong annual cycle would put several points of
-# "decline" into every store at once and blur the signal Phase 8 must find.
+# Kept small on purpose: a strong annual cycle would put several points of "decline" into every...
 SEASONAL_AMPLITUDE: Final = 0.02
 
 # The store and channel whose collapse causes the decline.
@@ -73,8 +48,7 @@ DECLINE_DROP_PROBABILITY: Final = 0.53
 # Guard rails checked before anything is written.
 MIN_ORDERS: Final = 50_000
 DECLINE_TARGET_RANGE: Final = (-0.15, -0.09)
-# The rest of the business must stay roughly flat, or the decline is not
-# "concentrated" and Phase 8's expected finding would be wrong.
+# The rest of the business must stay roughly flat.
 UNAFFECTED_TOLERANCE: Final = 0.04
 
 WEEKDAY_FACTOR: Final = (0.85, 0.82, 0.90, 1.00, 1.35, 1.45, 1.15)  # Mon…Sun
@@ -90,10 +64,7 @@ STORES: Final = (
     (5, "Riccarton", "Christchurch", "New Zealand", date(2022, 9, 15)),
     (6, "Papanui", "Christchurch", "New Zealand", date(2024, 1, 22)),
 )
-# Northgate is the flagship: biggest store, heaviest delivery mix. Its delivery
-# business is deliberately ~22% of group revenue, because that is what lets a
-# believable partial collapse (rather than a total shutdown) move the group
-# number by the ~12% the Phase 8 scenario is built around.
+# Northgate is the flagship: biggest store, heaviest delivery mix.
 STORE_WEIGHTS: Final = (0.13, 0.11, 0.34, 0.17, 0.14, 0.11)
 CHANNEL_MIX_DEFAULT: Final = (("delivery", 0.42), ("pickup", 0.33), ("dine_in", 0.25))
 CHANNEL_MIX_FLAGSHIP: Final = (("delivery", 0.62), ("pickup", 0.23), ("dine_in", 0.15))
@@ -228,12 +199,7 @@ def weighted_choice(rng: random.Random, options: tuple[tuple[str, float], ...]) 
 
 
 def build_customers(rng: random.Random) -> list[tuple[int, str, str, str, str, date]]:
-    """Customers with realistic-shaped but unmistakably fake contact details.
-
-    Addresses use the RFC 2606 reserved domain and phone numbers the reserved
-    555-01xx range, so nothing here can reach a real person — this repository is
-    public and the rows land in a database we hand to a classifier.
-    """
+    """Customers with realistic-shaped but unmistakably fake contact details."""
     customers: list[tuple[int, str, str, str, str, date]] = []
     span_days = (END_DATE - START_DATE).days
 
@@ -302,8 +268,7 @@ def build_orders(rng: random.Random) -> list[Order]:
             mix = CHANNEL_MIX_FLAGSHIP if store_id == DECLINE_STORE_ID else CHANNEL_MIX_DEFAULT
             channel = weighted_choice(rng, mix)
 
-            # The whole decline lives in this branch: during the last eight
-            # weeks most delivery orders at one store simply never happen.
+            # The whole decline lives in this branch.
             if (
                 in_decline
                 and store_id == DECLINE_STORE_ID
@@ -359,12 +324,7 @@ def build_payments(
 def revenue_between(
     orders: list[Order], start: date, end: date, *, segment: str = "all"
 ) -> Decimal:
-    """Revenue as the business defines it: cancelled and refunded orders do not count.
-
-    ``segment`` narrows to the store/channel carrying the injected decline
-    (``"affected"``) or to everything else (``"rest"``), which is how the
-    concentration of the decline gets verified rather than assumed.
-    """
+    """Revenue as the business defines it: cancelled and refunded orders do not count."""
 
     def in_segment(order: Order) -> bool:
         affected = order.store_id == DECLINE_STORE_ID and order.channel == DECLINE_CHANNEL
@@ -427,13 +387,7 @@ def build_truths(
     staff: list[tuple[int, int, str, str, date]],
     menu_size: int,
 ) -> dict[str, object]:
-    """The ground truth of this dataset, for the Phase 9 eval harness to read.
-
-    Evals must load their expected answers from ``truths.json`` rather than
-    hardcoding numbers: the fixture and the expectations then cannot drift apart,
-    because both come from the same generator run. Everything here uses the same
-    definition of revenue the semantic layer will use - completed orders only.
-    """
+    """The ground truth of this dataset, for the Phase 9 eval harness to read."""
     completed = [order for order in orders if order.status == "completed"]
     store_names = {store_id: name for store_id, name, *_ in STORES}
     weekday_names = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
@@ -529,13 +483,7 @@ def build_truths(
             ],
             "by_month": [by_month[key].render("month", key) for key in sorted(by_month)],
             "top_store_by_revenue": max(by_store, key=lambda key: by_store[key].revenue),
-            # The same store said the other way (**B-066**). Asked *"which store
-            # brought in the most revenue?"*, a real model answers "Northgate",
-            # not "3" — and it is right to: an internal key reaching a reader is
-            # itself a defect (B-061, B-020). An eval that accepted only the id
-            # was asserting the worse of two correct answers. `decline` has
-            # carried both spellings from the start; this is that, for the top
-            # store.
+            # The same store said the other way (B-066).
             "top_store_by_name": store_names[max(by_store, key=lambda key: by_store[key].revenue)],
             "slowest_week_starting": min(
                 by_week, key=lambda week: by_week[week].revenue
@@ -607,16 +555,7 @@ def connection_string() -> str:
 
 
 def grant_readonly_role(cursor: psycopg.Cursor[tuple[object, ...]], database: str) -> str:
-    """Create the login a data source should actually be registered with (B-006).
-
-    A demo database that ships only its owner login teaches the wrong lesson and
-    makes ``readonly_verified`` impossible to demonstrate honestly. This role can
-    connect, and read, and nothing else: no CREATE anywhere, no write privilege
-    on any table, now or on the tables a future reseed creates.
-
-    Idempotent, because ``make seed`` is run repeatedly and the role is a
-    cluster-level object that outlives any one database.
-    """
+    """Create the login a data source should actually be registered with (B-006)."""
     role = os.environ.get("SEED_PIZZA_READONLY_USER", "pizza_readonly")
     password = os.environ.get("SEED_PIZZA_READONLY_PASSWORD")
     if not password:
@@ -634,18 +573,13 @@ def grant_readonly_role(cursor: psycopg.Cursor[tuple[object, ...]], database: st
     else:
         cursor.execute(sql.SQL("ALTER ROLE {} WITH LOGIN PASSWORD {}").format(identifier, secret))
 
-    # Revoke before granting, so a role left over from an earlier experiment
-    # cannot keep a privilege this fixture never meant it to have.
+    # Revoke before granting, so a role left over from an earlier experiment cannot keep a...
     cursor.execute(sql.SQL("REVOKE ALL ON ALL TABLES IN SCHEMA public FROM {}").format(identifier))
     cursor.execute(sql.SQL("REVOKE ALL ON SCHEMA public FROM {}").format(identifier))
     cursor.execute(
         sql.SQL("REVOKE ALL ON DATABASE {} FROM {}").format(sql.Identifier(database), identifier)
     )
-    # PUBLIC too, which the line above does not touch: PostgreSQL grants CONNECT
-    # and TEMP on every new database to PUBLIC, so revoking on the *role* leaves
-    # every login on the server able to connect to every database on it and read
-    # its table and column names out of `pg_class` (B-155). This container holds
-    # generated data only, but the revoke keeps it shaped like a real source.
+    # PUBLIC too, which the line above does not touch.
     cursor.execute(
         sql.SQL("REVOKE ALL ON DATABASE {} FROM PUBLIC").format(sql.Identifier(database))
     )
@@ -694,8 +628,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    # S311: a seeded, non-cryptographic PRNG is the requirement here, not a
-    # weakness — reproducibility is the whole point of this fixture.
+    # S311: a seeded, non-cryptographic PRNG is the requirement here, not a weakness.
     rng = random.Random(RNG_SEED)  # noqa: S311
 
     print(f"Generating {START_DATE} .. {END_DATE} with seed {RNG_SEED}")
@@ -737,8 +670,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         f"  everything else               {delta_rest:+.1%}"
     )
 
-    # Self-checks run before anything is written, so a dataset that lost one of
-    # the properties later phases rely on never reaches the database at all.
+    # Self-checks run before anything is written.
     if len(orders) <= MIN_ORDERS:
         sys.exit(f"FAIL: only {len(orders):,} orders, expected more than {MIN_ORDERS:,}")
     low, high = DECLINE_TARGET_RANGE
@@ -763,8 +695,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"{TRUTHS_FILE.relative_to(REPO_ROOT)} matches the generator.")
         return 0
 
-    # newline="" keeps the LF endings render_truths produced; on Windows the
-    # default would rewrite them to CRLF and every CI diff check would fail.
+    # newline="" keeps the LF endings render_truths produced.
     with TRUTHS_FILE.open("w", encoding="utf-8", newline="") as handle:
         handle.write(truths)
     print(f"Wrote {TRUTHS_FILE.relative_to(REPO_ROOT)}")
@@ -790,8 +721,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             [tuple(order) for order in orders],
         )
         copy_rows(cursor, "payments", ("id", "order_id", "method", "amount", "paid_at"), payments)
-        # After the tables exist: GRANT SELECT ON ALL TABLES only covers the
-        # tables that are there when it runs.
+        # After the tables exist: GRANT SELECT ON ALL TABLES only covers the tables that are...
         role = grant_readonly_role(cursor, os.environ.get("SEED_PIZZA_DB", "pizza"))
         connection.commit()
 

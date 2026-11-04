@@ -1,11 +1,4 @@
-/**
- * Something is happening and there is nothing to count (docs/design.md).
- *
- * A word saying what is happening, optionally an indeterminate bar, and then
- * the caller replaces the whole thing with the real result sentence. It must
- * never be given steps: inventing them in the client is what D-048 refuses.
- * The word is a live region; the bar is decorative and hidden.
- */
+/** Something is happening and there is nothing to count (docs/design.md). */
 
 export function Pending({
   children,

@@ -1,14 +1,4 @@
-"""Fixtures for the knowledge suite.
-
-Two organizations against a real platform database, because the property this
-suite exists to prove is a *database* property: row-level security over
-`knowledge_documents` and `knowledge_chunks`. A fake store would prove the shape
-of the code and none of what it is for.
-
-The embedder is a stub and always will be — B-040's rule, with the sharpest edge
-in this package: embedding is the one path in `knowledge/` that spends money, and
-a suite that can reach a real provider is a suite that can spend it.
-"""
+"""Fixtures for the knowledge suite."""
 
 from __future__ import annotations
 
@@ -32,27 +22,16 @@ DIMENSIONS = 1536
 
 @dataclass
 class StubEmbedder:
-    """Vectors chosen by the test, not by a model.
-
-    Deterministic and inspectable: `seen` is every text this was asked to
-    embed, which is how a test asserts *what* was sent as well as what came
-    back. `vector_for` maps a substring to the vector a text containing it gets,
-    so a test can say "these two passages are near each other" without a model
-    and without pretending to do semantics.
-    """
+    """Vectors chosen by the test, not by a model."""
 
     vector_for: dict[str, list[float]] = field(default_factory=dict[str, list[float]])
     default: float = 0.0
     seen: list[str] = field(default_factory=list[str])
     calls: int = 0
     fail_with: Exception | None = None
-    #: Declares itself, which is what the B-040 guard reads (B-073). A stub that
-    #: had to be recognised by its type would stop being recognised the moment
-    #: somebody wrote a second one.
+    #: Declares itself, which is what the B-040 guard reads (B-073).
     is_stub: bool = True
-    #: What `embed_texts` files this spend under. Named `stub-embedding` so a
-    #: ledger row from a test is obvious on sight, and matching what `embed`
-    #: reports so the two halves of one call cannot disagree.
+    #: What `embed_texts` files this spend under.
     model: str = "stub-embedding"
 
     async def embed(self, texts: Sequence[str]) -> EmbeddingBatch:
@@ -79,11 +58,7 @@ class StubEmbedder:
 
 
 def unit(index: int) -> list[float]:
-    """A basis vector: 1.0 in one position, 0.0 everywhere else.
-
-    Two of these are exactly orthogonal and each is exactly itself, so "nearest
-    by cosine distance" has an answer a test can state without arithmetic.
-    """
+    """A basis vector: 1.0 in one position, 0.0 everywhere else."""
     vector = [0.0] * DIMENSIONS
     vector[index] = 1.0
     return vector
@@ -120,13 +95,7 @@ async def wired(
 
 @pytest.fixture
 async def orgs(wired: URL, migrated_database: URL) -> TwoOrgs:
-    """Two organizations, each with one member.
-
-    Separate users on purpose. The RLS proof suite deliberately uses the *same*
-    person in both, to show isolation comes from the organization; here the
-    interesting case is the ordinary one, and using one user would leave "would
-    it also work for two?" unasked.
-    """
+    """Two organizations, each with one member."""
     a, b, a_user, b_user = (uuid.uuid4() for _ in range(4))
     engine = create_async_engine(migrated_database)
     try:

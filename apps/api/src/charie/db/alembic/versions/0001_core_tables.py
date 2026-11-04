@@ -1,12 +1,4 @@
-"""core tables: organizations, users, memberships, invitations, audit log
-
-Architecture Part 10.1. Row-level security arrives in 0002 — this revision only
-creates the shapes, so that the isolation migration is reviewable on its own.
-
-Revision ID: 0001
-Revises:
-Create Date: 2026-08-11
-"""
+"""core tables: organizations, users, memberships, invitations, audit log"""
 
 from __future__ import annotations
 
@@ -25,9 +17,7 @@ ROLE_CHECK = "role IN ('admin', 'contributor', 'reader')"
 
 
 def upgrade() -> None:
-    # pgcrypto for gen_random_uuid(); vector for the catalog and knowledge
-    # embeddings that arrive in Phase 4 and Phase 10. Both are created here so
-    # every environment is identical from the first migration onward.
+    # pgcrypto for gen_random_uuid().
     op.execute("CREATE EXTENSION IF NOT EXISTS pgcrypto")
     op.execute("CREATE EXTENSION IF NOT EXISTS vector")
 
@@ -193,7 +183,6 @@ def downgrade() -> None:
     op.drop_table("org_memberships")
     op.drop_table("users")
     op.drop_table("organizations")
-    # Safe here because this revision created them and nothing else remains that
-    # could depend on either type.
+    # Safe here because this revision created them and nothing else remains that could depend on...
     op.execute("DROP EXTENSION IF EXISTS vector")
     op.execute("DROP EXTENSION IF EXISTS pgcrypto")

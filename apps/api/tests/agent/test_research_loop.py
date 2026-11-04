@@ -1,14 +1,4 @@
-"""The bounded loop: how it goes on, and every way it stops (architecture 4.4).
-
-Driven through `execute_run` rather than by calling `research` directly, because
-the properties worth holding are about a *run* — what it spent, what status it
-ended in, what a person is told, what survives in the checkpoint. A test that
-called the loop in isolation could assert its return value and miss all of that.
-
-The budget is passed in small. Waiting for a real eight-iteration run to exhaust
-twenty model calls would make these slow and would test patience rather than the
-ceiling; a budget of two proves the same rule and proves it in a second.
-"""
+"""The bounded loop: how it goes on, and every way it stops (architecture 4.4)."""
 
 from __future__ import annotations
 
@@ -30,8 +20,7 @@ from charie.runs import service as runs
 from charie.runs.events import read_events
 from llm_fixture import build_settings
 
-#: Distinct statements, so the duplicate rule does not stop a run that is meant
-#: to keep going. Each is legitimate against the fixture's catalog.
+#: Distinct statements, so the duplicate rule does not stop a run that is meant to keep going.
 STEPS = (
     "SELECT count(*) AS n FROM shops",
     "SELECT count(*) AS n FROM regions",
@@ -88,13 +77,7 @@ async def _execute(
 
 
 async def _queries_run(context: ToolContext, run_id: uuid.UUID, wired: URL) -> int:
-    """How many statements actually reached the customer's database.
-
-    Asked of `query_executions` rather than of the outcome, because
-    `RunOutcome.execution_ids` means *what the answer cited* — a different and
-    equally load-bearing question. Conflating them would let a run that queried
-    ten times and cited once look like a run that queried once.
-    """
+    """How many statements actually reached the customer's database."""
     engine = create_async_engine(wired)
     try:
         async with engine.connect() as connection:
@@ -114,24 +97,17 @@ async def _queries_run(context: ToolContext, run_id: uuid.UUID, wired: URL) -> i
 def _script_investigation(
     fake_llm: FakeLLM, steps: int, *, finish: bool = True, answer: str = "Here is what I found."
 ) -> None:
-    """A distinct query and a distinct finding per iteration.
-
-    Distinct because both loop-safety rules would otherwise fire: the same
-    statement twice is a duplicate, and the same finding twice is not progress.
-    """
+    """A distinct query and a distinct finding per iteration."""
     for index in range(steps):
         fake_llm.script(_plan(STEPS[index]), role="sql", times=1)
         last = finish and index == steps - 1
         fake_llm.script(_reflect(done=last, statement=f"finding {index}"), role="plan", times=1)
     fake_llm.script(_final(answer), role="compose")
-    # A run now ends with a critic pass (WP9.1). Scripted explicitly rather
-    # than defaulted, so a critic that stopped running would fail here.
+    # A run now ends with a critic pass (WP9.1).
     fake_llm.script(CriticOut(verdict="pass", reasons=[]).model_dump_json(), role="critic")
 
 
-# ---------------------------------------------------------------------------
-# Going on
-# ---------------------------------------------------------------------------
+# --- Going on ---
 
 
 async def test_a_period_only_search_miss_reaches_the_live_planner(
@@ -211,11 +187,7 @@ async def test_a_short_answer_request_does_not_require_a_full_review(
 async def test_a_four_step_investigation_runs_every_step(
     context: ToolContext, fake_llm: FakeLLM, wired: URL
 ) -> None:
-    """The plan's own criterion: a scripted multi-iteration run is deterministic.
-
-    Four queries, four findings, one answer — and the run ends `completed`
-    because nothing cut it short.
-    """
+    """The plan's own criterion: a scripted multi-iteration run is deterministic."""
     _script_investigation(fake_llm, 4)
     run_id = await _run_for(context, "Tell me about this database")
 
@@ -234,12 +206,7 @@ async def test_a_four_step_investigation_runs_every_step(
 async def test_the_checkpoint_can_be_read_back_as_the_run_that_wrote_it(
     context: ToolContext, fake_llm: FakeLLM, wired: URL
 ) -> None:
-    """0.2.4's requirement, and what Phase 8's resume path will rebuild from.
-
-    Asserted as a **round-trip through the real column**, not through an
-    in-memory object: what matters is that what Postgres holds is still a valid
-    `ResearchState`.
-    """
+    """0.2.4's requirement, and what Phase 8's resume path will rebuild from."""
     from charie.agent.state import ResearchState
 
     _script_investigation(fake_llm, 3)
@@ -270,20 +237,13 @@ async def test_the_checkpoint_can_be_read_back_as_the_run_that_wrote_it(
     assert restored.phase == "finished"
 
 
-# ---------------------------------------------------------------------------
-# Stopping
-# ---------------------------------------------------------------------------
+# --- Stopping ---
 
 
 async def test_the_iteration_ceiling_ends_the_run_with_caveats(
     context: ToolContext, fake_llm: FakeLLM
 ) -> None:
-    """A model that never says `done` is stopped by the `for` loop's own range.
-
-    And the ending is `budget_exhausted`, not `failed`: 4.4's guaranteed
-    finalize-with-caveats means the person still gets an answer, with the
-    limitation stated.
-    """
+    """A model that never says `done` is stopped by the `for` loop's own range."""
     _script_investigation(fake_llm, 5, finish=False)
     run_id = await _run_for(context, "Tell me everything")
 
@@ -304,8 +264,7 @@ async def test_the_iteration_ceiling_ends_the_run_with_caveats(
 async def test_the_query_ceiling_ends_the_run(
     context: ToolContext, fake_llm: FakeLLM, wired: URL
 ) -> None:
-    """Queries are bounded separately from iterations because they are what
-    touches a customer's database."""
+    """Queries are bounded separately from iterations because they are what touches a..."""
     _script_investigation(fake_llm, 5, finish=False)
     run_id = await _run_for(context, "Tell me everything")
 
@@ -323,19 +282,14 @@ async def test_the_model_call_ceiling_ends_the_run(context: ToolContext, fake_ll
     outcome = await _execute(context, run_id, Budget(llm_calls=4))
 
     assert outcome.stopped_by == "llm_calls"
-    # Four inside the loop, then one to compose the answer it is required to
-    # give: the compose is the finalize-with-caveats and is not optional.
+    # Four inside the loop, then one to compose the answer it is required to give.
     assert outcome.llm_calls == 5
 
 
 async def test_a_run_with_no_time_stops_before_touching_anything(
     context: ToolContext, fake_llm: FakeLLM
 ) -> None:
-    """Wall clock is checked first, and before the first iteration spends anything.
-
-    A zero allowance is the sharpest version: nothing is planned, nothing is
-    queried, and the person is still answered.
-    """
+    """Wall clock is checked first, and before the first iteration spends anything."""
     _script_investigation(fake_llm, 1)
     run_id = await _run_for(context, "Tell me everything")
 
@@ -349,16 +303,13 @@ async def test_a_run_with_no_time_stops_before_touching_anything(
 
 
 async def test_two_barren_iterations_stop_the_loop(context: ToolContext, fake_llm: FakeLLM) -> None:
-    """4.4's monotone-progress rule. A model that keeps saying "one more thing"
-    without concluding anything would otherwise spend the whole budget arriving
-    where it started."""
+    """4.4's monotone-progress rule."""
     for index in range(4):
         fake_llm.script(_plan(STEPS[index]), role="sql", times=1)
         # No finding, no open question: nothing moved.
         fake_llm.script(_reflect(done=False), role="plan", times=1)
     fake_llm.script(_final(), role="compose")
-    # A run now ends with a critic pass (WP9.1). Scripted explicitly rather
-    # than defaulted, so a critic that stopped running would fail here.
+    # A run now ends with a critic pass (WP9.1).
     fake_llm.script(CriticOut(verdict="pass", reasons=[]).model_dump_json(), role="critic")
     run_id = await _run_for(context, "Tell me everything")
 
@@ -368,24 +319,21 @@ async def test_two_barren_iterations_stop_the_loop(context: ToolContext, fake_ll
     assert outcome.stopped_by == "no_progress"
 
     view = await runs.get_run(org_id=context.org_id, run_id=run_id)
-    # Not `budget_exhausted`: nothing was overspent. The run simply had nothing
-    # further worth doing, which is an ordinary completion.
+    # Not `budget_exhausted`: nothing was overspent.
     assert view.status == "completed"
 
 
 async def test_a_repeated_query_counts_as_no_progress_and_is_never_sent(
     context: ToolContext, fake_llm: FakeLLM, wired: URL
 ) -> None:
-    """The duplicate rule and the progress rule meeting, which is the real shape
-    of a loop going in circles: it proposes what it already ran, twice."""
+    """The duplicate rule and the progress rule meeting."""
     fake_llm.script(_plan(STEPS[0]), role="sql", times=1)
     fake_llm.script(_reflect(done=False, statement="first"), role="plan", times=1)
     # Now it repeats itself, and keeps repeating.
     fake_llm.script(_plan(STEPS[0]), role="sql")
     fake_llm.script(_reflect(done=False), role="plan")
     fake_llm.script(_final(), role="compose")
-    # A run now ends with a critic pass (WP9.1). Scripted explicitly rather
-    # than defaulted, so a critic that stopped running would fail here.
+    # A run now ends with a critic pass (WP9.1).
     fake_llm.script(CriticOut(verdict="pass", reasons=[]).model_dump_json(), role="critic")
     run_id = await _run_for(context, "Tell me everything")
 

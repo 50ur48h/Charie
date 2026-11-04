@@ -1,21 +1,4 @@
-"""The adversarial corpus, run (plan §6 WP5.3, architecture Part 7.5).
-
-Every case in ``adversarial_corpus.yaml`` is sent through the **executor**, not
-through the validator alone, with a connector that records anything it is asked
-to run. That makes each case prove two things rather than one:
-
-1. it was refused, with the code the corpus names — not merely "refused
-   somehow", because an attack caught by the wrong rule is a rule that happens
-   to overlap today and might not tomorrow;
-2. **nothing was sent.** The recording connector's log is asserted empty, so a
-   case cannot pass by being rejected after the customer's database has already
-   seen it.
-
-The file is append-only (its own header says why). This runner adds two guards
-around that: ids must be unique, and every ``ViolationCode`` the validator can
-produce must appear in the corpus at least once — a rule with no attack case is
-a rule nobody has tried to break.
-"""
+"""The adversarial corpus, run (plan §6 WP5.3, architecture Part 7.5)."""
 
 from __future__ import annotations
 
@@ -107,8 +90,7 @@ async def test_every_corpus_case_is_refused_and_never_sent(
 
 
 def test_case_ids_are_unique() -> None:
-    """Ids are how a failure is discussed and how history is kept. Reusing one
-    quietly rewrites what a past run was about."""
+    """Ids are how a failure is discussed and how history is kept."""
     ids = [case["id"] for case in _cases()]
 
     assert len(ids) == len(set(ids)), sorted({name for name in ids if ids.count(name) > 1})
@@ -122,12 +104,7 @@ def test_every_case_names_a_real_violation_code() -> None:
 
 
 def test_every_violation_code_has_at_least_one_attack() -> None:
-    """A rule with no attack case is a rule nobody has tried to break.
-
-    Two codes are exempt and both are about the *checker* rather than about SQL:
-    they are proven in test_validator_statements.py with generated input, which
-    is a 20,000-character statement and does not belong in a readable corpus.
-    """
+    """A rule with no attack case is a rule nobody has tried to break."""
     exempt = {ViolationCode.TOO_COMPLEX, ViolationCode.UNRESOLVABLE}
     covered = {case["expect"] for case in _cases()}
     expected = {str(code) for code in ViolationCode} - {str(code) for code in exempt}
@@ -136,9 +113,7 @@ def test_every_violation_code_has_at_least_one_attack() -> None:
 
 
 def test_the_corpus_only_grows() -> None:
-    """Append-only is a review rule, and this is the part of it a machine can
-    hold: the count is written down, and lowering it is a deliberate edit that
-    shows up in the diff beside whatever was removed."""
+    """Append-only is a review rule, and this is the part of it a machine can hold."""
     assert len(_cases()) >= 63, (
         "the corpus has shrunk. Cases are appended, never deleted — a case that "
         "has become wrong is evidence about the validator, not a nuisance."

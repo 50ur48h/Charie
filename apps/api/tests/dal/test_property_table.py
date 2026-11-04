@@ -1,19 +1,4 @@
-"""Architecture Part 7.5, transcribed as a map from property to proof.
-
-This file is the Phase 5 gate's evidence. Arch 7.5 states what the DAL
-guarantees in prose; the accept criterion for milestone M5 is that **every row
-of it has a named passing test**. The table below is that mapping, written as
-data so it can be checked rather than believed:
-
-* every test named here must exist — a renamed or deleted proof fails the gate
-  rather than quietly stopping being run;
-* every property must name at least one test, so a row cannot be added to the
-  architecture and left unproven.
-
-Read it alongside `docs/architecture.md` §7.5 and §7.1. If the two disagree,
-one of them is wrong and neither should be edited to match the other without
-saying why.
-"""
+"""Architecture Part 7.5, transcribed as a map from property to proof."""
 
 from __future__ import annotations
 
@@ -25,10 +10,6 @@ import pytest
 DAL_TESTS = Path(__file__).parent
 
 #: property (architecture 7.5 / 7.1) → the tests that prove it.
-#:
-#: Names are bare function names, resolved across the DAL suite. Where the proof
-#: is generated rather than enumerated, the property test is named; where it is
-#: the corpus, the corpus runner is named and the corpus file says which cases.
 PROPERTY_TABLE: dict[str, tuple[str, ...]] = {
     # -- 7.5 layer 1: the AST allowlist ------------------------------------
     "exactly one statement": (
@@ -164,11 +145,7 @@ PROPERTY_TABLE: dict[str, tuple[str, ...]] = {
 
 
 def _defined_test_names() -> set[str]:
-    """Every test function defined in the DAL suite and in the query-gate suite.
-
-    Parsed rather than imported: importing pulls in fixtures and a database, and
-    this check is about names on disk.
-    """
+    """Every test function defined in the DAL suite and in the query-gate suite."""
     roots = [DAL_TESTS, DAL_TESTS.parent / "connectors", DAL_TESTS.parent / "db"]
     names: set[str] = set()
     for root in roots:
@@ -186,8 +163,7 @@ def _defined_test_names() -> set[str]:
     ("prop", "tests"), PROPERTY_TABLE.items(), ids=lambda value: str(value)[:60]
 )
 def test_every_property_names_tests_that_exist(prop: str, tests: tuple[str, ...]) -> None:
-    """The gate's own guard: a proof that has been renamed or deleted fails here
-    rather than quietly ceasing to run."""
+    """The gate's own guard: a proof that has been renamed or deleted fails here rather than..."""
     defined = _defined_test_names()
     missing = [name for name in tests if name not in defined]
 
@@ -205,10 +181,7 @@ def test_every_property_has_at_least_one_proof() -> None:
 
 
 def test_the_table_covers_the_pipeline_end_to_end() -> None:
-    """A coarse completeness check: the eight numbered rules of the validator's
-    pipeline, plus execution and recording, all appear. It cannot prove the
-    table is complete — only a reader against 7.5 can — but it catches a whole
-    section going missing."""
+    """A coarse completeness check: the eight numbered rules of the validator's pipeline."""
     joined = " ".join(PROPERTY_TABLE).lower()
 
     for required in (

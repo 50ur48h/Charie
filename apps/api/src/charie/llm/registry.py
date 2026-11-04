@@ -1,29 +1,4 @@
-"""Which model does which job, and who supplies it (architecture Part 4.9, 8.3).
-
-Two maps, both configuration, resolved in this order:
-
-    role  ──LLM_ROLE_MAP──▶  tier  ──LLM_MODELS──▶  model, per provider
-
-Nothing else in the application names a model. That is the point: architecture
-8.3 calls model tiering the biggest cost lever in the product, and a lever is
-only useful if it is in one place. Moving ``observe`` from ``strong`` to
-``small`` is an environment variable; finding every call site that hard-coded a
-model name is a refactor.
-
-**Why models are configuration and not defaults in code.** Provider catalogues
-change every few months, and a stale default is the worst kind: it either 404s
-in production or silently bills for the wrong tier. So there is no built-in
-model table — ``LLM_MODELS`` must name a model for every tier of every
-configured provider, and resolution fails by naming the variable and the missing
-tier rather than guessing.
-
-The chain is ordered. ``resolve`` returns one choice per configured provider, in
-configured order, which is the static per-role fallback chain of 4.9. WP6.2's
-``llm/fallback.py`` walks it; until then the front door uses the first entry and
-the rest are inert — but they are resolved and validated from day one, so a
-misconfigured second provider is a startup-shaped problem rather than something
-discovered during the first outage.
-"""
+"""Which model does which job, and who supplies it (architecture Part 4.9, 8.3)."""
 
 from __future__ import annotations
 
@@ -57,11 +32,7 @@ __all__ = [
 
 
 class ProviderNotConfiguredError(LLMError):
-    """Configuration cannot answer "which model, from whom".
-
-    An ``LLMError`` because from a caller's point of view the call cannot be
-    made, and never retryable: a second attempt reads the same configuration.
-    """
+    """Configuration cannot answer "which model, from whom"."""
 
     def __init__(self, message: str) -> None:
         super().__init__(message, retryable=False)
@@ -78,31 +49,20 @@ class ModelChoice:
 
 
 def _openai() -> LLMProvider:
-    # Imported inside the factory, not at module scope: the import reads no
-    # configuration, but keeping it here means the registry has no opinion about
-    # which providers exist until something asks for one — and a provider module
-    # that grows a heavy dependency does not add it to every import of this one.
+    # Imported inside the factory, not at module scope: the import reads no configuration.
     from charie.llm.openai import OpenAIProvider
 
     return OpenAIProvider()
 
 
 def _meta() -> LLMProvider:
-    # The same Responses client with Meta's endpoint and key (D-069). Imported
-    # here for the reason `_openai` gives.
+    # The same Responses client with Meta's endpoint and key (D-069).
     from charie.llm.meta import MetaProvider
 
     return MetaProvider()
 
 
-#: Providers this build ships. ``anthropic`` is the second provider the
-#: architecture calls for and is **not here yet** — see **B-029**; the chain
-#: machinery it will slot into is built and tested regardless. ``meta`` is not
-#: the architecture's second provider and does not close B-029: it speaks
-#: OpenAI's protocol, so it adds an account rather than proving the abstraction.
-#: A table of *factories* rather than instances, so that importing the registry
-#: does not open an HTTP client, and so a provider whose key is absent fails when
-#: something tries to use it rather than at import time.
+#: Providers this build ships.
 def _scripted() -> LLMProvider:
     from charie.llm.scripted import ScriptedProvider
 
@@ -112,68 +72,34 @@ def _scripted() -> LLMProvider:
 _BUILTIN_FACTORIES: dict[str, Callable[[], LLMProvider]] = {
     "openai": _openai,
     "meta": _meta,
-    # **A stub, shipped deliberately** (WP11.2b). The phase gate wants a browser
-    # driving the real product in CI, and the model is the only part of that
-    # chain that cannot run there for free and deterministically. It is named
-    # here rather than registered by a test harness because CI selects it
-    # through `LLM_PROVIDERS`, in a container built from the ordinary image.
-    #
-    # What keeps it out of production is not this table. `STUB_PROVIDERS` below
-    # refuses it at boot, and `get_provider` refuses any stub at first use.
+    # A stub, shipped deliberately (WP11.2b).
     "scripted": _scripted,
 }
 
-#: The built-in providers that answer without a model behind them. Named, so the
-#: boot check can refuse a configured stub **without constructing** every
-#: provider at startup — building one is cheap but not free, and a boot path that
-#: opens an HTTP client per configured provider merely to ask whether it is fake
-#: would be a worse trade than a list somebody has to keep honest.
-#:
-#: A belt to `get_provider`'s braces, and the two catch different things: this
-#: one sees a stub named in *configuration*, before anything serves traffic; that
-#: one sees any stub *instance*, including one `register_provider` supplied at
-#: runtime, which no configuration mentions.
+#: The built-in providers that answer without a model behind them.
 STUB_PROVIDERS: frozenset[str] = frozenset({"scripted"})
 
-#: Registered at runtime — by tests, and by anything that wants to substitute a
-#: provider without editing this module. Checked before the built-ins, so an
-#: override wins.
+#: Registered at runtime — by tests.
 _OVERRIDES: dict[str, Callable[[], LLMProvider]] = {}
 
-#: One instance per provider name. A provider holds an HTTP connection pool, so
-#: building one per call would be a new TLS handshake per LLM call.
+#: One instance per provider name.
 _INSTANCES: dict[str, LLMProvider] = {}
 
 
 def register_provider(name: str, factory: Callable[[], LLMProvider]) -> None:
-    """Make ``name`` resolvable, replacing any earlier registration.
-
-    Registering invalidates the cached instance, so a test that swaps a provider
-    mid-run gets the new one rather than the one built before the swap.
-    """
+    """Make ``name`` resolvable, replacing any earlier registration."""
     _OVERRIDES[name] = factory
     _INSTANCES.pop(name, None)
 
 
 def clear_provider_cache() -> None:
-    """Drop cached instances and every runtime registration.
-
-    Built-in providers survive: they are code, not registration state. Tests call
-    this in teardown so a fake registered by one test cannot answer another's
-    calls — which would be the exact kind of cross-test coupling that makes a
-    deterministic harness stop being deterministic.
-    """
+    """Drop cached instances and every runtime registration."""
     _OVERRIDES.clear()
     _INSTANCES.clear()
 
 
 async def aclose_providers() -> None:
-    """Close every built provider and forget it.
-
-    For application shutdown: a provider holds an HTTP connection pool, and the
-    protocol says every caller owes it an ``aclose``. Failures are ignored on
-    purpose — a process on its way out has nothing useful to do with them.
-    """
+    """Close every built provider and forget it."""
     for provider in list(_INSTANCES.values()):
         with suppress(Exception):
             await provider.aclose()
@@ -222,12 +148,7 @@ def tier_for(role: Role, settings: Settings | None = None) -> Tier:
 
 
 def resolve(role: Role, settings: Settings | None = None) -> tuple[ModelChoice, ...]:
-    """The ordered chain of models that may serve ``role``.
-
-    First entry is the primary. Later entries are the fallbacks WP6.2 walks on a
-    retryable failure; they are resolved here so that a chain which cannot be
-    satisfied is an error now rather than during the incident that needs it.
-    """
+    """The ordered chain of models that may serve ``role``."""
     resolved = settings if settings is not None else get_settings()
     tier = tier_for(role, resolved)
 
@@ -259,40 +180,11 @@ def resolve(role: Role, settings: Settings | None = None) -> tuple[ModelChoice, 
 
 
 def unresolvable_roles(settings: Settings | None = None) -> list[str]:
-    """Roles this configuration cannot serve, as ``role -> why`` sentences.
-
-    **`/healthz` proved the wrong thing.** `missing_for_mode` asks whether
-    `LLM_MODELS` names *any* model for each configured provider, which is
-    `resolve`'s first two refusals and not its third: a deployment can name a
-    `small` and a `strong` model, satisfy that check, map a role to `mid`, and
-    fail at the first call of the first question. The configuration was reported
-    healthy and the product was not.
-
-    That gap is why it matters here rather than in the abstract. `gpt-5.6-terra`
-    sat in dev's `LLM_MODELS` and `LLM_PRICES` being called by no role at all,
-    because the only role defaulting to `mid` is `compose` and dev overrides it
-    to `small`. A priced model nothing calls is a trap for whoever tunes this
-    next, so it was removed — and removing it is only safe if mapping a role back
-    to `mid` fails *at the probe* rather than mid-question.
-
-    Empty is the healthy answer, and the common one. This resolves every role
-    rather than the roles a given request happens to need, because a deployment
-    that cannot answer one kind of question is not well.
-    """
+    """Roles this configuration cannot serve, as ``role -> why`` sentences."""
     resolved = settings if settings is not None else get_settings()
     problems: list[str] = []
     for role in ROLES:
-        # **`embed` is not resolved here and asking would invent a failure.**
-        # Embeddings are served by `EMBEDDINGS_PROVIDER`/`EMBEDDINGS_MODEL`, and
-        # the role appears on the tier ladder only so its spend can be priced —
-        # `DEFAULT_ROLE_TIERS` says as much where it maps it to a tier of its
-        # own. Demanding an `LLM_MODELS[provider]["embed"]` would report every
-        # correct deployment as degraded, which the existing probe tests caught
-        # the moment this checked every role blindly.
-        #
-        # Keyed on the tier rather than the role name, so a second
-        # embeddings-shaped role inherits the exemption instead of needing to be
-        # remembered here.
+        # `embed` is not resolved here and asking would invent a failure.
         if tier_for(role, resolved) == "embed":
             continue
         try:

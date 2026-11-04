@@ -1,24 +1,4 @@
-"""Running an approved statement, and bounding what comes back (arch 7.1).
-
-Steps 4 to 6 of the data access flow: resolve the credential, execute with a
-deadline and a row cap, mask what the policies cover. Step 7 — the audit row and
-the stored artifact — is WP5.2b, and this module is written so that adding it
-means wrapping this, not editing it.
-
-**Every bound is applied twice, in two different places, on purpose.**
-The row cap is written into the SQL, so the *engine* stops early and a query
-that would have scanned a hundred million rows is cheap; and the connector
-fetches one row past the cap, so a result is truncated even if the limit was
-somehow not applied. The deadline is a statement timeout the engine enforces,
-and the connector holds the driver-level one. Neither layer is trusted to be the
-only one, because the failure they guard against — an unbounded query against a
-customer's production database — is one this service cannot take back.
-
-**The credential is read here and nowhere else in the DAL.** It comes from the
-``SecretsProvider`` through ``connector_for_view``, lives as long as the
-connector does, and never reaches a return value, a log line or an exception:
-connectors raise ``ConnectorError``, which is already sanitized.
-"""
+"""Running an approved statement, and bounding what comes back (arch 7.1)."""
 
 from __future__ import annotations
 
@@ -36,25 +16,11 @@ __all__ = ["Execution", "execute"]
 
 @dataclass(frozen=True, slots=True)
 class Execution:
-    """What one statement did. The object the agent's tool layer will hand on.
-
-    Carries the validation as well as the result, because the questions asked of
-    it afterwards — which tables were read, was anything sensitive touched, what
-    exactly ran — are answered by the validation, and an audit row assembled
-    from a remembered copy is an audit row that can be wrong.
-    """
+    """What one statement did. The object the agent's tool layer will hand on."""
 
     validated: Validated
     frame: MaskedFrame
-    #: The ``query_executions`` row this became. Filled in by ``service.run``
-    #: after it records, and **None from the executor alone** — which is honest,
-    #: because the executor does not write the row and nothing but the front door
-    #: should be calling it.
-    #:
-    #: It is here because a citation has to name something a person can look up
-    #: (architecture 4.2: findings may only cite real ``query_execution`` rows).
-    #: The alternative was for the agent to re-find its own row by hash, which
-    #: would be a guess dressed as a reference.
+    #: The ``query_executions`` row this became.
     execution_id: uuid.UUID | None = None
 
     @property
@@ -80,9 +46,7 @@ class Execution:
 
     @property
     def sensitive_accessed(self) -> bool:
-        """True when the statement read a column under a mask policy — whether
-        or not the value survived into the result. The audit question is what
-        was *reached for*, not what was returned."""
+        """True when the statement read a column under a mask policy."""
         return self.validated.touches_sensitive
 
 
@@ -94,26 +58,11 @@ async def execute(
     max_rows: int | None = None,
     connector: Connector | None = None,
 ) -> Execution:
-    """Validate, execute, mask. The bounded read, with nothing written down.
-
-    ``dal.service.run`` is the entry point callers use; this is the layer under
-    it, and the difference is the record. Nothing above the DAL should reach
-    past ``run`` to get here — that would be a query with no audit row, which is
-    the one thing architecture 8.2 does not allow.
-
-    Raises ``PolicyViolation`` when the statement is refused — before anything
-    is connected to, so a rejected query costs a customer's database nothing —
-    and ``ConnectorError`` when the far end fails. Nothing else.
-
-    ``connector`` is for tests that supply their own; in every other case one is
-    opened here and closed in the ``finally``, because a session left open is
-    left open on somebody else's server.
-    """
+    """Validate, execute, mask. The bounded read, with nothing written down."""
     policy = await source_policy(org_id, data_source_id)
     limits = policy.limits_for(max_rows)
 
-    # Validation first, and the row cap is part of it: the SQL that carries the
-    # limit may only be emitted by the module holding the grant.
+    # Validation first, and the row cap is part of it.
     validated = validate(sql, source=policy, max_rows=limits.max_rows)
 
     supplied = connector is not None

@@ -1,11 +1,4 @@
-/**
- * The frame for the screens a person sees before they are inside an
- * organization: the front door and the invitation page.
- *
- * A centred column on the page's own colour with the mark above it, and no
- * sidebar — there is nothing to navigate between yet, and a shell drawn around
- * a sign-in card would show controls that can only fail (B-008).
- */
+/** The frame for the screens a person sees before they are inside an organization. */
 
 import { CircleAlert, TriangleAlert } from "lucide-react";
 import type { ReactNode } from "react";

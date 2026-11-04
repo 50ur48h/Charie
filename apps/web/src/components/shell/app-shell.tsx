@@ -1,18 +1,6 @@
 "use client";
 
-/**
- * The frame every org screen sits in: the sidebar on the left, the page beside.
- *
- * **One `/v1/me` for the whole shell.** The sidebar needs the person's name and
- * the organization's; each screen inside needs neither. Fetching it here means a
- * navigation between chats does not re-ask.
- *
- * **Signed out, this renders nothing but the sign-in card.** A shell drawn
- * around a sign-in prompt would show controls that can only fail (B-008).
- *
- * Below the `md` breakpoint the sidebar becomes a drawer, opened from the top
- * bar of whichever screen is showing.
- */
+/** The frame every org screen sits in: the sidebar on the left, the page beside. */
 
 import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
@@ -43,8 +31,7 @@ export function AppShell({ orgId, children }: { orgId: string; children: ReactNo
         const next = await api.me();
         if (alive) setMe(next);
       } catch {
-        // The shell degrades to unnamed rather than blocking the page: the
-        // screens inside fetch their own data and report their own failures.
+        // The shell degrades to unnamed rather than blocking the page.
         if (alive) setMe(null);
       }
     })();

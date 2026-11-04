@@ -1,17 +1,4 @@
-/**
- * The answer's chart, translated from the server's Vega-Lite spec into the
- * Calm design's ECharts figures.
- *
- * The server assembles the spec from a closed vocabulary (`agent/charts.py`):
- * a mark from `bar | line | point | area`, x / y / optional colour encodings,
- * and inline values — never a URL. This module reads exactly that vocabulary
- * and nothing more, so a spec it does not understand yields `null` (and the
- * figure says so) rather than a picture that misrepresents the data.
- *
- * The styling follows the approved design: soft diverging bars when values go
- * both ways, a smooth line with a fading area for a series over time, dashed
- * hairline grids, muted 11px axis labels, and tooltips on the card surface.
- */
+/** The answer's chart, translated from the server's Vega-Lite spec into the Calm design's... */
 
 export interface ChartTheme {
   font: string;
@@ -314,8 +301,7 @@ function diverging(items: Item[], theme: ChartTheme, valueTitle: string, format:
       valueFormatter: (v: number) => format.full(v),
     }),
     xAxis: valueAxis(theme, format, {
-      // Room beyond each end in proportion to the whole range, so a short bar's
-      // label never runs into the names (the design pads both ends the same way).
+      // Room beyond each end in proportion to the whole range.
       min: (extent: { min: number; max: number }) =>
         Math.min(0, extent.min) - Math.max(Math.abs(extent.min), Math.abs(extent.max), 1) * 0.24,
       max: (extent: { min: number; max: number }) =>
@@ -387,8 +373,7 @@ function diverging(items: Item[], theme: ChartTheme, valueTitle: string, format:
 
 /** A ranked list of things as soft horizontal bars, the largest in the accent. */
 function ranked(items: Item[], theme: ChartTheme, valueTitle: string, format: Format, narrow: boolean): Record<string, unknown> {
-  // ECharts draws the first category at the bottom; a reader expects the
-  // query's first row at the top.
+  // ECharts draws the first category at the bottom.
   const ordered = [...items].reverse();
   const negative = items.every((item) => item.value <= 0);
   const extreme = items.reduce(
@@ -461,12 +446,7 @@ function titleOf(spec: Record<string, unknown>): string | null {
   return nested && typeof nested.text === "string" ? nested.text : null;
 }
 
-/**
- * The figure for a spec, or null when the spec is outside the vocabulary.
- *
- * Pure: the same spec and theme always give the same option, which is what the
- * unit tests hold it to.
- */
+/** The figure for a spec, or null when the spec is outside the vocabulary. */
 export function buildChart(
   spec: Record<string, unknown>,
   theme: ChartTheme,
@@ -490,8 +470,7 @@ export function buildChart(
   const format = formatFor(spec);
   const temporal = x.type === "temporal";
 
-  // Categories along x, in a reader's order: time ascending, otherwise the
-  // query's own order.
+  // Categories along x, in a reader's order: time ascending, otherwise the query's own order.
   let keys: string[] = [];
   let labels: string[] = [];
   if (temporal) {

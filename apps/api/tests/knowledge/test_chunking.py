@@ -1,14 +1,4 @@
-"""Chunker goldens (plan WP10.1).
-
-No database, no model: chunking is a pure function of a string, which is what
-lets these be goldens at all. They are the cheapest tests in the build and they
-guard the place where retrieval quality is mostly decided — before any model is
-involved.
-
-Each test names the failure it prevents rather than the behaviour it describes,
-because "chunks by heading" is true of an implementation that also cuts every
-code block into pieces.
-"""
+"""Chunker goldens (plan WP10.1)."""
 
 from __future__ import annotations
 
@@ -47,16 +37,14 @@ def test_a_heading_starts_a_new_passage() -> None:
 
 
 def test_the_heading_trail_is_a_stack_and_not_the_nearest_heading() -> None:
-    """Provenance has to say *where in the document* a passage sits. "Exclusions"
-    on its own could be anything's exclusions."""
+    """Provenance has to say where in the document a passage sits."""
     sections = split_sections(POLICY)
 
     assert sections[1].headings == ("Revenue policy", "Exclusions")
 
 
 def test_a_deeper_heading_pops_back_out_again() -> None:
-    """Without this the trail only ever grows, and by the end of a long document
-    every chunk claims to sit under every heading in it."""
+    """Without this the trail only ever grows."""
     document = "# One\n\n## Deep\n\nx\n\n# Two\n\ny\n"
 
     sections = split_sections(document)
@@ -73,9 +61,7 @@ def test_text_before_the_first_heading_is_kept() -> None:
 
 
 def test_a_hash_inside_a_code_fence_is_not_a_heading() -> None:
-    """A `#` in a shell block is a comment. Treating it as a section cuts a
-    script into pieces under invented headings — and a document full of SQL is
-    exactly what an analytics customer uploads."""
+    """A `#` in a shell block is a comment."""
     document = "# Setup\n\n```sh\n# install everything\nmake up\n```\n\nAfterwards, run it.\n"
 
     sections = split_sections(document)
@@ -85,8 +71,7 @@ def test_a_hash_inside_a_code_fence_is_not_a_heading() -> None:
 
 
 def test_the_headings_travel_beside_the_text_rather_than_inside_it() -> None:
-    """Prepending the trail would inflate every embedding with the same words and
-    make provenance impossible to render separately."""
+    """Prepending the trail would inflate every embedding with the same words and make..."""
     chunks = chunk_document(POLICY)
     exclusions = next(c for c in chunks if c.headings == ("Revenue policy", "Exclusions"))
 
@@ -95,14 +80,7 @@ def test_the_headings_travel_beside_the_text_rather_than_inside_it() -> None:
 
 
 def test_a_long_section_is_split_and_never_mid_paragraph() -> None:
-    """A paragraph is the smallest unit whose meaning survives being moved.
-    Cutting inside one gives two chunks that are each slightly wrong rather than
-    one that is right.
-
-    Asserted as *every emitted paragraph appears verbatim in the source*, which
-    is the actual property. Checking that chunks end in a full stop would pass
-    for an implementation that cut after any sentence, mid-paragraph included.
-    """
+    """A paragraph is the smallest unit whose meaning survives being moved."""
     paragraphs = [
         f"{n}. " + "Cancelled orders are excluded from every revenue figure. " * 12
         for n in range(12)
@@ -119,8 +97,7 @@ def test_a_long_section_is_split_and_never_mid_paragraph() -> None:
 
 
 def test_a_continuation_repeats_the_previous_paragraph() -> None:
-    """The overlap. A claim that straddles a boundary has to be retrievable from
-    either side, or the one question it answers finds half of it."""
+    """The overlap. A claim that straddles a boundary has to be retrievable from either side."""
     paragraphs = [f"Paragraph {n}. " + ("filler words here. " * 40) for n in range(10)]
     document = "# Policy\n\n" + "\n\n".join(paragraphs)
 
@@ -132,9 +109,7 @@ def test_a_continuation_repeats_the_previous_paragraph() -> None:
 
 
 def test_one_enormous_paragraph_is_left_whole_rather_than_mangled() -> None:
-    """Splitting it needs a sentence tokenizer, and one that is wrong about
-    abbreviations cuts mid-sentence. An oversized chunk is a cost; a mangled one
-    is a wrong answer."""
+    """Splitting it needs a sentence tokenizer."""
     document = "# Policy\n\n" + ("one long unbroken sentence without any breaks " * 400)
 
     chunks = chunk_document(document)
@@ -144,8 +119,7 @@ def test_one_enormous_paragraph_is_left_whole_rather_than_mangled() -> None:
 
 
 def test_a_short_section_stays_its_own_chunk() -> None:
-    """Merging across a heading would produce a chunk whose `headings` is a lie —
-    claiming one provenance while holding text from two."""
+    """Merging across a heading would produce a chunk whose `headings` is a lie."""
     document = "# A\n\nshort.\n\n# B\n\nalso short.\n"
 
     chunks = chunk_document(document)
@@ -154,8 +128,7 @@ def test_a_short_section_stays_its_own_chunk() -> None:
 
 
 def test_a_straggler_at_the_end_of_a_section_is_folded_back_in() -> None:
-    """Within a section only, and only the tail: a two-line remainder is not
-    worth a row, a vector and a retrieval slot of its own."""
+    """Within a section only, and only the tail: a two-line remainder is not worth a row."""
     body = "\n\n".join(f"Paragraph {n}. " + ("filler " * 60) for n in range(8))
     document = "# Policy\n\n" + body + "\n\ntiny."
 
@@ -168,16 +141,14 @@ def test_a_straggler_at_the_end_of_a_section_is_folded_back_in() -> None:
 
 
 def test_seq_is_gap_free_across_the_whole_document() -> None:
-    """Revision 0016's unique constraint expects it, and it is what makes
-    re-indexing a delete-and-rewrite rather than an append."""
+    """Revision 0016's unique constraint expects it."""
     chunks = chunk_document(POLICY)
 
     assert [chunk.seq for chunk in chunks] == list(range(len(chunks)))
 
 
 def test_the_same_document_chunks_the_same_way_every_time() -> None:
-    """The property that lets these be goldens, and the one that makes a
-    re-index produce the same rows rather than a shuffled set."""
+    """The property that lets these be goldens."""
     assert chunk_document(POLICY) == chunk_document(POLICY)
 
 
@@ -188,8 +159,7 @@ def test_an_empty_document_produces_nothing_rather_than_one_empty_chunk() -> Non
 
 
 def test_a_chunk_estimates_its_own_size_with_the_shared_estimator() -> None:
-    """The same function the prompt budget uses, so "700 tokens" means one thing
-    in this codebase rather than two."""
+    """The same function the prompt budget uses."""
     chunk = Chunk(seq=0, text="Net revenue excludes cancelled orders.")
 
     assert chunk.token_estimate == estimate_tokens(chunk.text)

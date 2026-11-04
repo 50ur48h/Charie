@@ -78,8 +78,7 @@ describe("indexingSummary", () => {
   });
 
   it("says how far embedding got rather than rounding it up to indexed", () => {
-    // The state a large upload spends longest in. Reporting it as "indexed"
-    // would hide the one thing somebody waiting on it wants to know.
+    // The state a large upload spends longest in.
     const summary = indexingSummary(PART_EMBEDDED);
 
     expect(summary).toContain("1 searchable by meaning so far");
@@ -87,8 +86,7 @@ describe("indexingSummary", () => {
   });
 
   it("says a failed document with chunks is still searchable by wording", () => {
-    // An embedding failure keeps the text (WP10.1a), so the screen must not
-    // imply the upload was lost.
+    // An embedding failure keeps the text (WP10.1a).
     expect(indexingSummary({ ...SCANNED, chunk_count: 3 })).toContain("wording only");
   });
 
@@ -112,8 +110,7 @@ describe("<Documents />", () => {
   });
 
   it("shows the failure reason the API wrote for the person who uploaded it", async () => {
-    // Not replaced with a generic message: "needs OCR" is actionable and
-    // "indexing failed" is not.
+    // Not replaced with a generic message: "needs OCR" is actionable and "indexing failed" is not.
     stubFetch(json([SCANNED]));
 
     render(<Documents orgId="org-1" role="admin" />);
@@ -122,9 +119,7 @@ describe("<Documents />", () => {
   });
 
   it("offers a Reader no control the API would refuse", async () => {
-    // B-008: the API refuses and audits these anyway; offering the button
-    // teaches people the product is broken rather than that they lack
-    // permission.
+    // B-008: the API refuses and audits these anyway.
     stubFetch(json([INDEXED]));
 
     render(<Documents orgId="org-1" role="reader" />);
@@ -136,8 +131,7 @@ describe("<Documents />", () => {
   });
 
   it("fails closed while the role is still unknown", async () => {
-    // Costs a Contributor one page load; the alternative shows buttons to
-    // people the API will refuse.
+    // Costs a Contributor one page load.
     stubFetch(json([INDEXED]));
 
     render(<Documents orgId="org-1" role={null} />);
@@ -157,8 +151,7 @@ describe("<Documents />", () => {
   });
 
   it("sends the file as multipart, with no JSON content type", async () => {
-    // The browser has to write its own boundary; setting the header by hand
-    // produces a request the server cannot parse.
+    // The browser has to write its own boundary.
     const calls = stubFetch(json([]), json(INDEXED, 201), json([INDEXED]));
 
     render(<Documents orgId="org-1" role="admin" />);
@@ -196,11 +189,7 @@ describe("<Documents />", () => {
 
 describe("the indexing meter", () => {
   it("draws a proportion only where two real counts exist (D-049)", async () => {
-    /**
-     * **A meter needs a denominator that is not invented.** A part-embedded
-     * document has one — passages stored against passages embedded — and the
-     * bar is a proportion of those two numbers and nothing else.
-     */
+    /** A meter needs a denominator that is not invented. */
     stubFetch(json([PART_EMBEDDED]));
 
     render(<Documents orgId="o1" role="admin" />);
@@ -211,12 +200,7 @@ describe("the indexing meter", () => {
   });
 
   it("draws nothing at all when there is no denominator", async () => {
-    /**
-     * Before any passage is stored the total does not exist, so a bar at 0%
-     * would be claiming a total nobody knows. A failed document gets none
-     * either: it is not part-way anywhere, it has stopped. The words carry
-     * both cases instead.
-     */
+    /** Before any passage is stored the total does not exist. */
     stubFetch(json([SCANNED]));
 
     render(<Documents orgId="o1" role="admin" />);

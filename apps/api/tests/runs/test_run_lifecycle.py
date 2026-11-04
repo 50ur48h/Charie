@@ -1,14 +1,4 @@
-"""A question, the run it starts, and every way that run can end.
-
-The state machine is the part of WP7.1 that has to be right before there is
-anything driving it, because WP7.2's planner will be written against it and
-Phase 8's loop against that. Two properties carry most of the weight:
-
-* **a finished run never moves again** — so a late tool result cannot resurrect
-  one and quietly change an answer somebody has already read;
-* **every status change leaves a trace event** — a run whose status changed
-  without the trace saying so is precisely the gap the trace exists to close.
-"""
+"""A question, the run it starts, and every way that run can end."""
 
 from __future__ import annotations
 
@@ -62,9 +52,7 @@ async def _types(tenant: Tenant, run_id: uuid.UUID) -> list[str]:
     return [event.type for event in await read_events(org_id=tenant.org_id, run_id=run_id)]
 
 
-# ---------------------------------------------------------------------------
-# Asking
-# ---------------------------------------------------------------------------
+# --- Asking ---
 
 
 async def test_a_question_creates_a_queued_run_and_the_message_that_asked_it(
@@ -176,13 +164,7 @@ async def test_a_repeated_send_returns_the_same_run_and_starts_no_second_one(
 async def test_two_simultaneous_sends_of_one_question_still_produce_one_run(
     tenant: Tenant,
 ) -> None:
-    """The half of idempotency a read-then-write cannot cover on its own.
-
-    A double tap is two requests in flight at once, so both look up the key,
-    both find nothing, and both insert. The unique index refuses the second, and
-    what the caller gets back is the run the first one started — not an error,
-    because from the client's side this was one send.
-    """
+    """The half of idempotency a read-then-write cannot cover on its own."""
     conversation_id = await _conversation(tenant)
 
     first, second = await asyncio.gather(
@@ -221,9 +203,7 @@ async def test_a_different_key_is_a_different_question(tenant: Tenant) -> None:
     assert second.run_id != first.run_id
 
 
-# ---------------------------------------------------------------------------
-# The state machine
-# ---------------------------------------------------------------------------
+# --- The state machine ---
 
 
 async def test_starting_a_run_stamps_the_time_and_says_so_in_the_trace(tenant: Tenant) -> None:
@@ -271,14 +251,12 @@ async def test_a_queued_run_cannot_jump_straight_to_completed(tenant: Tenant) ->
     with pytest.raises(service.InvalidTransitionError) as raised:
         await service.transition(org_id=tenant.org_id, run_id=asked.run_id, status="completed")
 
-    # The message names what *would* work, because the caller is code being
-    # written against this machine.
+    # The message names what would work.
     assert "running" in str(raised.value)
 
 
 async def test_a_run_can_fail_before_it_ever_starts(tenant: Tenant) -> None:
-    """No reachable data source, no budget left: a run that cannot fail from its
-    first state is a run that hangs in ``queued`` forever."""
+    """No reachable data source, no budget left."""
     asked = await _ask(tenant)
 
     run = await service.transition(
@@ -327,9 +305,7 @@ async def test_a_run_that_does_not_exist_is_not_found(tenant: Tenant) -> None:
         await service.transition(org_id=tenant.org_id, run_id=uuid.uuid4(), status="running")
 
 
-# ---------------------------------------------------------------------------
-# Answers and findings
-# ---------------------------------------------------------------------------
+# --- Answers and findings ---
 
 
 async def test_the_answer_is_the_assistants_reply_and_the_trace_says_when_it_arrived(
@@ -348,10 +324,7 @@ async def test_the_answer_is_the_assistants_reply_and_the_trace_says_when_it_arr
 
 
 async def test_the_answer_carries_the_method_that_reached_it(tenant: Tenant) -> None:
-    """**B-100.** Architecture 4.2 makes an answer four things, and until this
-    column the method was the one built on every run and stored on none — so the
-    single line written for a reader who will not open the SQL was the one that
-    never reached them."""
+    """B-100. Architecture 4.2 makes an answer four things."""
     asked = await _ask(tenant)
     await service.transition(org_id=tenant.org_id, run_id=asked.run_id, status="running")
 
@@ -369,9 +342,7 @@ async def test_the_answer_carries_the_method_that_reached_it(tenant: Tenant) -> 
 async def test_an_answer_that_says_nothing_about_its_method_stores_nothing(
     tenant: Tenant,
 ) -> None:
-    """Empty rather than a sentence nobody wrote. A refusal composed before this
-    column existed has no method, and inventing one would be the platform
-    asserting something it cannot know."""
+    """Empty rather than a sentence nobody wrote."""
     asked = await _ask(tenant)
     await service.record_answer(
         org_id=tenant.org_id, run_id=asked.run_id, content="I could not answer that."
@@ -405,20 +376,13 @@ async def test_a_finding_carries_the_executions_that_back_it_up(tenant: Tenant) 
     assert events[0].payload["statement"] == "July took 1,204 orders"
 
 
-# ---------------------------------------------------------------------------
-# Whose conversation it is
-# ---------------------------------------------------------------------------
+# --- Whose conversation it is ---
 
 
 async def test_a_colleague_in_the_same_organization_cannot_read_the_conversation(
     tenant: Tenant,
 ) -> None:
-    """Row-level security cannot help here: both people are in the same tenant.
-
-    Architecture 6.2 grants every role "view *own* conversations & traces", so
-    this is the layer-2 ownership check, and it answers *not found* rather than
-    *forbidden* — a member told "forbidden" has learned the conversation exists.
-    """
+    """Row-level security cannot help here: both people are in the same tenant."""
     asked = await _ask(tenant)
     conversation_id = (
         await service.get_run(org_id=tenant.org_id, run_id=asked.run_id)
@@ -461,9 +425,7 @@ async def test_the_conversation_list_shows_only_your_own(tenant: Tenant) -> None
     assert mine[0].message_count == 1
 
 
-# ---------------------------------------------------------------------------
-# What the run cost, from the ledger that already knew (B-153)
-# ---------------------------------------------------------------------------
+# --- What the run cost, from the ledger that already knew (B-153) ---
 
 
 #: One priced model, so a test can prove a total rather than only its absence.
@@ -482,12 +444,7 @@ async def _charge(
     cached: int | None = None,
     estimated: bool = False,
 ) -> None:
-    """One provider call, through the meter the product uses.
-
-    Through `meter.record` rather than by inserting a row, so the test exercises
-    the same path a real call takes — including `estimate_cost`, which is what
-    decides whether the run ends up with a number or a NULL.
-    """
+    """One provider call, through the meter the product uses."""
     from charie.llm.base import Usage
     from charie.llm.meter import record
     from llm_fixture import build_settings
@@ -511,15 +468,7 @@ async def _charge(
 
 
 async def test_a_finished_run_says_what_it_cost(tenant: Tenant) -> None:
-    """**Both columns existed since revision 0012 and nothing wrote them.**
-
-    `model_usage`'s own comment calls it "a rollup for the trace UI"; the rollup
-    was never built, so every run carried NULL and `{}` while `usage_ledger` held
-    the answer and `budget.spent_on_run` already summed it to enforce the per-run
-    ceiling. Asserted on the **view the route returns**, not on the ledger query,
-    because a value that is right in flight and absent from the response is the
-    defect this repository keeps filing (B-133).
-    """
+    """Both columns existed since revision 0012 and nothing wrote them."""
     asked = await _ask(tenant)
     await service.transition(org_id=tenant.org_id, run_id=asked.run_id, status="running")
     await _charge(
@@ -556,8 +505,7 @@ async def test_a_finished_run_says_what_it_cost(tenant: Tenant) -> None:
     assert usage["unpriced_calls"] == 3, "no price table in tests, so every call is unpriced"
 
     by_model = cast(list[dict[str, object]], usage["by_model"])
-    # Grouped by model **and role**, because "what did this cost" and "where did
-    # it go" are the same question asked at two widths.
+    # Grouped by model and role, because "what did this cost" and "where did it go" are the same...
     assert [(row["model"], row["role"], row["calls"]) for row in by_model] == [
         ("m-1", "sql", 2),
         ("m-2", "compose", 1),
@@ -567,18 +515,7 @@ async def test_a_finished_run_says_what_it_cost(tenant: Tenant) -> None:
 async def test_the_rollup_carries_the_cached_share_and_the_estimated_count(
     tenant: Tenant,
 ) -> None:
-    """**Revision 0034, and the reason it exists.**
-
-    `cost_estimate` prices the whole input at the full rate while the provider
-    bills the cached part at less, so the total overstates every cache hit. The
-    size of that was unmeasurable because the number was never stored. Both this
-    and `estimated_calls` sit *beside* the total rather than inside it — nothing
-    here changes a price.
-
-    Asserted on the run the route returns, not on the ledger query: a value
-    that is right in flight and absent from the response is the defect this
-    repository keeps filing.
-    """
+    """Revision 0034, and the reason it exists."""
     asked = await _ask(tenant)
     await service.transition(org_id=tenant.org_id, run_id=asked.run_id, status="running")
     await _charge(
@@ -599,8 +536,7 @@ async def test_the_rollup_carries_the_cached_share_and_the_estimated_count(
         output_tokens=50,
         cached=100,
     )
-    # A provider that reports no usage: we counted these, and a total that mixes
-    # measured with guessed and does not say so is the silent-mixing shape.
+    # A provider that reports no usage: we counted these.
     await _charge(
         tenant,
         asked.run_id,
@@ -629,12 +565,7 @@ async def test_the_rollup_carries_the_cached_share_and_the_estimated_count(
 async def test_an_unpriced_call_leaves_the_total_null_rather_than_understating_it(
     tenant: Tenant,
 ) -> None:
-    """**Null means unpriced, never free** — the rule both columns were born with.
-
-    A run holding a call the price table does not cover gets NULL, not a total
-    that silently omits it. An understated number is worse than an absent one,
-    because it reads as the answer and nothing about it looks wrong.
-    """
+    """Null means unpriced, never free — the rule both columns were born with."""
     asked = await _ask(tenant)
     await service.transition(org_id=tenant.org_id, run_id=asked.run_id, status="running")
     await _charge(
@@ -650,12 +581,7 @@ async def test_an_unpriced_call_leaves_the_total_null_rather_than_understating_i
 
 
 async def test_a_run_that_called_no_model_claims_no_price(tenant: Tenant) -> None:
-    """Nothing recorded is not the same claim as nothing spent.
-
-    From here the two are indistinguishable — a run that made no call and a run
-    whose ledger write failed both present as zero rows — so the honest answer is
-    that there is no priced total, with an empty breakdown beside it saying why.
-    """
+    """Nothing recorded is not the same claim as nothing spent."""
     asked = await _ask(tenant)
     await service.transition(org_id=tenant.org_id, run_id=asked.run_id, status="running")
 
@@ -666,8 +592,7 @@ async def test_a_run_that_called_no_model_claims_no_price(tenant: Tenant) -> Non
         "calls": 0,
         "input_tokens": 0,
         "output_tokens": 0,
-        # None, not 0: no call reported a cached share, which is not a claim
-        # that none of the input was cached (revision 0034).
+        # None, not 0: no call reported a cached share.
         "cached_input_tokens": None,
         "unpriced_calls": 0,
         "estimated_calls": 0,
@@ -676,12 +601,7 @@ async def test_a_run_that_called_no_model_claims_no_price(tenant: Tenant) -> Non
 
 
 async def test_a_priced_run_reports_the_total_the_ledger_adds_up_to(tenant: Tenant) -> None:
-    """The positive case, and the one a person actually reads.
-
-    Two calls on a model priced at $10/M in and $30/M out: 1,000 + 500 input and
-    100 + 50 output, which is 0.015 + 0.0045. Asserted as an exact Decimal
-    because a cost shown to a person must not have drifted through a float.
-    """
+    """The positive case, and the one a person actually reads."""
     asked = await _ask(tenant)
     await service.transition(org_id=tenant.org_id, run_id=asked.run_id, status="running")
     await _charge(
@@ -708,20 +628,12 @@ async def test_a_priced_run_reports_the_total_the_ledger_adds_up_to(tenant: Tena
     assert run.cost_estimate == Decimal("0.0195")
     assert run.model_usage["unpriced_calls"] == 0
     by_model = cast(list[dict[str, object]], run.model_usage["by_model"])
-    # The value, not its spelling: `usage_ledger.cost_usd` is scale 6, so the
-    # string carries the ledger's own precision (`0.019500`) rather than a
-    # prettier one. A string because JSONB has no decimal and a float would round
-    # a price; the reader formats it, and nothing does arithmetic on it again.
+    # The value, not its spelling: `usage_ledger.cost_usd` is scale 6.
     assert Decimal(str(by_model[0]["cost_usd"])) == Decimal("0.0195")
 
 
 async def test_one_unpriced_call_among_priced_ones_still_nulls_the_total(tenant: Tenant) -> None:
-    """The case the rule exists for, and the one an average would get wrong.
-
-    Four fifths of a run being priced is exactly when a total is most tempting
-    and most misleading: it looks complete. The breakdown keeps both halves, so
-    the reader can see what was missed rather than being handed a smaller number.
-    """
+    """The case the rule exists for, and the one an average would get wrong."""
     asked = await _ask(tenant)
     await service.transition(org_id=tenant.org_id, run_id=asked.run_id, status="running")
     await _charge(

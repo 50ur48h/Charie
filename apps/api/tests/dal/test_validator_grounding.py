@@ -1,9 +1,4 @@
-"""Rules 6-8: the catalog is the authority, and a policy applies everywhere.
-
-Grounding is the anti-hallucination gate (architecture 7.1): a table the catalog
-has never seen does not exist as far as this service is concerned, and the
-refusal names it so the agent can pick a real one.
-"""
+"""Rules 6-8: the catalog is the authority, and a policy applies everywhere."""
 
 from __future__ import annotations
 
@@ -32,8 +27,7 @@ def test_an_unknown_table_in_a_join_is_refused(either: SourcePolicy) -> None:
 
 
 def test_a_name_in_two_schemas_must_be_qualified(either: SourcePolicy) -> None:
-    """`staff` exists in public and in archive. Guessing would be a coin toss
-    over which rows an answer was built from."""
+    """`staff` exists in public and in archive."""
     violation = refuse("SELECT id FROM staff", either)
 
     assert violation.code is ViolationCode.AMBIGUOUS_TABLE
@@ -47,8 +41,7 @@ def test_qualifying_resolves_the_ambiguity(either: SourcePolicy) -> None:
 
 
 def test_the_canonical_sql_names_the_catalogs_spelling(either: SourcePolicy) -> None:
-    """Case-folded input, canonical output: what runs is what the catalog said,
-    so the executor and the audit row cannot disagree about what was read."""
+    """Case-folded input, canonical output: what runs is what the catalog said."""
     result = validate("SELECT ID FROM PUBLIC.ORDERS", source=either)
 
     assert str(result.tables[0]) == "public.orders"
@@ -110,8 +103,7 @@ def test_a_star_is_expanded_against_the_catalog(either: SourcePolicy) -> None:
 
 
 def test_a_star_over_a_denied_column_is_refused(either: SourcePolicy) -> None:
-    """Expansion happens first, so `SELECT *` cannot be a way around a policy —
-    and the refusal names the column, so the agent can list the others."""
+    """Expansion happens first, so `SELECT *` cannot be a way around a policy."""
     violation = refuse("SELECT * FROM customers", either)
 
     assert violation.code is ViolationCode.DENIED_COLUMN
@@ -150,8 +142,7 @@ def test_count_star_is_not_a_star_expansion(either: SourcePolicy) -> None:
     ],
 )
 def test_a_denied_column_is_refused_wherever_it_appears(sql: str, either: SourcePolicy) -> None:
-    """A predicate leaks values as surely as a projection: `WHERE tax_id LIKE
-    'A%'` reads the column out one answer at a time."""
+    """A predicate leaks values as surely as a projection."""
     violation = refuse(sql, either)
 
     assert violation.code is ViolationCode.DENIED_COLUMN
@@ -173,9 +164,7 @@ def test_a_cte_does_not_launder_a_denied_column(either: SourcePolicy) -> None:
 
 
 def test_the_same_alias_in_two_scopes_is_judged_separately(either: SourcePolicy) -> None:
-    """`x` means a different table in each half. Resolving aliases with one flat
-    dictionary would attribute a column to the wrong table, and therefore judge
-    it by the wrong policy."""
+    """`x` means a different table in each half."""
     result = validate(
         "SELECT (SELECT MAX(x.total) FROM public.orders x) AS a, x.name "
         "FROM menu_items x GROUP BY x.name",
@@ -198,8 +187,7 @@ def test_a_cte_name_is_not_looked_up_in_the_catalog(either: SourcePolicy) -> Non
 
 
 def test_a_cte_cannot_shadow_a_qualified_system_table(pg: SourcePolicy) -> None:
-    """A bare name may be a CTE; a qualified one never is, so the shortcut that
-    makes CTEs work cannot be used to smuggle a system table past the check."""
+    """A bare name may be a CTE; a qualified one never is."""
     violation = refuse(
         "WITH pg_user AS (SELECT id FROM orders) SELECT * FROM pg_catalog.pg_user", pg
     )
@@ -208,8 +196,7 @@ def test_a_cte_cannot_shadow_a_qualified_system_table(pg: SourcePolicy) -> None:
 
 
 def test_a_masked_column_in_a_predicate_is_allowed(either: SourcePolicy) -> None:
-    """`mask` is not `deny`: aggregating over it is the intended use, and the
-    values are masked on the way back out (WP5.2)."""
+    """`mask` is not `deny`: aggregating over it is the intended use."""
     result = validate(
         "SELECT COUNT(*) FROM customers WHERE email LIKE '%@example.com'", source=either
     )
@@ -242,8 +229,7 @@ def test_the_result_is_a_validated_query_from_this_module(either: SourcePolicy) 
 
 
 def test_the_two_dialects_produce_their_own_spelling() -> None:
-    """One catalog, two engines, two canonical statements — the identifiers are
-    quoted the way each engine quotes them, which is what a connector will run."""
+    """One catalog, two engines, two canonical statements."""
     postgres = validate("SELECT id FROM orders", source=build_source("pg")).sql
     sqlserver = validate("SELECT id FROM orders", source=build_source("mssql")).sql
 
@@ -252,8 +238,7 @@ def test_the_two_dialects_produce_their_own_spelling() -> None:
 
 
 def test_a_qualified_unknown_column_names_its_table(either: SourcePolicy) -> None:
-    """`o.nosuch` is a different repair from a bare `nosuch`: the agent has told
-    us which table it means, so the refusal answers about that table."""
+    """`o.nosuch` is a different repair from a bare `nosuch`."""
     violation = refuse("SELECT o.nosuch FROM orders o", either)
 
     assert violation.code is ViolationCode.UNKNOWN_COLUMN

@@ -1,24 +1,4 @@
-"""Where a result is kept (architecture Part 7.6, 10.1).
-
-A result has two homes and the split is deliberate. The **platform database**
-keeps the shape and a sample — enough to show a person what came back and to let
-the critic look at it — and the **artifact store** keeps the whole thing, which
-can be large and is of no interest to any query.
-
-The store is an interface with one local implementation, the same arrangement
-``SecretsProvider`` uses (D-001): files under a directory now, Blob in Phase 12,
-and nothing above this line changes when that happens. Two properties hold in
-both:
-
-* **Everything written here is already masked.** The rows arrive from
-  ``dal/masking.py``; there is no unmasked copy for a later bug to find.
-* **Keys are org-prefixed** — ``{org_id}/{execution_id}.json`` — so a listing is
-  scoped by construction rather than by a filter someone must remember, which is
-  the same rule the Blob container follows (architecture Part 6.4).
-
-Retention is a column on the row, not a habit of a cleanup script: the sweep can
-be late, or absent, without the promise being wrong about what it is.
-"""
+"""Where a result is kept (architecture Part 7.6, 10.1)."""
 
 from __future__ import annotations
 
@@ -47,8 +27,7 @@ __all__ = [
 
 
 class StoredArtifactError(Exception):
-    """The result could not be stored. Never raised at the caller of a query:
-    losing the copy of an answer must not lose the answer."""
+    """The result could not be stored."""
 
 
 @runtime_checkable
@@ -65,12 +44,7 @@ class ArtifactStore(Protocol):
 
 
 class LocalArtifactStore:
-    """Files under a directory. The development and single-node answer.
-
-    Refuses a reference that does not begin with the caller's own organization,
-    exactly as the local secrets backend refuses a mismatched prefix: a store
-    whose keys carry the tenant is only isolated if something checks them.
-    """
+    """Files under a directory. The development and single-node answer."""
 
     def __init__(self, root: Path) -> None:
         self._root = root
@@ -90,8 +64,7 @@ class LocalArtifactStore:
         prefix = f"{org_id}/"
         if not reference.startswith(prefix):
             raise StoredArtifactError("That artifact belongs to another organization.")
-        # Resolved and re-checked, so a reference carrying `..` cannot climb out
-        # of the root even though the prefix looks right.
+        # Resolved and re-checked, so a reference carrying `..` cannot climb out of the root...
         candidate = (self._root / reference).resolve()
         root = self._root.resolve()
         if not candidate.is_relative_to(root / str(org_id)):
@@ -100,25 +73,7 @@ class LocalArtifactStore:
 
 
 class BlobArtifactStore:
-    """Azure Blob Storage. The deployed answer (WP12.2, architecture 6.4).
-
-    The same key scheme as the local store — ``{org_id}/{execution_id}.json`` —
-    so the tenant prefix is a property of the reference rather than of the
-    backend, and the isolation check below is the same check for the same reason.
-    Blob names are opaque to the service, so no translation is needed here; that
-    is the difference from `KeyVaultSecretsProvider`, whose names are constrained.
-
-    **Managed identity, no connection string.** The container app's user-assigned
-    identity holds `Storage Blob Data Contributor` on the account, so this class
-    holds no credential and there is none to leak. A connection string would have
-    been fewer lines and would have put a key in the app's environment, which is
-    the thing architecture 9 is built to avoid.
-
-    **A missing blob is `None`, not an error**, exactly as the local store's
-    missing file is: an expired or swept result is an ordinary outcome, and
-    B-114 records what happens when the *reasons* for `None` are conflated —
-    that conflation is one layer up, in `chart._frame_for`, and is not fixed here.
-    """
+    """Azure Blob Storage. The deployed answer (WP12.2, architecture 6.4)."""
 
     def __init__(
         self,
@@ -136,32 +91,16 @@ class BlobArtifactStore:
         if client is not None:
             self._service = client
             return
-        # Deferred for the reason `secrets/keyvault.py` defers its own: the SDK
-        # is in the image for the deployment's sake and costs every other process
-        # an import it will never use.
+        # Deferred for the reason `secrets/keyvault.py` defers its own.
         from azure.identity.aio import DefaultAzureCredential
         from azure.storage.blob.aio import BlobServiceClient
 
-        # The credential is held rather than passed inline so `aclose` can close
-        # it: closing the service client does not close a credential it was
-        # handed, and both own an HTTP connection pool.
+        # The credential is held rather than passed inline so `aclose` can close it.
         self._credential: object = DefaultAzureCredential()
         self._service = BlobServiceClient(account_url=account_url, credential=self._credential)
 
     async def aclose(self) -> None:
-        """Release the connection pools this store holds.
-
-        **For short-lived processes**, which is where it matters: a long-running
-        API closes them by exiting, but `charie.ops.selfcheck` is a one-shot
-        job whose entire output is a diagnosis, and an unclosed `aiohttp` session
-        prints `Unclosed client session` on the way out. Noise in the one tool
-        whose job is clarity is worse than it sounds — it is two lines of
-        traceback-shaped text under the sentence somebody needs to read.
-
-        Not on the `ArtifactStore` protocol: the local store has nothing to close,
-        and widening the protocol would oblige every test double to grow a method
-        that does nothing. Callers that care use `getattr`.
-        """
+        """Release the connection pools this store holds."""
         for holder in (self._service, self._credential):
             close = getattr(holder, "close", None)
             if close is not None:
@@ -189,24 +128,13 @@ class BlobArtifactStore:
 
     @staticmethod
     def _check_tenant(org_id: uuid.UUID, reference: str) -> None:
-        """Refuse a reference belonging to another organization.
-
-        The same guard `LocalArtifactStore._resolve` applies, and it earns its
-        place here for a different reason: a blob name is not a path, so there is
-        no `..` to climb with — but there is also no filesystem to stop a
-        perfectly well-formed name from reaching another tenant's prefix.
-        """
+        """Refuse a reference belonging to another organization."""
         if not reference.startswith(f"{org_id}/"):
             raise StoredArtifactError("That artifact belongs to another organization.")
 
 
 def artifact_store(settings: Settings | None = None) -> ArtifactStore:
-    """The store this deployment uses.
-
-    Chosen by `ARTIFACTS_BACKEND`, the way `SECRETS_BACKEND` chooses the
-    credential store. Defaults to local, so nothing about a developer's stack
-    changes; a deployment sets `blob` and supplies the account URL.
-    """
+    """The store this deployment uses."""
     resolved = settings if settings is not None else get_settings()
     if resolved.artifacts_backend == "blob":
         return BlobArtifactStore(
@@ -217,12 +145,7 @@ def artifact_store(settings: Settings | None = None) -> ArtifactStore:
 
 
 def summarize(frame: MaskedFrame) -> dict[str, object]:
-    """The shape of a result, with none of its values.
-
-    Safe to store, safe to show, and safe to put in a prompt — which is the
-    point: the agent reasons about a summary and reaches for rows only when it
-    has a reason to.
-    """
+    """The shape of a result, with none of its values."""
     return {
         "columns": list(frame.columns),
         "row_count": frame.row_count,
@@ -238,33 +161,15 @@ def expires_at(settings: Settings | None = None, *, now: datetime | None = None)
     return moment + timedelta(days=resolved.artifact_retention_days)
 
 
-#: The version of this artifact's envelope. Bumped when a reader has to be able
-#: to tell what a writer knew. **1** is everything written before column types
-#: were recorded (**B-103**); **2** carries `column_types`.
+#: The version of this artifact's envelope.
 ARTIFACT_FORMAT = 2
 
-#: What a column holds, recorded by the writer that still has the Python objects
-#: rather than inferred later from JSON text (**B-103**). Closed, and small on
-#: purpose: this exists to tell a consumer whether arithmetic is meaningful, not
-#: to describe a type system.
+#: What a column holds, recorded by the writer that still has the Python objects rather than...
 ColumnType = Literal["number", "temporal", "text"]
 
 
 def column_type(values: Iterable[object]) -> ColumnType:
-    """What this column holds, from the values as the driver returned them.
-
-    **Recorded, not guessed.** This runs where a `Decimal` is still a `Decimal`,
-    so calling the column a number is reporting a fact. The alternative — asking
-    a consumer to look at `"119558.51"` and decide — is guessing, and the guess
-    is wrong for an account number, a postcode or a product code that happens to
-    be all digits. That guess would draw a chart that is *wrong* rather than
-    absent, which is the case `charts._kind`'s judge-the-values rule exists to
-    prevent and is why B-103 was not fixed downstream.
-
-    Nulls are skipped: a column that is half empty is still whatever its present
-    values are. An all-null column is `text`, because nothing is known and
-    claiming otherwise would be the same guess in the other direction.
-    """
+    """What this column holds, from the values as the driver returned them."""
     present = [value for value in values if value is not None]
     if not present:
         return "text"
@@ -279,23 +184,7 @@ def column_type(values: Iterable[object]) -> ColumnType:
 
 
 def encode(frame: MaskedFrame) -> bytes:
-    """The whole (masked) result, as JSON.
-
-    JSON rather than parquet for now: the results this holds are capped at a
-    thousand rows, nothing reads them analytically yet, and a format that can be
-    opened in any text editor is worth more during a security review than one
-    that saves bytes nobody is short of. Parquet arrives with the first caller
-    that wants a dataframe.
-
-    **`column_types` is what makes the values usable again** (**B-103**). Every
-    value here is JSON-safe, which for a `Decimal` means a string — see
-    `encodable` — and a reader given only `"119558.51"` cannot tell money from a
-    postcode. So the writer records what it knew. Carrying the digits as a JSON
-    *number* instead was the obvious alternative and is not available honestly:
-    the standard library cannot emit a `Decimal` unquoted without injecting raw
-    text into the stream, and `float` would round a customer's money. A string
-    with a declared type round-trips exactly, at any size and any precision.
-    """
+    """The whole (masked) result, as JSON."""
     return json.dumps(
         {
             "format": ARTIFACT_FORMAT,
@@ -313,19 +202,7 @@ def encode(frame: MaskedFrame) -> bytes:
 
 
 def encodable(value: object) -> object:
-    """Whatever a driver handed back, as something JSON can hold.
-
-    Dates, decimals and UUIDs all arrive as their own types from one engine or
-    the other, and `str` is the honest fallback: this copy exists to be read, and
-    what is needed to compute with it is the column's type, which `encode`
-    records beside it.
-
-    **Public, and shared** (**B-103**). Three places used to convert values at
-    this seam with three private copies of the same rule — the artifact blob, the
-    `sample_rows` column, and the rows the composing model is shown. Only the
-    chart computed on them, so only the chart broke, but three copies of a
-    decision is three places for the next one to diverge.
-    """
+    """Whatever a driver handed back, as something JSON can hold."""
     if value is None or isinstance(value, str | int | bool):
         return value
     if isinstance(value, float):
@@ -333,28 +210,12 @@ def encodable(value: object) -> object:
     return str(value)
 
 
-#: Significant digits kept when a float is written down (**B-179**).
-#:
-#: A `double precision` sum in Postgres carries its own representation error,
-#: and Python then prints every digit of it: the owner met a monthly sales total
-#: as **310817.08999999997**, which is seventeen digits of which the last five
-#: are the binary artifact and not the money. A double holds about 15-17
-#: significant digits, so trimming to 12 removes the noise and cannot touch a
-#: figure anybody has.
+#: Significant digits kept when a float is written down (B-179).
 SIGNIFICANT_DIGITS = 12
 
 
 def _readable_float(value: float) -> float:
-    """The same number without its representation error.
-
-    **Not rounding to a number of decimal places**, which would flatten a tiny
-    value to zero — a rate of `1.2e-7` is a real thing for a column to hold.
-    Significant digits keep the magnitude and drop only the tail.
-
-    Infinities and NaN pass through: they are not noise, they are what the
-    database returned, and quietly turning one into a number would be worse than
-    showing it.
-    """
+    """The same number without its representation error."""
     if value != value or value in (float("inf"), float("-inf")):
         return value
     return float(f"{value:.{SIGNIFICANT_DIGITS}g}")

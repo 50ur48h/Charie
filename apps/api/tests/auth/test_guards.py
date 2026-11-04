@@ -1,10 +1,4 @@
-"""Role guards end to end, against a real database.
-
-The role matrix from architecture Part 6.2, plus where each refusal is recorded
-(DECISIONS D-008). These run through real HTTP dependencies and real SQL: the
-question "does a Reader get a 403, and can an admin find out afterwards?" is not
-answerable with mocks.
-"""
+"""Role guards end to end, against a real database."""
 
 from __future__ import annotations
 
@@ -35,8 +29,7 @@ class _StubValidator(TokenValidator):
         pass
 
     async def validate(self, token: str) -> Principal:
-        # S105 sees a literal compared against something called "token" and
-        # assumes a credential. Here the token *is* the subject name.
+        # S105 sees a literal compared against something called "token" and assumes a credential.
         if token == "invalid":  # noqa: S105
             raise TokenError("bad_signature", "nope")
         return Principal(subject=token, email=f"{token}@example.com")
@@ -138,9 +131,7 @@ async def _get(app: FastAPI, path: str, token: str | None) -> tuple[int, dict[st
     return response.status_code, response.json()
 
 
-# ---------------------------------------------------------------------------
-# The role matrix
-# ---------------------------------------------------------------------------
+# --- The role matrix ---
 
 
 @pytest.mark.parametrize(
@@ -171,9 +162,7 @@ async def test_the_role_matrix_holds(
         assert status == expected, f"{role} on {path}"
 
 
-# ---------------------------------------------------------------------------
-# Where each refusal is recorded
-# ---------------------------------------------------------------------------
+# --- Where each refusal is recorded ---
 
 
 async def test_a_readers_403_lands_in_their_own_orgs_audit_log(
@@ -203,12 +192,7 @@ async def test_a_readers_403_lands_in_their_own_orgs_audit_log(
 async def test_a_non_members_403_is_not_lost(
     wired: tuple[FastAPI, uuid.UUID], migrated_database: URL, app_database: URL
 ) -> None:
-    """A known account probing an organization it does not belong to.
-
-    There is no membership, so no tenant audit log could honestly own this row —
-    it goes to the platform security log, where it is queryable by subject and by
-    the organization that was attempted.
-    """
+    """A known account probing an organization it does not belong to."""
     app, org_id = wired
     await _add_member(migrated_database, org_id, SUBJECT, "admin")
     stranger = "idp-subject-stranger"
@@ -269,11 +253,7 @@ async def test_a_member_of_another_org_is_recorded_as_probing(
 async def test_an_unauthenticated_request_writes_no_row_anywhere(
     wired: tuple[FastAPI, uuid.UUID], migrated_database: URL, app_database: URL
 ) -> None:
-    """401s are logged, never stored.
-
-    Taking the organization from the URL would let an unauthenticated caller
-    choose whose audit log to fill up.
-    """
+    """401s are logged, never stored."""
     app, org_id = wired
     await _add_member(migrated_database, org_id, SUBJECT, "admin")
 

@@ -1,15 +1,4 @@
-"""The gate: what a caller is offered, and what happens to bad arguments.
-
-No database — the registry's own behaviour is about dispatch, not about data, and
-a fake tool makes the failure paths reachable without arranging for a real one to
-break. The tools themselves are exercised against a real catalog in
-``test_tools_live.py``.
-
-The property worth stating: **a tool the caller may not use is indistinguishable
-from one that does not exist.** "Exists, but not for you" is a fact about the
-system worth not disclosing to a prompt that may be hostile, and it also means
-there is one error path rather than two.
-"""
+"""The gate: what a caller is offered, and what happens to bad arguments."""
 
 from __future__ import annotations
 
@@ -53,9 +42,7 @@ def _context(role: str = "reader") -> ToolContext:
     return ToolContext(org_id=uuid.uuid4(), run_id=uuid.uuid4(), role=role)
 
 
-# ---------------------------------------------------------------------------
-# What is on offer
-# ---------------------------------------------------------------------------
+# --- What is on offer ---
 
 
 def test_a_reader_is_not_offered_an_admin_tool() -> None:
@@ -67,8 +54,7 @@ def test_a_reader_is_not_offered_an_admin_tool() -> None:
 
 
 async def test_a_tool_you_may_not_use_answers_exactly_like_one_that_does_not_exist() -> None:
-    """Two different facts, one answer. Telling them apart would confirm that a
-    capability exists, to a prompt that may be trying to find out."""
+    """Two different facts, one answer."""
     registry = ToolRegistry((ECHO, ADMIN_ONLY_TOOL))
 
     forbidden = await registry.call(_context(), "secret", {"text": "x"})
@@ -82,13 +68,7 @@ async def test_a_tool_you_may_not_use_answers_exactly_like_one_that_does_not_exi
 
 
 def test_the_tool_list_is_in_registration_order() -> None:
-    """A weak nudge about what to reach for first, and one somebody chose.
-
-    `search_knowledge` sits before `run_sql` deliberately (WP10.1b): 5.5's
-    division of labour is that a document says what a term *means* and the
-    database says what its *value* is, so a run reaching for SQL before checking
-    whether the business has written a definition down has skipped a step.
-    """
+    """A weak nudge about what to reach for first, and one somebody chose."""
     registry = default_registry()
 
     assert [tool.name for tool in registry.available_to("reader")] == [
@@ -108,17 +88,14 @@ def test_registering_the_same_name_twice_is_refused() -> None:
 
 
 def test_a_tool_declaring_an_unknown_role_is_refused_at_registration() -> None:
-    """Not at call time: a tool nobody can reach would otherwise sit in the
-    registry looking registered."""
+    """Not at call time: a tool nobody can reach would otherwise sit in the registry looking..."""
     bad = Tool(name="odd", description="", params=EchoIn, handler=_echo, required_role="wizard")
 
     with pytest.raises(ValueError, match="wizard"):
         ToolRegistry((bad,))
 
 
-# ---------------------------------------------------------------------------
-# Arguments
-# ---------------------------------------------------------------------------
+# --- Arguments ---
 
 
 async def test_valid_arguments_reach_the_handler_as_a_typed_object() -> None:
@@ -132,8 +109,7 @@ async def test_valid_arguments_reach_the_handler_as_a_typed_object() -> None:
 
 
 async def test_bad_arguments_are_refused_before_dispatch_and_say_what_was_wrong() -> None:
-    """The model's output is the least trustworthy input in the system, so this
-    is checked once here rather than in every handler."""
+    """The model's output is the least trustworthy input in the system."""
     registry = ToolRegistry((ECHO,))
 
     result = await registry.call(_context(), "echo", {"text": "", "times": 99})
@@ -145,8 +121,7 @@ async def test_bad_arguments_are_refused_before_dispatch_and_say_what_was_wrong(
 
 
 async def test_an_unexpected_argument_is_refused_rather_than_ignored() -> None:
-    """``extra="forbid"`` on every tool schema, which is also what lets a
-    provider enforce the schema natively rather than merely suggest it (B-033)."""
+    """``extra="forbid"`` on every tool schema."""
     registry = ToolRegistry((ECHO,))
 
     result = await registry.call(_context(), "echo", {"text": "hi", "sneaky": "value"})
@@ -164,14 +139,11 @@ async def test_missing_arguments_are_a_repairable_failure() -> None:
     assert result.repairable is True
 
 
-# ---------------------------------------------------------------------------
-# The envelope
-# ---------------------------------------------------------------------------
+# --- The envelope ---
 
 
 async def test_a_failing_tool_comes_back_as_an_envelope_not_an_exception() -> None:
-    """One shape at every call site. A tool that raised past the registry would
-    be a failure the runner could forget to record."""
+    """One shape at every call site."""
     registry = ToolRegistry((EXPLODE,))
 
     result = await registry.call(_context(), "explode", {"text": "x"})
@@ -182,8 +154,7 @@ async def test_a_failing_tool_comes_back_as_an_envelope_not_an_exception() -> No
 
 
 async def test_every_rendered_result_is_framed_as_data() -> None:
-    """Architecture 7.4: a query result may be hostile, so it is never presented
-    to the model as though it were an instruction."""
+    """Architecture 7.4: a query result may be hostile."""
     registry = ToolRegistry((ECHO, EXPLODE))
 
     ok = await registry.call(_context(), "echo", {"text": "hi"})
@@ -200,15 +171,13 @@ async def test_a_long_argument_is_capped_before_it_reaches_an_event_payload() ->
 
     result = await registry.call(_context(), "echo", {"text": "x" * 5000})
 
-    # Refused for length, and the recorded argument is still bounded: a trace row
-    # is not the place for five kilobytes of model output.
+    # Refused for length, and the recorded argument is still bounded.
     assert result.ok is False
     assert len(str(result.safe_args["text"])) <= 501
 
 
 def test_a_tools_schema_is_json_and_describes_its_arguments() -> None:
-    """What a provider is handed. If this stops being JSON-serialisable, every
-    structured call breaks at the provider rather than here."""
+    """What a provider is handed. If this stops being JSON-serialisable."""
     described = ECHO.describe()
 
     assert "echo" in described

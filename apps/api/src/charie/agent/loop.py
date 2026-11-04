@@ -1,41 +1,4 @@
-"""The bounded research loop (architecture 4.4, diagram 5).
-
-WP7.2b's single-shot middle — plan, run, at most one repair — becomes this: a
-`for` loop with a hard ceiling, which is the difference between a product that
-answers one question and one that investigates. The *ends* are unchanged and were
-built for exactly this: `runner.py` still opens the run, builds the context,
-composes the answer, verifies citations and ends the run exactly once.
-
-**It is a `for` loop, not a `while`.** The iteration ceiling is the range, so the
-loop terminates whatever the model says, whatever the tools return, and whatever
-a future editor forgets. Every other budget is checked inside it, before spending
-anything, so a run never overshoots a cap it was told to respect.
-
-**Two model calls per iteration, and that is a decision** (DECISIONS **D-024**).
-4.4 lists Plan, Observe and Reflect, with Observe on a cheap model. Three calls
-across eight iterations plus a compose is 25, against 4.4's own ceiling of 20 —
-its defaults do not fit its own loop if every stage is a model call. Observe is
-therefore **deterministic** here: it is a mechanical transformation of a typed
-tool result into a one-line summary, and doing it in code is cheaper, exactly
-repeatable, and cannot hallucinate a number that was never in the result. What
-4.4 actually asks of Observe — *raw rows never accumulate in the prompt* — is
-kept, and kept more strictly than a model would.
-
-**Progress is measured, not asserted.** Two consecutive iterations that add no
-finding force the loop to finish (4.4's monotone-progress rule). Without it a
-model that has run out of ideas will keep saying "let me check one more thing"
-until the iteration ceiling, spending the whole budget to arrive where it was.
-
-**The same query is never run twice.** A duplicate is refused before it is sent,
-so a loop going in circles pays nothing to do it. `state.has_run` is the check
-and the loop does not second-guess it.
-
-**Every ending is an ending.** Budget exhaustion, no progress, an unanswerable
-plan, or the model saying it is done — all of them leave the loop with what it
-has, and the caller composes an answer that says so. 4.4's "guaranteed
-finalize-with-caveats" is this: there is no path out of here that leaves a run
-without an answer.
-"""
+"""The bounded research loop (architecture 4.4, diagram 5)."""
 
 from __future__ import annotations
 
@@ -69,32 +32,19 @@ from charie.runs.events import EventWriter
 
 __all__ = ["LoopOutcome", "Reflection", "research"]
 
-#: Two consecutive barren iterations end the loop (4.4). Two rather than one
-#: because a single fruitless step is normal — a query that returns nothing is
-#: information — while two in a row is a pattern.
+#: Two consecutive barren iterations end the loop (4.4).
 BARREN_LIMIT = 2
 
-#: How many recent results the composer is shown in full. Bounded, because the
-#: composing prompt must not grow with the length of the investigation — three
-#: is enough for "compare this with that" and small enough to stay cheap.
+#: How many recent results the composer is shown in full.
 COMPOSE_PREVIEWS = 3
 
-#: A result small enough that its values *are* the finding — the aggregate case.
-#: Anything larger is summarised by shape alone, so a prompt cannot grow with the
-#: size of a customer's table.
+#: A result small enough that its values are the finding — the aggregate case.
 INLINE_CELLS = 3
 
-#: How many terms one run may look up in its documents (**B-075**, D-032). Two,
-#: and it is a ceiling rather than a target: a question that turns on three
-#: undefined terms is one the organization has not written down enough about, and
-#: spending the whole iteration budget discovering that helps nobody. Every other
-#: ceiling in this loop is a number the controller enforces, and so is this.
+#: How many terms one run may look up in its documents (B-075, D-032).
 MAX_LOOKUPS = 2
 
-#: How many passages a lookup puts in front of the next plan. Smaller than the
-#: tool's own default because these are carried *forward* — they stay in the
-#: prompt for the rest of the run, so each one is paid for on every subsequent
-#: iteration.
+#: How many passages a lookup puts in front of the next plan.
 LOOKUP_PASSAGES = 3
 
 
@@ -139,12 +89,7 @@ class LoopOutcome:
     refusal: str = ""
     #: Successful executions, newest last — what a citation may name.
     execution_ids: tuple[str, ...] = ()
-    #: `(execution_id, rendered result)` for the most recent successful queries,
-    #: for the composer alone. **Held in memory and never checkpointed**: 4.4
-    #: forbids rows *accumulating*, and this does not accumulate — it is a
-    #: bounded snapshot handed to one final call, replaced each time. Without it
-    #: the composer sees only one-line summaries and cannot answer any question
-    #: whose result has more than one row, which is most real questions.
+    #: `(execution_id, rendered result)` for the most recent successful queries.
     previews: tuple[tuple[str, str], ...] = ()
 
 
@@ -165,33 +110,13 @@ _WHITESPACE = re.compile(r"\s+")
 
 
 def proposed_hash(sql: str) -> str:
-    """A hash of what the model *proposed*, normalised for whitespace and case.
-
-    **Deliberately not the canonical hash of the validated statement**, which is
-    what WP8.1a's docstring first promised. The canonical form only exists after
-    the DAL has validated and rewritten the statement — by which time the query
-    has been spent, and a duplicate rule that answers after the cost is not a
-    rule. So the check happens on the model's own text, normalised, which catches
-    the failure this exists for: a loop out of ideas re-proposing the query it
-    already ran.
-
-    What it does not catch is the same question written two different ways
-    (**B-049**). That is a weaker guarantee than the canonical hash would give
-    and it is stated rather than glossed.
-    """
+    """A hash of what the model proposed, normalised for whitespace and case."""
     collapsed = _WHITESPACE.sub(" ", sql.strip().lower())
     return hashlib.sha256(collapsed.encode()).hexdigest()[:16]
 
 
 def summarize(result: RunSqlOut, purpose: str) -> str:
-    """One line describing what came back — architecture 4.4's Observe, in code.
-
-    Values appear only for a result small enough that the values *are* the answer
-    (a count, a total, a single row of aggregates). Anything larger is described
-    by its shape, so the prompt cannot grow with the size of a customer's table
-    and no accidental bulk of personal data reaches a model. Everything here is
-    already masked by the DAL regardless.
-    """
+    """One line describing what came back — architecture 4.4's Observe, in code."""
     shape = f"{result.row_count} row{'' if result.row_count == 1 else 's'}"
     if result.masked_columns:
         shape += f", {len(result.masked_columns)} column(s) masked by policy"
@@ -220,21 +145,7 @@ async def research(
     record_finding: Callable[[StateFinding], Awaitable[None]],
     settings: Settings | None = None,
 ) -> LoopOutcome:
-    """Investigate until there is an answer or a ceiling says stop.
-
-    ``checkpoint`` and ``record_finding`` are awaitables the caller supplies —
-    one invoked at every transition, one when a finding is reached. Passed in
-    rather than imported so this module owns no persistence and stays testable
-    without a database, the same reason `runner.execute_run` takes ids rather
-    than sessions.
-
-    A finding is written **when it is reached**, not at the end. Two reasons: an
-    interrupted run keeps what it had concluded, and the trace shows the
-    investigation arriving at things in order, which is what WP8.3's timeline
-    renders. It also means the `finding_added` event is emitted exactly once, by
-    the code that persists it — emitting here as well would put every finding in
-    the trace twice.
-    """
+    """Investigate until there is an answer or a ceiling says stop."""
     save = checkpoint
     previews: list[tuple[str, str]] = []
 
@@ -276,19 +187,7 @@ async def research(
             },
         )
 
-        # **The agent asked what a word means here** (B-075, D-032). Checked
-        # **before `answerable`**, and that order was bought with a live run: a
-        # model that needs a definition says so by refusing — *"the reference
-        # data does not define 'anchor order'; the organization's definition is
-        # needed"* — with `answerable` false and the term in `define`. Refusing
-        # first turned the one state this feature exists for into a dead run.
-        # An unanswerable plan that names something to look up is not a refusal;
-        # it is a request, and the refusal below is what it becomes if the
-        # documents have nothing to say.
-        #
-        # It is also checked before the statement, because `sql` on a lookup step
-        # is whatever the model wrote while it still did not know — running it
-        # would spend a query on the guess this branch exists to avoid.
+        # The agent asked what a word means here (B-075, D-032).
         if wanted := _lookup_wanted(plan, state):
             bundle = await _look_up(
                 context=context,
@@ -299,33 +198,11 @@ async def research(
                 term=wanted,
             )
             await save()
-            # Costs this iteration and no model call beyond the plan that asked:
-            # nothing ran, so there is nothing to reflect on. That is what keeps
-            # D-024's and D-028's arithmetic true — an iteration spent looking
-            # something up is *cheaper* than an ordinary one.
+            # Costs this iteration and no model call beyond the plan that asked: nothing ran.
             continue
 
         if not plan.answerable:
-            # **A model's judgement is not a platform fact, and the two had the
-            # same finality** (D-055). The join-graph verdict a dozen lines below
-            # is something the model cannot argue with; `plan.answerable` is an
-            # opinion about a question, and this ended the run on it with no
-            # query run and nothing to show. Asked *"can food waste be reduced to
-            # increase revenue?"*, the deployed app refused while `fact_waste`
-            # sat in its own bundle — and the refusal's first clause, *"the
-            # reference data contains no food-waste records"*, was false.
-            #
-            # So: **one retry, and only from a standing start.** Bounded by
-            # `state.executions` being empty, so it can never fire mid-
-            # investigation, and by `retried_judgement` so it cannot fire twice.
-            # A **capability** refusal stays terminal — the platform's own facts
-            # are not sent back for a second opinion.
-            #
-            # **The guard is the answer still naming the gap**, not the retry
-            # being rare: *an honest refusal that becomes a padded non-answer is
-            # worse than the refusal* (owner, 2026-08-27). A retry that produces
-            # no citations falls back to `refused` through D-044's existing
-            # derivation, with no special case written for it.
+            # A model's judgement is not a platform fact, and the two had the same finality (D-055).
             if not state.executions and not state.retried_judgement:
                 state.retried_judgement = True
                 state.judgement_reason = plan.reason
@@ -348,11 +225,7 @@ async def research(
                 previews=tuple(previews),
             )
 
-        # Can these tables be joined at all? Checked **before the statement is
-        # sent**, because a check that answered afterwards would have spent the
-        # query it exists to prevent — and because a join between unrelated
-        # tables does not error, it returns a cartesian product, and an answer
-        # computed from one looks exactly like a real answer (4.3).
+        # Can these tables be joined at all?
         verdict = graph.check(tables_named(plan.sql, dialect=dialect))
         if not verdict.answerable:
             state.capability = verdict.as_payload()
@@ -366,25 +239,13 @@ async def research(
                 previews=tuple(previews),
             )
         if verdict.chasms:
-            # A chasm is recorded and **not blocked**, deliberately (D-026).
-            # `tables_named` gives the set of tables the statement mentions and
-            # not how it joins them, so a statement that already aggregates each
-            # side in its own CTE — the correct query for this pair — is
-            # indistinguishable here from one that joins the detail rows. To
-            # block on the table set alone would refuse the right answer along
-            # with the wrong one, which is B-058 arriving from the other
-            # direction. The steering that *is* safe happens before the model
-            # writes anything, in `runner._investigate`, where 4.3 puts it.
-            # Blocking waits on reading the join predicates themselves, which
-            # belongs in `dal/validator.py` and therefore in its own reviewed PR.
+            # A chasm is recorded and not blocked, deliberately (D-026).
             state.capability = verdict.as_payload()
             await events.emit("capability_checked", verdict.as_payload())
 
         digest = proposed_hash(plan.sql)
         if state.has_run(digest):
-            # Refused before it is sent: a loop going in circles pays nothing to
-            # do it. Counted as a barren iteration, because proposing what has
-            # already been run is precisely the absence of progress.
+            # Refused before it is sent: a loop going in circles pays nothing to do it.
             await events.emit(
                 "reflection", {"continue": False, "public_rationale": "That query has already run."}
             )
@@ -431,12 +292,7 @@ async def research(
             previews.append((result.data.execution_id, result.render()))
             del previews[:-COMPOSE_PREVIEWS]
         else:
-            # A refusal is recorded too, and this is what replaces WP7.2b's
-            # single explicit repair: the next iteration's planner is told what
-            # was refused and why, so correcting a hallucinated column is just
-            # the next step rather than a special case. Recording the hash also
-            # stops the loop re-proposing the identical statement — without this
-            # it would burn every iteration on the same refused query.
+            # A refusal is recorded too, and this is what replaces WP7.2b's single explicit repair.
             state.plan[-1].status = "failed"
             state.record_execution(
                 ExecutionRef(
@@ -444,13 +300,7 @@ async def research(
                     purpose=plan.purpose,
                     sql_hash=digest,
                     summary=f"refused ({result.code or 'unknown'}): {result.error}",
-                    # Kept apart from `summary`, and only for a failure no
-                    # rewrite could fix (**B-095**). `summary` is what the next
-                    # planner reads, so it carries every refusal in the tool
-                    # layer's framing; this is what a *reader* is shown when the
-                    # answer has to admit a query never ran, so it carries the
-                    # connector's sentence alone and stays empty for the
-                    # repairable refusals the loop is expected to correct.
+                    # Kept apart from `summary`, and only for a failure no rewrite could fix.
                     error="" if result.repairable else (result.error or ""),
                     ok=False,
                 )
@@ -459,10 +309,7 @@ async def research(
                 "sql_rejected", {"rule": result.code or "unknown", "repairable": result.repairable}
             )
             if not result.repairable:
-                # WP7.2b's rule, kept: rewriting cannot fix a database that is
-                # down, so another iteration would spend the whole budget
-                # learning what this one already knows. `repairable` is set by
-                # the tool layer and the loop does not second-guess it.
+                # WP7.2b's rule, kept: rewriting cannot fix a database that is down.
                 state.phase = "finished"
                 await save()
                 return LoopOutcome(
@@ -482,11 +329,7 @@ async def research(
         budget.spend_llm(tokens)
         state.phase = "reflecting"
 
-        # **One claim per set of evidence, before anything is written** (B-107).
-        # Two sentences from one reflection about one query are one claim; they
-        # are joined rather than one of them dropped, because evidence cannot say
-        # which sentence is the better one and this codebase has a rule about
-        # what the prose should carry when a chart is drawn (B-097).
+        # One claim per set of evidence, before anything is written (B-107).
         proposals = merge_by_evidence(
             [
                 StateFinding(
@@ -500,8 +343,7 @@ async def research(
         for proposed in proposals:
             if state.add_finding(proposed):
                 progress.findings_added += 1
-                # The stored copy, whose citations have been filtered down to
-                # executions this run really produced — never the model's claim.
+                # The stored copy, whose citations have been filtered down to executions this...
                 await record_finding(state.findings[-1])
         for question in reflection.open_questions:
             if question not in state.open_questions:
@@ -527,8 +369,7 @@ async def research(
         if state.barren_iterations >= BARREN_LIMIT:
             return _no_progress(state, tuple(previews))
 
-    # The `for` ran out: the iteration ceiling is the range, so this is the one
-    # exhaustion that needs no check.
+    # The `for` ran out: the iteration ceiling is the range.
     state.stopped_by = "iterations"
     state.phase = "finished"
     await save()
@@ -556,22 +397,7 @@ def _no_progress(state: ResearchState, previews: tuple[tuple[str, str], ...]) ->
 
 
 def _lookup_wanted(plan: Plan, state: ResearchState) -> str:
-    """The term to look up, or empty when this step is not a lookup.
-
-    Three ways to get nothing back, and each is a ceiling rather than a
-    judgement about the term:
-
-    * the model did not ask;
-    * it has asked before in this run — the duplicate-query rule's shape applied
-      to a second kind of repetition, because a corpus does not change mid-run
-      and asking it twice buys an iteration's worth of nothing;
-    * the run has spent its lookups (`MAX_LOOKUPS`).
-
-    In the last two cases the plan's SQL runs as written. That is deliberate: the
-    model wrote a statement, and refusing to run it because it also asked a
-    question would turn a ceiling into a dead end. It is told what it already
-    knows through the ordinary progress notes.
-    """
+    """The term to look up, or empty when this step is not a lookup."""
     term = plan.define.strip()
     if not term:
         return ""
@@ -591,17 +417,7 @@ async def _look_up(
     bundle: ContextBundle,
     term: str,
 ) -> ContextBundle:
-    """Dispatch `search_knowledge` and put what it found in front of the next plan.
-
-    **Through the registry**, like every other tool call: it validates the
-    arguments, filters by role, and emits `tool_called` — so a lookup appears in
-    the trace as the act it was, which is what makes *"the agent consulted a
-    document"* something a person can verify rather than take on trust.
-
-    Recorded as spent **whatever comes back**, including nothing. A corpus that
-    has no answer for a term will still have none next iteration, and a run that
-    could re-ask on failure would spend its whole budget discovering that.
-    """
+    """Dispatch `search_knowledge` and put what it found in front of the next plan."""
     state.lookups.append(term.lower())
     result = await tools.call(
         context, "search_knowledge", {"query": term, "limit": LOOKUP_PASSAGES}, events=events
@@ -617,25 +433,18 @@ async def _look_up(
             Definition(term=term, text=passage.text, source=passage.source)
         )
     if passages:
-        # Recorded only when the documents answered, because this is what the
-        # answer's limitation is built from (**D-033**) and a term the corpus
-        # could not explain is not a definition anybody relied on.
+        # Recorded only when the documents answered.
         state.prose_terms.append(term)
 
     await events.emit(
         "knowledge_consulted",
         {
-            # The three facts a reader of the timeline needs: what was asked,
-            # whether the organization had written anything down, and which
-            # documents answered. `found_by` says whether meaning or wording
-            # reached them, which is the retrieval regression B-018 made visible.
+            # The three facts a reader of the timeline needs: what was asked.
             "term": term,
             "passages": len(passages),
             "sources": [passage.source for passage in passages][:LOOKUP_PASSAGES],
             "found_by": sorted({passage.found_by for passage in passages}),
-            # Empty on the happy path. When the corpus said nothing, or said it
-            # through half a search, this is the sentence that explains an answer
-            # that went on without a definition.
+            # Empty on the happy path.
             "note": note,
         },
     )
@@ -649,13 +458,7 @@ async def _next_step(
     state: ResearchState,
     settings: Settings | None,
 ) -> tuple[Plan, int]:
-    """The next query to run, from the same planner the single-shot path uses.
-
-    Reused rather than re-implemented: it already renders the layered prompt,
-    holds the closed schema and asks for aliased projections (B-020). What the
-    loop adds is *where it has got to* — the findings so far and what is still
-    open — so the second iteration does not re-plan the first.
-    """
+    """The next query to run, from the same planner the single-shot path uses."""
     return await plan_query(
         org_id=context.org_id,
         bundle=bundle,
@@ -664,10 +467,7 @@ async def _next_step(
         run_id=context.run_id,
         actor_user_id=context.actor_user_id,
         settings=settings,
-        # Two different things reach the planner through one parameter: where
-        # the investigation has got to, and — for the single attempt after a
-        # judged refusal — what to try instead. Joined rather than one replacing
-        # the other, because a retry that had already run queries needs both.
+        # Two different things reach the planner through one parameter.
         repair_of="\n\n".join(
             part for part in (_progress_so_far(state), _nearest_question_ask(state)) if part
         )
@@ -675,20 +475,7 @@ async def _next_step(
     )
 
 
-#: What the one permitted second look actually **asks for** (D-055).
-#:
-#: **This is prompt text, and it is not enforcement.** Nothing here binds the
-#: model, and a reader should not mistake it for a rule the platform checks. What
-#: decides the outcome is unchanged: `composer.run_state` derives `answered` /
-#: `partly` / `refused` from what the run cited and what it said it could not
-#: establish (D-044), and a retried attempt that cites nothing still ends as a
-#: refusal with no special case written for it. The retry changes **what is
-#: asked**, and only that.
-#:
-#: The last paragraph is the owner's line held in the prompt as well as in the
-#: derivation — *an honest refusal that becomes a padded non-answer is worse than
-#: the refusal* — because the failure this rule risks is the one it must not
-#: cause.
+#: What the one permitted second look actually asks for (D-055).
 NEAREST_QUESTION_RULE = """You judged this question unanswerable, and gave this reason:
 
     {reason}
@@ -706,30 +493,14 @@ refusal you already wrote."""
 
 
 def _nearest_question_ask(state: ResearchState) -> str:
-    """The retry's instruction, for the one attempt that follows the refusal.
-
-    **The bug this exists to fix was that the retry asked the same question
-    again.** `_progress_so_far` returns `""` when nothing has executed, and the
-    retry's own precondition is that nothing has — so the second planner call
-    received byte-identical input to the first and refused identically. The
-    mechanism was structurally incapable of changing anything (**B-167**).
-
-    Gated on `not state.executions` as well as on the flag, so it applies to
-    exactly the attempt that follows the refusal and does not trail through the
-    rest of an investigation that got going.
-    """
+    """The retry's instruction, for the one attempt that follows the refusal."""
     if not state.retried_judgement or state.executions or not state.judgement_reason:
         return ""
     return NEAREST_QUESTION_RULE.format(reason=state.judgement_reason.strip())
 
 
 def _progress_so_far(state: ResearchState) -> str:
-    """What the planner is told about earlier iterations.
-
-    Summaries and open questions — never rows. A model that can see the whole of
-    every previous result would write its next query against a transcript instead
-    of against the catalog, and the prompt would grow with the data.
-    """
+    """What the planner is told about earlier iterations."""
     if not state.executions and not state.findings and not state.lookups:
         return ""
     lines = ["What you have already established in this investigation:"]
@@ -738,13 +509,7 @@ def _progress_so_far(state: ResearchState) -> str:
     for finding in state.findings:
         lines.append(f"- concluded: {finding.statement}")
     if state.lookups:
-        # **Told, because a lookup it cannot see it already made is a lookup it
-        # will ask for again.** Found live: given the definition of a term at
-        # iteration 2, the model asked for the same term at iteration 3, had the
-        # duplicate refused in silence, and hedged an answer it had already
-        # computed correctly. The refusal was right; saying nothing about it was
-        # not. Nothing here repeats the definition — that is above, at L4, where
-        # it belongs.
+        # Told, because a lookup it cannot see it already made is a lookup it will ask for again.
         lines.append(
             "- already looked up, and the answer is in the documents section of the "
             f"reference material above: {', '.join(sorted(state.lookups))}. Do not ask "
@@ -768,16 +533,8 @@ async def _reflect(
     result: ToolResult,
     settings: Settings | None,
 ) -> tuple[Reflection, int]:
-    """What did that tell us, and is there more worth doing?
-
-    A failure is reflected on too, rather than short-circuited: "that query was
-    refused" is information the next step should have, and letting the model see
-    it is what turns a refusal into a different approach instead of the same one
-    again.
-    """
-    # The thread first and framed (**D-029**), for the reason the planner needs
-    # it too: "is the question now answered" cannot be judged when the question
-    # is *"check again"* and nothing says what was being checked.
+    """What did that tell us, and is there more worth doing?"""
+    # The thread first and framed (D-029), for the reason the planner needs it too.
     thread = history_block(bundle.history)
     prompt = (
         (f"{thread}\n\n" if thread else "") + f"The question is: {state.question}\n\n"

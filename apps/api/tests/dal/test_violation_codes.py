@@ -1,15 +1,4 @@
-"""The refusal vocabulary, pinned.
-
-Two things are asserted here and both are about WP5.3, which is written against
-these strings: the adversarial corpus names the code each attack must produce,
-and audit rows group by them.
-
-1. **The set is exactly this.** A new code is a deliberate addition with a test
-   line, not a typo that quietly becomes a category nobody counts.
-2. **Every code has a query that produces it.** A code no input can reach is a
-   branch nobody has run — and in this module, an unreachable branch is a rule
-   that is not actually enforced.
-"""
+"""The refusal vocabulary, pinned."""
 
 from __future__ import annotations
 
@@ -19,8 +8,7 @@ from catalog_fixture import refuse
 from charie.dal.errors import PolicyViolation, ViolationCode
 from charie.dal.policy import SourcePolicy
 
-#: One statement per code. Kept in the order the validator applies its rules, so
-#: this table reads as the pipeline from architecture 7.1 with an example each.
+#: One statement per code. Kept in the order the validator applies its rules.
 CASES: dict[ViolationCode, str] = {
     ViolationCode.PARSE_ERROR: "SELECT FROM WHERE",
     ViolationCode.EMPTY_STATEMENT: "",
@@ -42,8 +30,7 @@ CASES: dict[ViolationCode, str] = {
     ),
     ViolationCode.DENIED_COLUMN: "SELECT tax_id FROM customers",
     ViolationCode.TOO_COMPLEX: "SELECT id FROM orders WHERE id = " + "(" * 300 + "1" + ")" * 300,
-    # Parses, breaks no rule, and still cannot be resolved: one alias for two
-    # tables. Fails closed rather than running something not understood.
+    # Parses, breaks no rule, and still cannot be resolved: one alias for two tables.
     ViolationCode.UNRESOLVABLE: "SELECT o.id FROM public.orders o JOIN customers o ON o.id = o.id",
 }
 
@@ -61,10 +48,7 @@ def test_each_code_has_a_statement_that_produces_it(
 
 @pytest.mark.parametrize("sql", CASES.values(), ids=lambda value: str(value)[:40])
 def test_no_refusal_leaks_anything_but_identifiers(sql: str, pg: SourcePolicy) -> None:
-    """A message is shown to the model and stored in an audit row, so it may
-    name tables, columns and functions — and must not carry anything else:
-    no file paths from an internal exception, no dialect internals, no SQL
-    quoted back with a literal still in it."""
+    """A message is shown to the model and stored in an audit row, so it may name tables."""
     violation = refuse(sql, pg)
 
     assert violation.message
@@ -74,9 +58,7 @@ def test_no_refusal_leaks_anything_but_identifiers(sql: str, pg: SourcePolicy) -
 
 
 def test_a_violation_never_chains_the_parser_error(pg: SourcePolicy) -> None:
-    """`raise ... from error` would keep sqlglot's message — which quotes the
-    SQL, literals included — alive in __cause__, where the next traceback puts
-    it in a log file."""
+    """`raise ... from error` would keep sqlglot's message — which quotes the SQL."""
     violation = refuse("SELECT FROM WHERE 'a-value'", pg)
 
     assert violation.__cause__ is None
@@ -84,8 +66,7 @@ def test_a_violation_never_chains_the_parser_error(pg: SourcePolicy) -> None:
 
 
 def test_the_codes_are_plain_strings_over_the_wire() -> None:
-    """A StrEnum, so an audit row and a JSON body carry `denied_column` rather
-    than `ViolationCode.DENIED_COLUMN`."""
+    """A StrEnum, so an audit row and a JSON body carry `denied_column` rather than..."""
     violation = PolicyViolation(ViolationCode.DENIED_COLUMN, "no", subject="a.b.c")
 
     assert violation.as_dict() == {"code": "denied_column", "message": "no", "subject": "a.b.c"}

@@ -1,44 +1,4 @@
-"""Can this deployment's identity do what the product needs? (**B-125**, **B-129**)
-
-**The failure this exists to prevent has already happened once.** `roles.bicep`
-granted the app identity **Key Vault Secrets User** — read-only — with a comment
-arguing convincingly for the narrow role: *"the application reads the OpenAI key
-and has no business rotating it."* True of the configuration secrets, and it
-quietly redefined the application as the thing that reads its own config rather
-than the thing that stores **customers' database credentials**. Registering a data
-source writes a secret, so the product's central action failed on a deployment
-that was otherwise healthy, and the way we found out was a person clicking a
-button and getting *"Could not reach the API."*
-
-**Blob storage is in exactly that position now.** Every query execution writes a
-result artifact and `chart.py` reads it back, so the deployed Blob path is
-exercised for the first time by the first question somebody asks. Same shape,
-different resource.
-
-**Why this runs as a Container Apps job and not as a step in the pipeline.** The
-smoke script authenticates as the **OIDC deploy identity**, which holds broad
-permissions on the resource group. A vault write from the runner would have
-passed happily throughout the entire period B-125 was live — a check that passes
-for a reason unrelated to the thing it checks, which is the class this repository
-keeps rediscovering. The only way to test what the *app* can do is to be the app,
-so this runs on the same user-assigned identity the API runs on.
-
-**And it goes through the product's own providers**, `get_secrets_provider()` and
-`artifact_store()`, rather than calling the Azure SDK directly. A bespoke SDK call
-can succeed against a resource the product cannot use — wrong container, wrong
-name transformation, wrong credential chain — and would be one more thing that
-works in isolation while the live path is broken.
-
-**Backend-agnostic on purpose.** It checks whatever is configured, so CI runs it
-against the local backends as a control — proving the check can pass at all — and
-the deploy runs it against Key Vault and Blob. A check only ever seen to pass in
-one environment is a check nobody has calibrated.
-
-**What it deliberately does not do.** It never touches the database, so it can run
-before or after the migration job and diagnoses nothing about Postgres. It writes
-under identifiers that cannot collide with tenant data, and cleans up after
-itself.
-"""
+"""Can this deployment's identity do what the product needs?"""
 
 from __future__ import annotations
 
@@ -52,16 +12,10 @@ from charie.dal.artifacts import artifact_store
 from charie.secrets.base import SecretNotFoundError
 from charie.secrets.factory import get_secrets_provider
 
-#: The namespace every probe write goes under, named for what it is rather than
-#: for what it holds — there is no secret here, only a throwaway reference.
-#:
-#: Deliberately outside `ds/`, where real data-source credentials live: a probe
-#: can never be mistaken for one, and a sweep over `ds/` can never delete a probe
-#: mid-flight.
+#: The namespace every probe write goes under, named for what it is rather than for what it holds.
 PROBE_NAMESPACE: Final = "selfcheck"
 
-#: A probe payload with no resemblance to a credential. If this ever turns up in a
-#: log or an exception, it says what it is.
+#: A probe payload with no resemblance to a credential.
 PROBE_VALUE: Final = "deployment-selfcheck-probe"
 
 
@@ -70,13 +24,7 @@ class SelfCheckError(Exception):
 
 
 async def check_secrets(settings: Settings) -> str:
-    """Write, read, delete, confirm gone — all four, because the product needs all four.
-
-    **`delete` is not padding.** Rotating a data source's credential and removing
-    a data source both delete, and `delete` is the verb *Secrets User* lacked
-    alongside `set` when B-125 shipped. A check that only wrote would have gone
-    green on a role that could not clean up after itself.
-    """
+    """Write, read, delete, confirm gone — all four, because the product needs all four."""
     provider = get_secrets_provider()
     ref = f"{PROBE_NAMESPACE}/{uuid.uuid4()}"
 
@@ -109,8 +57,7 @@ async def check_secrets(settings: Settings) -> str:
             "source both delete, so this permission is not optional."
         ) from error
 
-    # The delete is only proven by the absence that follows it. A backend that
-    # accepted the call and kept the value would pass every assertion above.
+    # The delete is only proven by the absence that follows it.
     try:
         await provider.get(ref)
     except SecretNotFoundError:
@@ -122,24 +69,12 @@ async def check_secrets(settings: Settings) -> str:
 
 
 async def check_artifacts(settings: Settings) -> str:
-    """Write and read a result artifact the way a query execution does.
-
-    **Two verbs, not four, and the asymmetry is real rather than an oversight.**
-    `ArtifactStore` has no `delete`: nothing in this product removes an artifact,
-    which is **B-021** — retention is a date in a column that no sweep reads. So
-    the round trip asserted here is the one the product actually performs. The
-    probe blob is cleaned up below on a best-effort basis, and the storage
-    account's `expire-artifacts` lifecycle rule is what removes it otherwise.
-    """
+    """Write and read a result artifact the way a query execution does."""
     store = artifact_store(settings)
     org_id, execution_id = uuid.uuid4(), uuid.uuid4()
     payload = PROBE_VALUE.encode()
 
-    # **`finally`, and the first version did not have it.** Closing after the last
-    # assertion leaves the pools open on every path that raises — which is every
-    # path this check exists for. The failure output then carried two
-    # `Unclosed client session` lines under the sentence somebody needs to read,
-    # in the one tool whose entire product is a diagnosis.
+    # `finally`, and the first version did not have it.
     try:
         try:
             reference = await store.put(org_id=org_id, execution_id=execution_id, payload=payload)
@@ -160,8 +95,7 @@ async def check_artifacts(settings: Settings) -> str:
             ) from error
 
         if got != payload:
-            # `None` is the interesting case: `get` returns it for a missing blob,
-            # so a write that silently went somewhere else looks exactly like this.
+            # `None` is the interesting case: `get` returns it for a missing blob.
             state = "missing" if got is None else "not what was written"
             raise SelfCheckError(
                 f"the artifact read back is {state}. A write that lands somewhere the "
@@ -171,22 +105,14 @@ async def check_artifacts(settings: Settings) -> str:
         await _forget_probe_artifact(settings, reference)
         return f"artifacts ({settings.artifacts_backend}): write and read a result payload"
     finally:
-        # `getattr` because only the Blob store has anything to close, and putting
-        # `aclose` on the protocol would oblige every test double to grow a method
-        # that does nothing.
+        # `getattr` because only the Blob store has anything to close.
         aclose = getattr(store, "aclose", None)
         if aclose is not None:
             await aclose()
 
 
 async def _forget_probe_artifact(settings: Settings, reference: str) -> None:
-    """Best effort, and its failure is deliberately not a check failure.
-
-    The product does not delete artifacts (**B-021**), so a deployment that cannot
-    delete one is not thereby broken — asserting on it would fail a deployment for
-    a permission nothing needs. The lifecycle rule on the storage account removes
-    whatever this leaves behind.
-    """
+    """Best effort, and its failure is deliberately not a check failure."""
     if settings.artifacts_backend != "blob":
         return
     try:

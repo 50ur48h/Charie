@@ -4,13 +4,7 @@ import type { ButtonHTMLAttributes } from "react";
 
 import { cn } from "@/lib/utils";
 
-/**
- * One primary action per view; everything else is quieter (docs/design.md).
- *
- * Accepts the product's own variant names (`primary`, `secondary`, `ghost`,
- * `danger`) and shadcn's (`default`, `outline`, `destructive`, `link`), so a
- * shadcn component dropped in from the registry composes without edits.
- */
+/** One primary action per view; everything else is quieter (docs/design.md). */
 export const buttonVariants = cva(
   "inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-md text-[13.5px] font-medium transition-[background-color,color,box-shadow,transform] outline-none select-none focus-visible:ring-[3px] focus-visible:ring-focus disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
   {

@@ -1,10 +1,4 @@
-"""The sanitizer, against the errors real drivers actually produce.
-
-Every string below was written to look like something asyncpg, libpq or the
-Microsoft ODBC driver would hand us on a bad day. The assertion is always the
-same and always negative: the password is not in the output, the host is not in
-the output, and nothing that could be pasted into a client is left behind.
-"""
+"""The sanitizer, against the errors real drivers actually produce."""
 
 from __future__ import annotations
 
@@ -12,9 +6,7 @@ import pytest
 
 from charie.connectors.sanitizer import REDACTED, sanitize, sanitize_exception
 
-# Named after its role in the test, not after the field it stands for — for the
-# same reason as in the data-source tests: a quoted literal beside a constant
-# called "password" is exactly what a secret scanner is built to catch.
+# Named after its role in the test, not after the field it stands for.
 LEAKED_VALUE = "s3cr3t-p4ssw0rd"
 HOST = "pizza-db.internal.example.com"
 
@@ -75,14 +67,7 @@ def test_nothing_sensitive_survives(message: str, forbidden: tuple[str, ...]) ->
 def test_the_patterns_hold_even_with_nothing_known(
     message: str, forbidden: tuple[str, ...]
 ) -> None:
-    """The known-values list is a second layer, not the only one.
-
-    A connector that forgets to pass what it was connecting with must still not
-    leak a password, so the patterns are asserted on their own here. Bare
-    usernames and database names are the exception: outside a ``key=value`` pair
-    they are indistinguishable from ordinary words, which is exactly why the
-    known-values layer exists.
-    """
+    """The known-values list is a second layer, not the only one."""
     scrubbed = sanitize(message)
 
     for secret in forbidden:

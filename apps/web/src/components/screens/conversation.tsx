@@ -1,30 +1,6 @@
 "use client";
 
-/**
- * One thread of questions, and the answers with their evidence (plan WP7.3),
- * in the Calm design.
- *
- * A person types a question and gets back an answer they can check. Everything
- * here already existed as rows in the platform database — this renders them,
- * and adds no behaviour of its own beyond sending.
- *
- * **A run is watched, not waited for.** `POST …/messages` answers 202 with a run
- * id, because a run takes thirty seconds to four minutes. So the thread polls
- * `GET …/runs/{id}` until the run reaches a terminal status, and shows what the
- * run is doing meanwhile from its own trace events. The poll is stopped on
- * unmount and on the first terminal status.
- *
- * **A refusal is an answer.** A run that could not answer *completes*, with a
- * readable reply and no findings (WP7.2b). It is rendered as a reply and not as
- * an error. `failed` is the different thing, and says so.
- *
- * **A citation opens.** "How I worked this out" lists the findings the answer
- * rests on, and each opens into the SQL that ran and the rows it returned.
- *
- * **The send button cannot bill twice.** Every send carries an idempotency key
- * held for the lifetime of that draft, so a retry after a timeout replays the
- * same key and gets the run that already exists (D-019).
- */
+/** One thread of questions, and the answers with their evidence (plan WP7.3). */
 
 import { CircleX, Share2 } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -57,14 +33,7 @@ const POLL_MS = 1500;
 /** Statuses a run never leaves, so polling stops (`runs/service.py`). */
 const TERMINAL = new Set(["completed", "interrupted", "failed", "budget_exhausted"]);
 
-/**
- * How far through its allowance a run is (B-177): counters, never a prediction.
- *
- * What ends a run is a model deciding it has enough, and nothing here knows
- * when that will be — so this says "step 6 of 12 · 3:30 of 5:30" and never
- * draws a bar implying a finish time it cannot know. Empty until the run has
- * done something.
- */
+/** How far through its allowance a run is (B-177): counters, never a prediction. */
 export function progressLine(run: Run): string | null {
   const used = run.progress?.used;
   const limits = run.progress?.limits;
@@ -99,13 +68,7 @@ export function nearlyOut(run: Run): boolean {
   );
 }
 
-/**
- * Whether a cell holds a number rather than words (B-179).
- *
- * Deliberately strict: a currency mark, digits, separators and a percent sign.
- * "2025-12" is a period and not a number — anything it cannot be sure about
- * stays left, because a wrongly right-aligned word is the fault this replaces.
- */
+/** Whether a cell holds a number rather than words (B-179). */
 export function isNumeric(children: React.ReactNode): boolean {
   const text = flatten(children).trim();
   if (text.length === 0) return false;
@@ -121,13 +84,7 @@ function flatten(node: React.ReactNode): string {
   return "";
 }
 
-/**
- * What the answer does not establish — a ceiling that stopped the search, a
- * reviewer's warning, a period the data does not cover.
- *
- * Assembled by the platform rather than written by the model, so it cannot be
- * hedged away. **Never folded away**: a caveat changes what the answer means.
- */
+/** What the answer does not establish — a ceiling that stopped the search, a reviewer's warning. */
 function Limitations({ notes }: { notes: string[] }) {
   if (notes.length === 0) return null;
   return (
@@ -185,12 +142,7 @@ function AgentTurn({ children }: { children: React.ReactNode }) {
   );
 }
 
-/**
- * The reply, and what stands behind it.
- *
- * The card says the words (B-106): one rendering of an answer, with its chart,
- * its caveats and its evidence, kept in place when the next question is asked.
- */
+/** The reply, and what stands behind it. */
 function AnswerCard({
   orgId,
   run,
@@ -314,12 +266,10 @@ export function ConversationThread({
   const [error, setError] = useState<string | null>(null);
   const composer = useRef<HTMLTextAreaElement | null>(null);
 
-  // Held across retries of one draft, so a resend is the same question rather
-  // than a second run and a second bill.
+  // Held across retries of one draft.
   const idempotencyKey = useRef<string | null>(null);
 
-  // The run whose thread has already been re-read after it finished, so the
-  // reload below happens exactly once per run.
+  // The run whose thread has already been re-read after it finished.
   const reconciled = useRef<string | null>(null);
 
   const api = useMemo(() => createApi(session.getToken), [session.getToken]);
@@ -329,9 +279,7 @@ export function ConversationThread({
       const [details, thread, answered] = await Promise.all([
         api.conversation(orgId, conversationId),
         api.messages(orgId, conversationId),
-        // One request for every run in the thread (B-106) — and it cannot take
-        // the thread down with it: the runs enrich the answers, the messages
-        // *are* the conversation.
+        // One request for every run in the thread (B-106).
         api.conversationRuns(orgId, conversationId).catch(() => null),
       ]);
       setConversation(details);
@@ -364,13 +312,7 @@ export function ConversationThread({
   const runStatus = run?.status ?? null;
   const live = runId !== null && runStatus !== null && !TERMINAL.has(runStatus);
 
-  /**
-   * Watch a live run until it stops.
-   *
-   * **Keyed on the run's id and whether it is live — never on the run object**,
-   * which made this effect cancel itself (the Phase 7 gate's defect). Reloading
-   * is a separate effect below.
-   */
+  /** Watch a live run until it stops. */
   useEffect(() => {
     if (!live || runId === null) return;
 
@@ -430,8 +372,7 @@ export function ConversationThread({
     if (!question || sending) return;
     idempotencyKey.current ??= crypto.randomUUID();
     const sent = await ask(question, idempotencyKey.current);
-    // On failure the key is deliberately kept, so pressing Send again replays
-    // the same question rather than starting a second run.
+    // On failure the key is deliberately kept.
     if (sent) {
       setDraft("");
       idempotencyKey.current = null;
@@ -470,8 +411,7 @@ export function ConversationThread({
 
   const lastAssistant = [...messages].reverse().find((message) => message.role === "assistant");
 
-  // Follow the conversation to its end: on arrival, and whenever something new
-  // lands while the reader is already near the bottom.
+  // Follow the conversation to its end: on arrival.
   const settledOnce = useRef(false);
   useEffect(() => {
     const scroller = document.getElementById("main");
@@ -534,8 +474,7 @@ export function ConversationThread({
                     onPick={pick}
                   />
                 ) : (
-                  // The words are still the answer when the run could not be
-                  // fetched; losing them over a second request would be worse.
+                  // The words are still the answer when the run could not be fetched.
                   <AnswerMarkdown words={message.content} />
                 )}
               </AgentTurn>

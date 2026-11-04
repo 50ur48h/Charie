@@ -1,21 +1,4 @@
-"""Can this API reach that address at all?
-
-The cheapest half of "test connection", and the half that needs no driver and no
-credentials: open a TCP connection, then drop it. It answers the question that
-actually goes wrong when someone registers a database — a typo in the host, a
-port that is not published, a firewall in between — and it answers it before any
-credential is put on the wire.
-
-The other half, "these credentials work and they cannot write", belongs to the
-connector and arrives in WP3.2 (architecture Part 5.2, M3 "read-only verified").
-This module never grows into that: it deliberately knows nothing about engines.
-
-One property worth naming: an Admin can make this process open a TCP connection
-to an address of their choosing. That is inherent to registering a database — the
-product's whole purpose is to connect where the customer says — and WP3.2's real
-connector has exactly the same reach. It is bounded by being Admin-only, by a
-short timeout, and by returning nothing but "answered" or "did not answer".
-"""
+"""Can this API reach that address at all?"""
 
 from __future__ import annotations
 
@@ -28,8 +11,7 @@ from charie.connectors.sanitizer import sanitize_exception
 
 __all__ = ["DEFAULT_TIMEOUT_SECONDS", "Reachability", "check_reachable"]
 
-#: Short on purpose: a request is waiting on this, and an address that has not
-#: answered in five seconds is not going to serve queries either.
+#: Short on purpose: a request is waiting on this.
 DEFAULT_TIMEOUT_SECONDS = 5.0
 
 
@@ -45,13 +27,7 @@ class Reachability:
 async def check_reachable(
     *, host: str, port: int, timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS
 ) -> Reachability:
-    """Open a TCP connection to ``host:port`` and close it again.
-
-    Never raises: an unreachable address is an ordinary answer to this question,
-    not an error. Details that a driver or the OS would happily include — the
-    address, the resolver's opinion of it — are removed before returning, because
-    this string is bound for an API response and a log line.
-    """
+    """Open a TCP connection to ``host:port`` and close it again."""
     now = datetime.now(UTC)
 
     try:
@@ -67,8 +43,7 @@ async def check_reachable(
             checked_at=now,
         )
     except OSError as error:
-        # ConnectionRefusedError, socket.gaierror and friends. The host is passed
-        # as a known value so that a resolver echoing it back cannot leak it.
+        # ConnectionRefusedError, socket.gaierror and friends.
         return Reachability(
             reachable=False,
             detail=sanitize_exception(error, known=(host,)),
@@ -76,8 +51,7 @@ async def check_reachable(
         )
 
     writer.close()
-    # The probe already has its answer; a tidy close is courtesy to the far end,
-    # not something worth failing a request over.
+    # The probe already has its answer; a tidy close is courtesy to the far end.
     with contextlib.suppress(OSError):
         await writer.wait_closed()
 

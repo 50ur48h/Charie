@@ -30,8 +30,10 @@ MERGE_POLICY: ASK
 - When changing a model-filled schema, sweep producers in src, ops and tests.
 - Run checks appropriate to the change. Include manual verification steps and
   expected results in the PR, including the failure case.
-- Existing TODO(B-###) identifiers remain historical references. Do not strip
-  useful explanations or security checks merely because planning files are gone.
+- Existing TODO(B-###) identifiers remain historical references. Never remove
+  security checks.
+- Comments and docstrings are one line. Put longer reasoning in the PR.
+  Exception: Pydantic model docstrings reach the model as schema text.
 
 ## Commands and local development
 

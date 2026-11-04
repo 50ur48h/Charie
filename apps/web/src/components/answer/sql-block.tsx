@@ -1,13 +1,6 @@
 "use client";
 
-/**
- * A SQL statement, verbatim, with its keywords and strings tinted.
- *
- * **The DOM keeps the statement as one plain text node.** Colouring is done
- * with the CSS Custom Highlight API, which styles ranges of text without
- * wrapping them in elements — so the statement can still be found, copied and
- * read exactly as it ran, and a browser without the API simply shows it plain.
- */
+/** A SQL statement, verbatim, with its keywords and strings tinted. */
 
 import { useEffect, useId, useRef } from "react";
 
@@ -35,12 +28,7 @@ function registry(): { highlights: HighlightRegistry; make: () => HighlightLike 
   return { highlights: css.highlights, make: () => new Ctor() };
 }
 
-/**
- * The two `::highlight()` rules, added at run time.
- *
- * Not in `globals.css`: the build's CSS parser does not know `::highlight()`
- * yet, warns, and drops the rules from the production bundle.
- */
+/** The two `::highlight()` rules, added at run time. */
 function ensureHighlightStyles(): void {
   if (document.getElementById("sql-highlight-styles")) return;
   const style = document.createElement("style");

@@ -1,14 +1,4 @@
-"""Invitations: the only way to join an existing organization.
-
-The raw token is returned to the caller exactly once and never stored. Only its
-SHA-256 hash goes in the database, so a leaked backup hands out no working
-invitations — the same reason nobody stores passwords.
-
-Acceptance is deliberately **not** org-scoped at lookup time: the accepting user
-is by definition not yet a member, so no session could be opened for the
-organization they are trying to join. The token is the authorization, and it is
-looked up by hash through the system session.
-"""
+"""Invitations: the only way to join an existing organization."""
 
 from __future__ import annotations
 
@@ -89,19 +79,10 @@ class AcceptedInvitation:
 
 
 async def accept_invitation(*, user: User, token: str) -> AcceptedInvitation:
-    """Redeem a token and join its organization.
-
-    Every failure returns the same message. Distinguishing "no such invitation"
-    from "expired" from "already used" would turn this into an oracle for
-    guessing tokens, and the caller can do nothing differently with the detail.
-    """
+    """Redeem a token and join its organization."""
     invalid = ConflictError("That invitation is not valid. Ask an admin for a new one.")
 
-    # **The token is the only thing known here.** Which organization it belongs
-    # to is the *answer*, so there is no `app.org_id` to scope by and RLS would
-    # return nothing. One audited lookup rather than an owner connection
-    # (B-123); every write below is already org-scoped, which is why only the
-    # read needed anything.
+    # The token is the only thing known here.
     async with app_session() as session:
         found = (
             await session.execute(
@@ -140,8 +121,7 @@ async def accept_invitation(*, user: User, token: str) -> AcceptedInvitation:
         if already is None:
             session.add(OrgMembership(org_id=org_id, user_id=user.id, role=role))
 
-        # Marked accepted through the org-scoped session, so a token cannot be
-        # redeemed twice even if two requests race: the second finds it taken.
+        # Marked accepted through the org-scoped session.
         pending = (
             (
                 await session.execute(

@@ -1,15 +1,4 @@
-"""Reading a catalog back out (architecture Part 5.3).
-
-The counterpart to ``discovery``: that module talks to a customer's database and
-writes rows; this one only ever reads the rows, and never opens a connector. A
-member browsing the catalog should not be able to cause a connection to anyone's
-database — that is Contributor work, and it lives on the other side of this line.
-
-Everything here reads the **active** snapshot. Superseded ones are kept for runs
-that are still going (DECISIONS D-012) and are not reachable from these
-functions; when Phase 7 gives a run a snapshot to pin, it will ask for that
-snapshot by id.
-"""
+"""Reading a catalog back out (architecture Part 5.3)."""
 
 from __future__ import annotations
 
@@ -55,15 +44,11 @@ class CatalogColumnView:
     semantic_role: str | None = None
     sensitivity: str = "none"
     sample_rows: int | None = None
-    #: What applies right now: an Admin's decision, or the safe default that
-    #: suspicion implies. Never null — "nobody decided" is still an answer.
+    #: What applies right now: an Admin's decision, or the safe default that suspicion implies.
     policy: str = "allow"
     #: True when a person set it, rather than the classifier's default.
     policy_decided: bool = False
-    #: How a masked value should be replaced — full | email | phone | last4 |
-    #: hash. Only an Admin sets it; None means the DAL picks from the semantic
-    #: role. Carried here because the DAL masks *results* (WP5.2) and would
-    #: otherwise have to read `column_policies` all over again.
+    #: How a masked value should be replaced — full | email | phone | last4 | hash.
     mask_type: str | None = None
 
 
@@ -100,11 +85,7 @@ class Catalog:
 
 
 async def active_catalog(org_id: uuid.UUID, data_source_id: uuid.UUID) -> Catalog:
-    """The current catalog for one data source, whole.
-
-    Three queries rather than one join: a table with fifty columns would
-    otherwise arrive fifty times, and the assembly is a dictionary lookup.
-    """
+    """The current catalog for one data source, whole."""
     async with org_session(org_id) as session:
         snapshot = (
             (
@@ -166,9 +147,7 @@ async def _tables(
         .all()
     )
 
-    # Policies are keyed by name, not by catalog row, so they are fetched once
-    # for the data source and looked up — that is the whole point of them
-    # outliving a snapshot (D-013).
+    # Policies are keyed by name, not by catalog row.
     decisions = {
         (policy.schema_name, policy.table_name, policy.column_name): policy
         for policy in (

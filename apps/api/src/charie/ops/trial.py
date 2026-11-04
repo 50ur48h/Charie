@@ -1,37 +1,4 @@
-"""An engine trial: point the product at an unfamiliar dataset and see where it breaks.
-
-**Why this exists, and why it is not the eval harness.** The golden evals assert
-known answers against a known fixture, and they are the right tool for *"did this
-change break something we already understood"*. They cannot find what this finds.
-Five of the sharpest defects in this repository — **B-057** (join direction),
-**B-060** (two defensible sources, answers two orders of magnitude apart),
-**B-085** (imported metrics nothing could reach), **B-092** (a code column read as
-if every value were equally common) and **B-119** (a fabricated join prohibition)
-— all came from pointing the agent at a database nobody had modelled for it and
-asking questions whose answers nobody knew yet. None was reachable from the test
-suite, which is the defect class AGENTS.md opens with. The method worked and lived
-only in the owner's habit; this is the habit written down.
-
-**Every probe runs at least three times, and that is not a tuning knob.**
-`MINIMUM_REPEATS` is enforced rather than defaulted. On 2026-08-25, B-119's exact
-question — asked once, on a build whose prompt path was byte-identical to the run
-that produced the fabrication — came back correct. A single-shot trial would have
-recorded a live P1 as fixed. **A trial that asks each question once measures the
-model's luck on the day**, and the defects worth finding here are exactly the ones
-that do not happen every time.
-
-**So the output is a comparison, not a transcript.** What a reader needs is not
-three answers but the places the three disagree: a question that refused once and
-answered twice, or read `fact_sale` twice and `fact_waste` once, is a finding
-before anybody reads a word of prose. `divergences` is the whole product of this
-module; the per-run records exist to make it checkable.
-
-**What this does not do.** It does not decide whether an answer is *right* — no
-program here can, which is the premise of the exercise — and it does not compare
-against expected values. It surfaces the runs and their disagreements, and a
-person judges. Anything it flags belongs in `BACKLOG.md` with the numbers in it,
-in the shape B-060 and B-119 set.
-"""
+"""An engine trial: point the product at an unfamiliar dataset and see where it breaks."""
 
 from __future__ import annotations
 
@@ -52,25 +19,16 @@ from charie.db.models import AgentRun, QueryExecution
 from charie.runs import service as runs
 from charie.tenancy.session import org_session
 
-#: **Three, and the floor is enforced.** See the module docstring: one run of
-#: B-119's question on 2026-08-25 would have closed a live P1. Three is the
-#: smallest number that can show a disagreement *and* which side is the outlier;
-#: two shows only that they differ.
+#: Three, and the floor is enforced.
 MINIMUM_REPEATS: Final = 3
 
 #: Numbers in an answer, for the coarse "did they say the same thing" check.
-#: Deliberately crude — see `_figures`.
 _NUMBER = re.compile(r"\d[\d,]*\.?\d*")
 
 
 @dataclass(frozen=True, slots=True)
 class ProbeRun:
-    """One run of one probe. Everything a person needs to judge it, and no prose.
-
-    Assembled from the run's own record rather than from the model's account of
-    itself: `tables_read` is what the **validator** resolved on each execution,
-    not what the answer claims it read, for the reason B-093 gives.
-    """
+    """One run of one probe. Everything a person needs to judge it, and no prose."""
 
     run_id: uuid.UUID
     status: str
@@ -79,8 +37,7 @@ class ProbeRun:
     #: What the run could not answer, when it named something.
     unanswered: str
     answer: str
-    #: What context offered that had figures to aggregate. The other half of
-    #: B-093: naming both is what lets a reader see that a choice existed.
+    #: What context offered that had figures to aggregate.
     sources_offered: tuple[str, ...]
     tables_read: tuple[str, ...]
     statements: tuple[str, ...]
@@ -90,13 +47,7 @@ class ProbeRun:
 
     @property
     def ending(self) -> str:
-        """What to call this run in a report.
-
-        The run's own derived state when it has one, and the status otherwise —
-        a run that failed or is still going has no outcome state, and inventing
-        one for the report would be the trial asserting something the platform
-        did not record.
-        """
+        """What to call this run in a report."""
         return self.state if self.status == "completed" and self.state else self.status
 
 
@@ -108,26 +59,12 @@ class ProbeResult:
 
 
 def _figures(answer: str) -> tuple[str, ...]:
-    """The numbers an answer states, normalised for comparison.
-
-    **Crude on purpose, and its crudeness is the safe direction.** It cannot tell
-    a row count from a currency amount, so it over-reports disagreement rather
-    than under-reporting it — and a false flag costs a person ten seconds while a
-    missed one costs what B-060 cost. Dates are the common false positive and are
-    left in: two runs that resolved *"last month"* differently is precisely the
-    thing B-005 was about.
-    """
+    """The numbers an answer states, normalised for comparison."""
     return tuple(sorted({match.group(0).replace(",", "") for match in _NUMBER.finditer(answer)}))
 
 
 def divergences(runs: tuple[ProbeRun, ...]) -> tuple[str, ...]:
-    """Where the runs of one probe disagree. Empty means they agreed.
-
-    **Agreement is not correctness.** Three runs can be consistently wrong, and
-    B-060's four readings were each defensible on their own. What this rules out
-    is the *other* failure — a defect that shows up one time in three and is
-    invisible to anyone who asked once.
-    """
+    """Where the runs of one probe disagree."""
     found: list[str] = []
 
     endings = Counter(r.ending for r in runs)
@@ -180,13 +117,7 @@ async def _record(org_id: uuid.UUID, run_id: uuid.UUID) -> ProbeRun:
             .scalars()
             .all()
         )
-        # **From the run's checkpoint, because `RunView` does not carry it.** The
-        # first version of this read `view.grounding.candidate_sources`, which
-        # does not exist — `_grounding` is a function returning a tuple, and the
-        # field would have been silently empty on every run. That is the defect
-        # this whole module exists to find, written into the module itself, and it
-        # is why `offered_sources` has a test that fails when the key is absent
-        # rather than returning nothing quietly.
+        # From the run's checkpoint, because `RunView` does not carry it.
         state = (
             await session.execute(select(AgentRun.state).where(AgentRun.id == run_id))
         ).scalar_one_or_none()
@@ -213,18 +144,7 @@ async def _record(org_id: uuid.UUID, run_id: uuid.UUID) -> ProbeRun:
 
 
 def offered_sources(state: object) -> list[str]:
-    """What context offered that had figures to aggregate (**B-093**).
-
-    Read out of the run's `state` checkpoint, which is a JSON column written by a
-    model of the loop that has changed before and will again — so this is
-    defensive in the same way `_grounding` is, and for the same reason: a run
-    recorded before the field existed must read as "nothing recorded" rather than
-    raise on a report whose whole job is explaining what happened.
-
-    **Empty is a real answer here**, not a failure: a run that refused before
-    context was built genuinely had nothing offered, and those are among the runs
-    most worth looking at.
-    """
+    """What context offered that had figures to aggregate (B-093)."""
     if not isinstance(state, dict):
         return []
     stored = cast("dict[str, object]", state)
@@ -243,14 +163,7 @@ async def run_probe(
     question: str,
     repeats: int,
 ) -> ProbeResult:
-    """Ask one question `repeats` times and compare the runs.
-
-    **Each repeat is its own run in the same conversation**, which is how a person
-    would do it, and it means the second and third carry the first as history
-    (D-029). That is deliberate: the thread is part of the product, so a trial that
-    stripped it would be measuring something nobody uses. It also means a
-    divergence can come *from* the thread, which is itself worth knowing.
-    """
+    """Ask one question `repeats` times and compare the runs."""
     if repeats < MINIMUM_REPEATS:
         raise ValueError(
             f"repeats={repeats} is below the floor of {MINIMUM_REPEATS}. One run of "
@@ -322,14 +235,7 @@ async def run_trial(
     probes: list[str],
     repeats: int,
 ) -> str:
-    """Every probe, in one conversation, rendered.
-
-    **No file I/O here.** `main` reads the probes and writes the report, because
-    `pathlib` on the event loop is blocking — the objection `ruff`'s ASYNC240
-    raises and the one **B-023** already records against the artifact store. It
-    would be harmless in a one-shot CLI and it would also be one more place the
-    rule is quietly not kept.
-    """
+    """Every probe, in one conversation, rendered."""
     conversation = await runs.create_conversation(
         org_id=org_id, user_id=user_id, title="engine trial", data_source_id=source_id
     )
@@ -378,9 +284,7 @@ def main() -> None:
         Path(args.out).write_text(report, encoding="utf-8")
         print(f"\nwritten to {args.out}")
 
-    # **Exit 0 even when probes disagreed.** A disagreement is a finding for a
-    # person, not a build failure — this is not a gate and must not become one by
-    # accident, or it will end up run with whatever flag makes it quiet.
+    # Exit 0 even when probes disagreed.
 
 
 if __name__ == "__main__":

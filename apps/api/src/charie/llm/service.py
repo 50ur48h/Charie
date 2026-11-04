@@ -1,36 +1,4 @@
-"""The LLM package's front door.
-
-``complete`` is the whole of it. Everything above this module — the planner, the
-critic, the composer, the eval harness — asks for a *role* and a *shape*, and
-what happens in between is decided here:
-
-* the registry resolves the ordered chain of models that may serve the role;
-* the run's cost ceiling is checked **before** each call, not after;
-* ``fallback.walk`` tries each provider, retrying what is worth retrying;
-* the meter writes a ``usage_ledger`` row **before** the result is returned or
-  the failure re-raised, so there is no path that spends tokens without leaving
-  a row;
-* structured output is parsed and, if it will not parse, repaired exactly once —
-  and the repair is a second metered pass over the chain, because it is a second
-  real cost.
-
-This mirrors ``dal.run`` deliberately. The DAL's rule is that nothing reads
-customer data except through its front door; this package's rule is that nothing
-spends a customer's tokens except through this one. Both are enforced the same
-way — by there being no other function that does the interesting part.
-
-**The prompt is built per provider, inside the attempt.** Providers disagree
-about whether they can constrain decoding to a schema, so the messages that go
-to the second provider in a chain are not necessarily the ones that went to the
-first. Building the request once, above the chain, would send one of them the
-wrong prompt — a bug that only appears during an outage, which is the worst time
-to find it.
-
-What is deliberately *not* here: the run budget of architecture 4.4, which
-counts iterations and queries across a whole investigation and belongs to the
-Phase 8 controller. ``CallLimits`` bounds one call; ``llm/budget.py`` bounds one
-run's spend; neither is that.
-"""
+"""The LLM package's front door."""
 
 from __future__ import annotations
 
@@ -65,8 +33,7 @@ from charie.llm.structured import (
 
 __all__ = ["complete"]
 
-#: Builds the messages for one provider. A function rather than a list because
-#: what to send depends on what the provider can do — see the module docstring.
+#: Builds the messages for one provider.
 PromptFor = Callable[[LLMProvider], list[Message]]
 
 
@@ -82,13 +49,7 @@ async def complete(
     retry: RetryPolicy | None = None,
     settings: Settings | None = None,
 ) -> Completion:
-    """Call the model configured for ``role``, meter it, and return what it said.
-
-    Raises ``LLMError`` — ``StructuredOutputError`` when a schema was asked for
-    and two attempts did not produce it, ``RunCostExceededError`` when the run
-    has spent its ceiling — and has written a ledger row for every provider call
-    made before it does.
-    """
+    """Call the model configured for ``role``, meter it, and return what it said."""
     resolved = settings if settings is not None else get_settings()
     chain = registry.resolve(role, resolved)
     tags = Tags(org_id=org_id, role=role, run_id=run_id, actor_user_id=actor_user_id)
@@ -129,9 +90,7 @@ async def complete(
     try:
         return replace(completion, parsed=parse(schema, completion.text))
     except StructuredOutputError as first:
-        # Bound to a local before the closure: Python deletes the `except ... as`
-        # name at the end of the block, and this closure outlives the statement
-        # that made it.
+        # Bound to a local before the closure.
         problem = str(first)
 
         def repair_prompt(provider: LLMProvider) -> list[Message]:
@@ -150,9 +109,7 @@ async def complete(
         try:
             parsed = parse(schema, second.text)
         except StructuredOutputError as final:
-            # Both attempts named, because the pair is the diagnosis: the same
-            # complaint twice means the schema is wrong for the task, two
-            # different ones mean the model is guessing.
+            # Both attempts named, because the pair is the diagnosis.
             raise StructuredOutputError(
                 f"{second.model} did not produce valid {schema.__name__} in two "
                 f"attempts. First: {problem}. After repair: {final}."
@@ -173,12 +130,7 @@ async def _call(
     try:
         completion = await provider.complete(request)
     except LLMError as error:
-        # Tokens are unknown on a failure — the provider did not report any — so
-        # the row records zero of them and says what went wrong. It exists so
-        # that "the model was called and it failed" is visible; a quota counts
-        # what was actually spent, which here is nothing we can prove. With a
-        # chain, this row beside a later `ok` row from another provider is what
-        # makes a fallback visible instead of silently survived.
+        # Tokens are unknown on a failure — the provider did not report any.
         await meter.record(
             org_id=request.tags.org_id,
             role=choice.role,
@@ -215,12 +167,7 @@ async def _call(
 def _with_schema_instruction(
     messages: list[Message], schema: type[BaseModel] | None, provider: LLMProvider
 ) -> list[Message]:
-    """Add the "reply with JSON like this" instruction, when it is needed.
-
-    Placed after the leading system messages rather than at the front: the
-    instruction layers of architecture 4.8 are ordered, L0 platform safety wins
-    every conflict, and a formatting instruction must not displace it.
-    """
+    """Add the "reply with JSON like this" instruction, when it is needed."""
     if schema is None or provider.capabilities().supports_response_schema:
         return messages
     boundary = next(

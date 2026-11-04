@@ -1,9 +1,4 @@
-"""The per-org context loader and its cache (``dal/policy.py``).
-
-The cache is small and it is a security object, so it is tested like one: the
-question is never only "is it fast", it is "can one organization's entry ever
-answer another's question", and "how long does a revoked policy keep working".
-"""
+"""The per-org context loader and its cache (``dal/policy.py``)."""
 
 from __future__ import annotations
 
@@ -72,9 +67,7 @@ async def test_a_second_query_reuses_the_context(counted: dict[str, int]) -> Non
 
 
 async def test_two_organizations_never_share_an_entry(counted: dict[str, int]) -> None:
-    """The cache key carries the org (arch Part 6.4). Keying on the data source
-    alone would be a cross-tenant read that no RLS policy could catch, because
-    the second query would never reach the database at all."""
+    """The cache key carries the org (arch Part 6.4)."""
     source = uuid.uuid4()
 
     await source_policy(uuid.uuid4(), source)
@@ -84,8 +77,7 @@ async def test_two_organizations_never_share_an_entry(counted: dict[str, int]) -
 
 
 async def test_the_entry_expires(counted: dict[str, int], monkeypatch: pytest.MonkeyPatch) -> None:
-    """The TTL is the backstop for anything that changes without telling us, so
-    it has to actually elapse. The clock is driven rather than waited on."""
+    """The TTL is the backstop for anything that changes without telling us."""
     org, source = uuid.uuid4(), uuid.uuid4()
     clock = [1000.0]
     monkeypatch.setattr(policy_module.time, "monotonic", lambda: clock[0])
@@ -102,8 +94,7 @@ async def test_the_entry_expires(counted: dict[str, int], monkeypatch: pytest.Mo
 
 
 async def test_invalidating_one_source_leaves_the_others(counted: dict[str, int]) -> None:
-    """What an Admin has just decided must apply to the next query, not to the
-    one after the TTL — so the setter drops the entry rather than waiting."""
+    """What an Admin has just decided must apply to the next query, not to the one after the TTL."""
     org, first, second = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
     await source_policy(org, first)
     await source_policy(org, second)
@@ -125,8 +116,7 @@ async def test_nothing_cached_holds_a_credential(counted: dict[str, int]) -> Non
 
 
 async def test_the_context_is_frozen(counted: dict[str, int]) -> None:
-    """Callers share one cached object; a mutable one would let a query change
-    the policy the next query is judged by."""
+    """Callers share one cached object."""
     loaded = await source_policy(uuid.uuid4(), uuid.uuid4())
 
     with pytest.raises((AttributeError, TypeError)):
@@ -134,8 +124,7 @@ async def test_the_context_is_frozen(counted: dict[str, int]) -> None:
 
 
 def test_the_snapshot_is_the_one_the_catalog_module_returned() -> None:
-    """The DAL does not build a catalog, it reads one — a fabricated empty
-    catalog would make every table unknown and every refusal a lie."""
+    """The DAL does not build a catalog, it reads one."""
     built = build_catalog()
 
     assert built.snapshot.status == "active"

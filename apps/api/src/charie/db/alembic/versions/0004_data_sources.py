@@ -1,19 +1,4 @@
-"""data_sources: registered customer databases
-
-Architecture Part 10.1. A tenant table, so it arrives with its row-level security
-policy in the same revision — the rule from WP1.2, enforced by
-``test_no_tenant_table_can_be_added_without_protecting_it``, which asks the
-database which tables carry ``org_id`` and fails on any that is undeclared or
-unprotected.
-
-The column that is absent matters as much as the ones present: there is no
-password, no DSN and no connection string here. ``secret_ref`` names an entry in
-the SecretsProvider, and is worthless without it.
-
-Revision ID: 0004
-Revises: 0003
-Create Date: 2026-08-12
-"""
+"""data_sources: registered customer databases"""
 
 from __future__ import annotations
 
@@ -84,10 +69,7 @@ def upgrade() -> None:
     )
     op.create_index("uq_data_sources_org_id_name", TABLE, ["org_id", "name"], unique=True)
 
-    # Revision 0002's ALTER DEFAULT PRIVILEGES already covers tables created
-    # afterwards by the same owner. Stated again here so this revision is true on
-    # its own: a database restored or provisioned by a different owner role would
-    # otherwise leave the API unable to read its own table.
+    # Revision 0002's ALTER DEFAULT PRIVILEGES already covers tables created afterwards by the...
     op.execute(f"GRANT SELECT, INSERT, UPDATE, DELETE ON {TABLE} TO {APP_ROLE}")
 
     op.execute(f"ALTER TABLE {TABLE} ENABLE ROW LEVEL SECURITY")

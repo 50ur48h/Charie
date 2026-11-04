@@ -1,9 +1,4 @@
-"""The forgery matrix.
-
-Each test mints a token that is wrong in exactly one way and requires the
-validator to reject it. Signing is real RS256 against a real JWKS, so these
-exercise the same path an Entra token will take.
-"""
+"""The forgery matrix."""
 
 from __future__ import annotations
 
@@ -149,12 +144,7 @@ def _b64(raw: bytes) -> str:
 
 
 async def test_an_hmac_token_signed_with_the_public_key_is_rejected() -> None:
-    """RS256 to HS256 confusion: the public key used as a shared secret.
-
-    Without an algorithm allowlist this verifies, because the "secret" is a value
-    the attacker simply reads from the JWKS. Assembled by hand because PyJWT
-    refuses to *mint* it — a good library, but the attacker is not using one.
-    """
+    """RS256 to HS256 confusion: the public key used as a shared secret."""
     public_pem = (
         _TRUSTED_KEY.public_key()
         .public_bytes(
@@ -217,14 +207,7 @@ async def test_optional_claims_may_be_absent() -> None:
 
 
 async def test_the_issuer_is_taken_from_discovery_when_not_pinned() -> None:
-    """issuer=None means "believe the discovery document".
-
-    This is the default because a Microsoft Entra external tenant publishes its
-    metadata at <prefix>.ciamlogin.com while issuing tokens that claim
-    <tenant-id>.ciamlogin.com — and the same tenant also answers on
-    login.microsoftonline.com with a third value. Verified against a real tenant
-    before this was written; a hand-configured guess would reject every token.
-    """
+    """issuer=None means "believe the discovery document"."""
     validator = TokenValidator(issuer=None, audience=AUDIENCE, jwks=_StubJwks(_jwks(_TRUSTED_KEY)))
 
     principal = await validator.validate(_mint())
@@ -247,12 +230,7 @@ async def test_a_pinned_issuer_still_wins_when_it_disagrees() -> None:
 
 
 async def test_either_name_for_the_same_api_is_accepted() -> None:
-    """Entra spells one registration two ways depending on token version.
-
-    A v2 access token carries the resource's client-ID GUID as `aud`; a v1 token
-    carries its api:// URI. Both identify the same app registration, so both are
-    accepted — this is one resource under two names, not two resources.
-    """
+    """Entra spells one registration two ways depending on token version."""
     guid = "4ce7996e-0000-0000-0000-000000000000"
     validator = TokenValidator(
         issuer=None,
@@ -281,11 +259,7 @@ async def test_a_third_partys_audience_is_still_refused() -> None:
 
 
 async def test_identity_falls_back_to_whatever_claim_the_provider_sent() -> None:
-    """Entra populates email, preferred_username or upn depending on the tenant.
-
-    Regression: with only `email` consulted, a real Entra sign-in showed the
-    person their opaque subject id at `@unknown.invalid`.
-    """
+    """Entra populates email, preferred_username or upn depending on the tenant."""
     principal = await _validator().validate(
         _mint(email=None, name=None, preferred_username="person@contoso.com", given_name="Person")
     )

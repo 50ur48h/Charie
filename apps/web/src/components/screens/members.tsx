@@ -1,13 +1,6 @@
 "use client";
 
-/**
- * Who belongs to this organization, and what each person may do (WP13.1b).
- *
- * Every control here is an Admin's, and nobody else is shown one (B-008): a
- * Reader sees who is here and is told who can change it. Changing a role,
- * removing someone and revoking a recovery grant each ask first, because each
- * takes effect at once and none is undone by another click.
- */
+/** Who belongs to this organization, and what each person may do (WP13.1b). */
 
 import {
   ChevronDown,
@@ -74,9 +67,7 @@ function formatDay(iso: string): string {
   return Number.isNaN(at.getTime()) ? iso : day.format(at);
 }
 
-/** A member whose token carried no email claim still has to be identifiable,
- *  so fall back to their name and then to the subject the product authorizes
- *  against (B-009). */
+/** A member whose token carried no email claim still has to be identifiable. */
 function who(member: Member): { primary: string; secondary: string | null } {
   const name = member.name?.trim();
   return {
@@ -102,8 +93,7 @@ function RoleSelect({
   compact?: boolean | undefined;
   onChange: (role: string) => void;
 }) {
-  // A role this screen does not know is still shown as itself, never as the
-  // first option in the list.
+  // A role this screen does not know is still shown as itself.
   const options: readonly string[] = (ROLES as readonly string[]).includes(value)
     ? ROLES
     : [value, ...ROLES];
@@ -185,8 +175,7 @@ function OneTimeSecret({
 }
 
 function IssuedLink({ invitation }: { invitation: Invitation }) {
-  // Computed during render, not in an effect: this panel only ever appears
-  // after someone clicks Send invite, so window is always there by then.
+  // Computed during render, not in an effect.
   const origin = typeof window === "undefined" ? "" : window.location.origin;
   const link = `${origin}/invitations/accept?token=${encodeURIComponent(invitation.token)}`;
 
@@ -226,31 +215,23 @@ export function Members({ orgId, role: myRole }: { orgId: string; role: string |
   const api = useMemo(() => createApi(session.getToken), [session.getToken]);
   const inviteRole = useId();
 
-  // B-008: a Reader was shown Change role, Remove and Send invite, earned a 403
-  // from each, and learned that the product was broken rather than that they
-  // lacked permission. Unknown role is treated as not-an-admin, so this fails
-  // closed while `/v1/me` is still in flight.
+  // B-008: a Reader was shown Change role, Remove and Send invite, earned a 403 from each.
   const isAdmin = myRole === "admin";
 
   const [members, setMembers] = useState<Member[] | null>(null);
-  //: Which row is the person looking at this, so it can say "You" and so the
-  //: confirmations can say plainly when you are about to lock yourself out.
+  // : Which row is the person looking at this, so it can say "You" and so the.
   const [myId, setMyId] = useState<string | null>(null);
   const [error, setError] = useState<{ where: Where; message: string } | null>(null);
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<string>("reader");
   const [issued, setIssued] = useState<Invitation | null>(null);
   const [busy, setBusy] = useState(false);
-  //: **B-017.** Null while loading, so an empty panel is never mistaken for
-  //: "this organization has no way back" — which is the one thing this feature
-  //: exists to stop being true silently.
+  // : B-017. Null while loading, so an empty panel is never mistaken for.
   const [grants, setGrants] = useState<RecoveryGrant[] | null>(null);
   const [grantLabel, setGrantLabel] = useState("");
-  //: Shown exactly once, in the response to arming. There is no second chance
-  //: to see it and the panel says so.
+  // : Shown exactly once, in the response to arming.
   const [armed, setArmed] = useState<ArmedRecoveryGrant | null>(null);
-  //: The question being asked. Kept after the dialog closes, so its words do
-  //: not vanish while it fades out.
+  // : The question being asked. Kept after the dialog closes, so its words do.
   const [ask, setAsk] = useState<Ask | null>(null);
   const [asking, setAsking] = useState(false);
   const returnFocus = useRef<HTMLElement | null>(null);
@@ -304,9 +285,7 @@ export function Members({ orgId, role: myRole }: { orgId: string; role: string |
     };
   }, [api]);
 
-  // **B-017.** Loaded only for an Admin, because only an Admin may list them —
-  // asking as a Reader would earn a 403 and put an error on a screen that is
-  // working correctly, which is the shape B-008 was filed for.
+  // B-017. Loaded only for an Admin, because only an Admin may list them.
   useEffect(() => {
     if (!isAdmin) return;
     let active = true;
@@ -315,8 +294,7 @@ export function Members({ orgId, role: myRole }: { orgId: string; role: string |
         const next = await api.recoveryGrants(orgId);
         if (active) setGrants(next);
       } catch {
-        // Left null: the members list is the point of this screen, and a
-        // recovery panel that failed to load should not claim the page is broken.
+        // Left null: the members list is the point of this screen.
         if (active) setGrants([]);
       }
     })();
@@ -332,8 +310,7 @@ export function Members({ orgId, role: myRole }: { orgId: string; role: string |
       await action();
       await load();
     } catch (cause) {
-      // The API's own words: "Your role does not permit this action" and
-      // "This is the only Admin…" are more use than a status code.
+      // The API's own words: "Your role does not permit this action" and "This is the only...
       setError({ where, message: cause instanceof Error ? cause.message : "That did not work" });
     } finally {
       setBusy(false);
@@ -341,8 +318,7 @@ export function Members({ orgId, role: myRole }: { orgId: string; role: string |
   };
 
   const askFirst = (next: Ask) => {
-    // The dialog has no trigger of its own, so remember what opened it and
-    // give focus back there when it closes rather than dropping it on <body>.
+    // The dialog has no trigger of its own.
     returnFocus.current =
       document.activeElement instanceof HTMLElement ? document.activeElement : null;
     setAsk(next);
@@ -517,11 +493,7 @@ export function Members({ orgId, role: myRole }: { orgId: string; role: string |
           title="If nobody can sign in"
           subtitle="Admins only. A way back into this organization, armed in advance."
         >
-          {/* **B-017.** Roles change through an Admin-only route, so an
-              organization whose Admins all lose their identities cannot invite,
-              promote or register anything — and until this existed the only
-              repair was editing the database. The grant is a bearer credential:
-              whoever holds the token can make themselves an Admin here. */}
+          {/* *B-017.** Roles change through an Admin-only route. */}
           <p className="max-w-[68ch] text-[13.5px] leading-relaxed text-text-2">
             Arming a grant gives you a token to keep somewhere outside this product — a password
             manager, not an inbox. If every Admin here ever loses access, whoever holds it can

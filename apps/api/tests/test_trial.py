@@ -1,14 +1,4 @@
-"""The engine trial's comparison, and the floor under it.
-
-**What has to be true for this tool to be worth running.** That it *notices*
-disagreement — the whole product of `trial.py` is `divergences`, and a comparison
-that quietly agrees with itself is worse than no comparison, because somebody
-will read the green and conclude the model is stable. And that it refuses to be
-asked once: `MINIMUM_REPEATS` is the lesson of 2026-08-25 written as code.
-
-The control matters as much as the cases. A `divergences` that flagged everything
-would also "catch" B-060 and B-119, and would be useless.
-"""
+"""The engine trial's comparison, and the floor under it."""
 
 from __future__ import annotations
 
@@ -44,28 +34,19 @@ def _run(
     )
 
 
-# ---------------------------------------------------------------------------
-# The control comes first, because everything below is worthless without it
-# ---------------------------------------------------------------------------
+# --- The control comes first, because everything below is worthless without it ---
 
 
 def test_three_identical_runs_disagree_about_nothing() -> None:
-    """A comparison that flags agreement flags everything, and would be dropped
-    within a day of somebody reading its output."""
+    """A comparison that flags agreement flags everything."""
     assert trial.divergences(tuple(_run() for _ in range(3))) == ()
 
 
-# ---------------------------------------------------------------------------
-# The two shapes this tool exists to catch
-# ---------------------------------------------------------------------------
+# --- The two shapes this tool exists to catch ---
 
 
 def test_a_question_that_refuses_once_and_answers_twice_is_flagged() -> None:
-    """**B-119's shape, and the reason for the repeat floor.**
-
-    Asked once, this run set is a clean answer or a clean refusal depending on
-    which of the three you happened to get.
-    """
+    """B-119's shape, and the reason for the repeat floor."""
     found = trial.divergences(
         (_run(), _run(), _run(state="refused", answer="I could not answer that."))
     )
@@ -75,10 +56,7 @@ def test_a_question_that_refuses_once_and_answers_twice_is_flagged() -> None:
 
 
 def test_runs_that_read_different_tables_are_flagged() -> None:
-    """**B-060's shape**: two defensible sources for one question, and answers two
-    orders of magnitude apart. The tables are the signal that precedes the
-    numbers — and they come from what the validator resolved, not from what the
-    answer says it read."""
+    """B-060's shape: two defensible sources for one question."""
     found = trial.divergences(
         (
             _run(tables=("public.fact_sale",)),
@@ -100,25 +78,16 @@ def test_runs_that_state_different_numbers_are_flagged() -> None:
 
 
 def test_the_same_number_written_differently_is_not_a_disagreement() -> None:
-    """Thousands separators are formatting, not a different answer. Without this
-    the tool cries wolf on every currency figure it sees."""
+    """Thousands separators are formatting, not a different answer."""
     assert trial.divergences((_run(answer="1,735,835.05"), _run(answer="1735835.05"))) == ()
 
 
-# ---------------------------------------------------------------------------
-# The floor
-# ---------------------------------------------------------------------------
+# --- The floor ---
 
 
 @pytest.mark.asyncio
 async def test_a_single_run_is_refused_with_the_reason() -> None:
-    """`MINIMUM_REPEATS` is enforced, not defaulted.
-
-    A default is something a caller overrides at the moment it is inconvenient,
-    which is exactly the moment it matters. The message names the incident rather
-    than the rule, because "asking once measures the model's luck" is an argument
-    and "3" is not.
-    """
+    """`MINIMUM_REPEATS` is enforced, not defaulted."""
     with pytest.raises(ValueError, match="B-119"):
         await trial.run_probe(
             org_id=uuid.uuid4(),
@@ -130,24 +99,11 @@ async def test_a_single_run_is_refused_with_the_reason() -> None:
         )
 
 
-# ---------------------------------------------------------------------------
-# The correspondence check — the one that catches this module's own defect class
-# ---------------------------------------------------------------------------
+# --- The correspondence check — the one that catches this module's own defect class ---
 
 
 def test_the_state_key_this_reads_is_the_key_the_agent_writes() -> None:
-    """**Written after getting it wrong.** The first version of `offered_sources`
-    read `view.grounding.candidate_sources`; `RunView` has no `grounding`
-    attribute — `_grounding` is a function returning a tuple — so the field would
-    have been empty on every run, forever, with nothing to notice it.
-
-    That is the defect class this whole module was built to find, reproduced
-    inside the module on its first draft. A test asserting the function returns
-    `[]` for a junk input would have passed against it, which is why this asserts
-    against the **agent's own serialisation** instead: `ResearchState.as_json()`
-    is what actually lands in the column, so if the field is renamed this fails
-    rather than quietly reporting nothing.
-    """
+    """Written after getting it wrong."""
     state = ResearchState(
         run_id=uuid.uuid4(), org_id=uuid.uuid4(), question="which outlet wastes the most?"
     )
@@ -163,8 +119,7 @@ def test_the_state_key_this_reads_is_the_key_the_agent_writes() -> None:
 
 
 def test_offered_sources_survives_a_run_that_recorded_nothing() -> None:
-    """A run that refused before context was built has no candidates, and those
-    are among the runs most worth looking at. Empty, never an exception."""
+    """A run that refused before context was built has no candidates."""
     assert trial.offered_sources(None) == []
     assert trial.offered_sources({}) == []
     assert trial.offered_sources({"candidate_sources": "not a list"}) == []

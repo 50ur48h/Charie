@@ -1,12 +1,4 @@
-"""The OpenAI provider, against a transport that never leaves the process.
-
-Two halves, and the second is the one that earns its keep. The first asserts the
-request we build — a live smoke also proves that, but only for the shapes the
-smoke happens to use. The second asserts what we do with replies that are hard
-to produce on demand: a refusal, a truncation, a 429, a 500, a body that is not
-JSON at all. Those are the paths that run during an incident, and an incident is
-a bad time to find out they were never exercised.
-"""
+"""The OpenAI provider, against a transport that never leaves the process."""
 
 from __future__ import annotations
 
@@ -25,8 +17,7 @@ from llm_fixture import build_settings
 
 ORG = uuid.uuid4()
 
-#: What ``httpx.MockTransport`` calls. Named so the lambdas below get their
-#: parameter type by inference rather than each needing an annotation.
+#: What ``httpx.MockTransport`` calls.
 Handler = Callable[[httpx.Request], httpx.Response]
 
 
@@ -42,11 +33,7 @@ class Loose(BaseModel):
 
 
 class Strict(BaseModel):
-    """Closed and fully required — the shape strict mode actually accepts.
-
-    A caller who wants natively-constrained decoding opts in by configuring the
-    schema this way; the provider notices without being told.
-    """
+    """Closed and fully required — the shape strict mode actually accepts."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -89,15 +76,11 @@ def ok_body(text: str = '{"steps": ["a"]}', **extra: Any) -> dict[str, Any]:
     return body
 
 
-# ---------------------------------------------------------------------------
-# What we send
-# ---------------------------------------------------------------------------
+# --- What we send ---
 
 
 async def test_system_messages_become_instructions_and_leave_the_turn_list() -> None:
-    """This API takes system guidance as a top-level field. Sending it as a turn
-    would put platform rules on the same footing as the user's message, which is
-    the ordering architecture 4.8 exists to prevent."""
+    """This API takes system guidance as a top-level field."""
     seen: dict[str, Any] = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -161,9 +144,7 @@ async def test_a_schema_is_sent_as_a_native_constrained_format() -> None:
 
 
 async def test_no_reasoning_effort_is_sent_unless_a_provider_asks_for_one() -> None:
-    """The adapter learned to send `reasoning` for Meta (D-069). OpenAI's calls
-    must stay exactly what they were: an effort nobody chose would move both
-    the latency and the bill of every run."""
+    """The adapter learned to send `reasoning` for Meta (D-069)."""
     seen: dict[str, Any] = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -176,14 +157,7 @@ async def test_no_reasoning_effort_is_sent_unless_a_provider_asks_for_one() -> N
 
 
 async def test_strict_is_claimed_only_when_the_schema_can_carry_it() -> None:
-    """Rewriting a schema to satisfy strict mode would make an optional field
-    mandatory — a change to the caller's contract, decided in the provider,
-    invisible at the call site. So it is sent as-is and strictness is asserted
-    only when it is already true.
-
-    All three cases are here because the first two alone would pass against a
-    function that simply returned False.
-    """
+    """Rewriting a schema to satisfy strict mode would make an optional field mandatory."""
     captured: list[dict[str, Any]] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -201,9 +175,7 @@ async def test_strict_is_claimed_only_when_the_schema_can_carry_it() -> None:
 
 
 def test_a_nested_model_is_onlystrict_safe_when_every_definition_is() -> None:
-    """Strictness is a property of the whole schema tree, not of its root — a
-    permissive `$defs` entry is exactly the sort of thing a root-only check
-    would wave through."""
+    """Strictness is a property of the whole schema tree, not of its root."""
 
     class Nested(BaseModel):
         model_config = ConfigDict(extra="forbid")
@@ -229,9 +201,7 @@ async def test_no_schema_means_no_format_block() -> None:
     assert "text" not in seen
 
 
-# ---------------------------------------------------------------------------
-# What we do with what comes back
-# ---------------------------------------------------------------------------
+# --- What we do with what comes back ---
 
 
 async def test_the_answer_and_its_usage_are_read_back() -> None:
@@ -247,9 +217,7 @@ async def test_the_answer_and_its_usage_are_read_back() -> None:
 
 
 async def test_the_cached_share_of_the_input_is_read_back() -> None:
-    """**Revision 0034.** `input_tokens` is inclusive of the cached ones, so a
-    figure that priced it at the full input rate overstated every cache hit —
-    and the number needed to measure by how much was never stored. It is now."""
+    """Revision 0034. `input_tokens` is inclusive of the cached ones."""
     body = ok_body()
     body["usage"] = {
         "input_tokens": 11,
@@ -265,9 +233,7 @@ async def test_the_cached_share_of_the_input_is_read_back() -> None:
 
 
 async def test_no_cached_detail_is_unknown_rather_than_none_cached() -> None:
-    """Two different claims, and the ledger reads this column as a measurement:
-    *the provider did not say* is not *the provider said none*. `ok_body` has no
-    details object, which is the older payload shape and every failure mode."""
+    """Two different claims, and the ledger reads this column as a measurement."""
     completion = await provider_for(lambda _: httpx.Response(200, json=ok_body())).complete(
         request_for()
     )
@@ -290,8 +256,7 @@ async def test_a_malformed_cached_count_is_unknown_not_zero() -> None:
 
 
 async def test_the_model_that_answered_is_recorded_not_the_one_asked_for() -> None:
-    """A provider may serve a different snapshot than the alias requested. The
-    ledger should say which one actually ran."""
+    """A provider may serve a different snapshot than the alias requested."""
     body = ok_body()
     body["model"] = "gpt-test-2026-08-01"
 
@@ -303,8 +268,7 @@ async def test_the_model_that_answered_is_recorded_not_the_one_asked_for() -> No
 
 
 async def test_output_items_that_are_not_the_answer_are_skipped() -> None:
-    """Reasoning summaries and tool calls are not the assistant's answer.
-    Concatenating them would show internal text to a user."""
+    """Reasoning summaries and tool calls are not the assistant's answer."""
     body = ok_body()
     body["output"] = [
         {"type": "reasoning", "summary": [{"type": "summary_text", "text": "internal"}]},
@@ -320,8 +284,7 @@ async def test_output_items_that_are_not_the_answer_are_skipped() -> None:
 
 
 async def test_a_refusal_is_an_error_and_is_not_retryable() -> None:
-    """The model declined. Another provider would decline too — the chain exists
-    for outages, not for disagreements."""
+    """The model declined. Another provider would decline too — the chain exists for outages."""
     body = ok_body()
     body["output"] = [
         {"type": "message", "content": [{"type": "refusal", "refusal": "I can't help with that"}]}
@@ -349,8 +312,7 @@ async def test_truncation_is_reported_as_the_finish_reason() -> None:
     [(429, True), (500, True), (503, True), (400, False), (401, False), (404, False)],
 )
 async def test_the_status_code_decides_whether_to_try_again(status: int, retryable: bool) -> None:
-    """This flag is the whole input to the retry and fallback decision, so it is
-    asserted per status rather than assumed."""
+    """This flag is the whole input to the retry and fallback decision."""
     body = {"error": {"type": "some_error", "code": "some_code", "message": "detail here"}}
 
     with pytest.raises(LLMError) as raised:
@@ -379,9 +341,7 @@ async def test_a_timeout_is_retryable_and_says_nothing_about_the_request() -> No
 
 
 async def test_a_transport_failure_does_not_leak_the_url() -> None:
-    """httpx errors carry the full request URL in their repr, and this one is
-    built from a configured base. Same reasoning that keeps connector errors
-    bare (architecture Part 5.1)."""
+    """httpx errors carry the full request URL in their repr."""
 
     def handler(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("no route to host", request=request)
@@ -402,9 +362,7 @@ async def test_the_provider_declares_native_schema_support() -> None:
 
 
 def test_no_key_fails_with_the_fix_in_the_message() -> None:
-    """The commonest first-run failure. Naming both the variable and the way out
-    matters more here than anywhere else in the package: this is the error a
-    person sees before anything has ever worked."""
+    """The commonest first-run failure."""
     with pytest.raises(LLMError) as raised:
         OpenAIProvider(settings=build_settings(openai_api_key=None))
 
@@ -415,9 +373,7 @@ def test_no_key_fails_with_the_fix_in_the_message() -> None:
 
 
 def test_a_configured_key_is_never_in_the_error_or_the_repr() -> None:
-    """A provider key is a spending credential. It reaches exactly one place —
-    the Authorization header — and must not be recoverable from anything a
-    traceback or a log would print."""
+    """A provider key is a spending credential."""
     provider = OpenAIProvider(settings=build_settings(openai_api_key="sk-secret-value"))
 
     assert "sk-secret-value" not in repr(provider)

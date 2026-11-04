@@ -1,14 +1,4 @@
-"""What the DAL writes down (architecture Part 8.2).
-
-Against a real platform database, because the properties under test are the
-ones a database enforces: the check constraint that a refusal must name what it
-refused, the append-only audit trail, and row-level security on two new tenant
-tables.
-
-The question these rows exist to answer is *who accessed what, when, and was it
-sensitive*. The test for that is not "a row was written" but "the row says the
-right thing", so each case asserts the contents.
-"""
+"""What the DAL writes down (architecture Part 8.2)."""
 
 from __future__ import annotations
 
@@ -140,9 +130,7 @@ async def test_a_successful_query_is_recorded_with_what_it_read(
 
 
 async def test_the_stored_sample_is_the_masked_one(platform: URL, migrated_database: URL) -> None:
-    """The rows persisted here have been through the masker. There is no
-    unmasked copy of them in this database for a later bug to find — the same
-    rule catalog samples follow (D-013)."""
+    """The rows persisted here have been through the masker."""
     org_id, user_id, source_id = await _org(migrated_database)
 
     await audit_hook.record_success(
@@ -157,8 +145,7 @@ async def test_the_stored_sample_is_the_masked_one(platform: URL, migrated_datab
 async def test_nothing_unmasked_reaches_the_platform_database(
     platform: URL, migrated_database: URL
 ) -> None:
-    """The blunt version of the same check: dump both tables as text and look
-    for the planted address."""
+    """The blunt version of the same check."""
     org_id, user_id, source_id = await _org(migrated_database)
 
     await audit_hook.record_success(
@@ -206,9 +193,7 @@ async def test_the_full_result_goes_to_the_store_and_the_row_points_at_it(
 
 
 async def test_a_refusal_is_recorded_with_its_code(platform: URL, migrated_database: URL) -> None:
-    """The row this module exists for. A refused query reaches no engine, so
-    there is no other trace of it anywhere — no connection, no server log, no
-    latency graph."""
+    """The row this module exists for."""
     org_id, user_id, source_id = await _org(migrated_database)
     violation = PolicyViolation(
         ViolationCode.DENIED_COLUMN, "not queryable", subject="public.customers.tax_id"
@@ -254,8 +239,7 @@ async def test_the_audit_trail_names_what_was_refused(
 async def test_a_row_cannot_claim_to_be_a_refusal_without_saying_what(
     platform: URL, migrated_database: URL
 ) -> None:
-    """A constraint rather than a convention: a refusal with no code would be a
-    row that answers none of the questions the table is read with."""
+    """A constraint rather than a convention."""
     org_id, _, source_id = await _org(migrated_database)
     engine = create_async_engine(platform)
     try:
@@ -305,8 +289,7 @@ async def test_a_failure_is_recorded_with_its_sanitized_reason(
 async def test_removing_a_data_source_keeps_the_record_of_what_it_read(
     platform: URL, migrated_database: URL
 ) -> None:
-    """An audit trail that disappears when somebody deletes the thing it is
-    about is not an audit trail."""
+    """An audit trail that disappears when somebody deletes the thing it is about is not an..."""
     org_id, user_id, source_id = await _org(migrated_database)
     await audit_hook.record_success(
         org_id=org_id, data_source_id=source_id, actor_user_id=user_id, execution=_execution()

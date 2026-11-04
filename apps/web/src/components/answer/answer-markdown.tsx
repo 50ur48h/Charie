@@ -1,23 +1,6 @@
 "use client";
 
-/**
- * The answer's words, with their structure shown rather than flattened.
- *
- * **HTML is escaped, deliberately.** `rehype-raw` is not installed and must not
- * be: this text is written by a model that has just read customer rows, so a
- * `<script>` or an `<img onerror>` reaching the DOM would make the answer a
- * delivery mechanism. Markdown only — react-markdown escapes raw HTML and strips
- * dangerous URL schemes from links.
- *
- * What the Calm design adds on top, without inventing anything:
- *   - prose in the serif voice, where a change with a direction — "up 6.2%",
- *     "**Downtown Austin, down 18.2%**", "−$21.4K" — is highlighted green or
- *     red, and `==phrase==` is an accent highlight;
- *   - tables as sortable TanStack figures with a CSV download, numbers aligned
- *     and change columns as pills — and, when the table is a period against a
- *     number or things against a change, the same numbers as a chart;
- *   - a "Metric | Value" table, or a single row of figures, as number cards.
- */
+/** The answer's words, with their structure shown rather than flattened. */
 
 import { ChartColumn, Download, FileSpreadsheet, Table2 } from "lucide-react";
 import { isValidElement, memo, useCallback, useMemo, useState, type ReactNode } from "react";
@@ -119,8 +102,7 @@ function remarkHighlight() {
     for (let index = 0; index < node.children.length; index++) {
       const child = node.children[index]!;
       const following = node.children[index + 1];
-      // Markdown often separates the direction from its bold number. Read the
-      // two adjacent inline nodes together, without touching links or code.
+      // Markdown often separates the direction from its bold number.
       const direction = child.type === "text" ? DIRECTION_END.exec(child.value ?? "") : null;
       if (direction && following?.type === "strong" && ONLY_AMOUNT.test(plainOf(following))) {
         const prefix = child.value!.slice(0, direction.index);

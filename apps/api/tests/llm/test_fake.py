@@ -1,11 +1,4 @@
-"""The fake every later phase depends on.
-
-Two properties are load-bearing and both are tested directly rather than
-implied: the same requests always produce the same completions, and a request
-nobody scripted fails with a message that says what was asked. Everything from
-Phase 7's agent tests to Phase 9's evals inherits whatever is true here, so a
-subtle wobble in this file would surface much later as "the suite is flaky".
-"""
+"""The fake every later phase depends on."""
 
 from __future__ import annotations
 
@@ -51,9 +44,7 @@ async def test_scripts_match_on_role_and_on_prompt_text_together() -> None:
 
     assert (await fake.complete(request_for("plan"))).text == "a plan"
     assert (await fake.complete(request_for("critic"))).text == "a critique"
-    # First match wins, so the broad plan script still answers — which is why a
-    # narrower script goes first. Stated here because it is the thing a test
-    # author gets wrong.
+    # First match wins, so the broad plan script still answers.
     assert (await fake.complete(request_for("plan", "revenue by store"))).text == "a plan"
 
 
@@ -80,17 +71,13 @@ async def test_a_script_can_raise_so_failure_paths_are_testable() -> None:
         await fake.complete(request_for())
 
     assert raised.value.retryable
-    # The failure is recorded too: a call that raised still happened, and a test
-    # asserting "the agent tried twice" has to be able to see both.
+    # The failure is recorded too: a call that raised still happened.
     assert len(fake.calls) == 1
     assert fake.calls[0].completion is None
 
 
 async def test_an_unscripted_request_says_what_was_asked_and_what_was_on_offer() -> None:
-    """The commonest way a downstream test breaks is a prompt that changed shape.
-
-    That must not arrive as an empty string that fails three assertions later.
-    """
+    """The commonest way a downstream test breaks is a prompt that changed shape."""
     fake = FakeLLM().script("only for critics", role="critic", contains="draft")
 
     with pytest.raises(NoScriptedResponseError) as raised:
@@ -181,8 +168,7 @@ async def test_a_script_can_pin_usage_for_cost_assertions() -> None:
 
 
 async def test_script_json_takes_the_model_the_code_expects() -> None:
-    """A fake that can script a shape the code could never accept is a fake that
-    can lie convincingly. Passing the pydantic model closes that door."""
+    """A fake that can script a shape the code could never accept is a fake that can lie..."""
 
     class Plan(BaseModel):
         steps: list[str]
@@ -211,9 +197,7 @@ def test_from_mapping_refuses_a_role_that_does_not_exist() -> None:
 
 
 async def test_the_fake_declares_no_native_structured_output() -> None:
-    """On purpose: it exercises the harder path — schema in the prompt, reply
-    parsed, one repair — which is the path that actually goes wrong. A fake
-    claiming native schema support would leave it untested everywhere."""
+    """On purpose: it exercises the harder path — schema in the prompt, reply parsed, one repair."""
     caps = FakeLLM().capabilities()
 
     assert not caps.supports_response_schema

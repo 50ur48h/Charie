@@ -1,10 +1,4 @@
-"""The Postgres connector against a real database.
-
-Two questions run through all of it: does it describe the database accurately,
-and can it be made to write? The second one is the reason this work package
-exists — `readonly_verified` is a claim the product makes to an administrator,
-and it has to be earned.
-"""
+"""The Postgres connector against a real database."""
 
 from __future__ import annotations
 
@@ -20,28 +14,19 @@ from charie.connectors.base import (
 from charie.connectors.postgres import PostgresConnector
 from customer_db import CustomerDatabase
 
-# Bound to names rather than written inline at the call site: a literal beside
-# a `password=` argument is what a secret scanner and ruff's S106 are for, and
-# neither should have to learn to ignore this file.
+# Bound to names rather than written inline at the call site.
 UNUSED_LOGIN = "unused-capabilities-never-connect"
 WRONG_LOGIN = "definitely-not-the-password"
 
 
 def _forge(sql: str) -> ValidatedQuery:
-    """Build a query the way only the SQL policy module may.
-
-    A test is allowed to do this and product code is not, which is exactly the
-    line the gate draws: ``test_only_sanctioned_modules_build_queries`` scans
-    ``src`` and would fail on this call if it lived there.
-    """
+    """Build a query the way only the SQL policy module may."""
     return ValidatedQuery(
         PolicyGrant("charie.connectors.introspection"), sql=sql, dialect="postgres"
     )
 
 
-# ---------------------------------------------------------------------------
-# Describing the database
-# ---------------------------------------------------------------------------
+# --- Describing the database ---
 
 
 async def test_capabilities_state_engine_truth_rather_than_guessing_it() -> None:
@@ -108,9 +93,7 @@ async def test_it_finds_the_foreign_key_graph(customer_database: CustomerDatabas
     assert (key.to_table, key.to_columns) == ("regions", ("id",))
 
 
-# ---------------------------------------------------------------------------
-# Bounded execution
-# ---------------------------------------------------------------------------
+# --- Bounded execution ---
 
 
 async def test_a_result_is_cut_to_the_limit_and_says_so(
@@ -167,9 +150,7 @@ async def test_the_session_refuses_a_write_even_before_privileges_are_considered
             )
 
 
-# ---------------------------------------------------------------------------
-# Verification — the point of the work package
-# ---------------------------------------------------------------------------
+# --- Verification — the point of the work package ---
 
 
 async def test_a_read_only_login_is_verified(customer_database: CustomerDatabase) -> None:
@@ -233,16 +214,13 @@ async def test_the_owner_probe_reports_that_it_could_write(
     assert any("can write" in note for note in health.evidence)
 
 
-# ---------------------------------------------------------------------------
-# Encryption (B-013)
-# ---------------------------------------------------------------------------
+# --- Encryption (B-013) ---
 
 
 async def test_a_verification_says_whether_the_connection_was_encrypted(
     customer_database: CustomerDatabase,
 ) -> None:
-    """The compose and CI databases serve no certificate, so this is the
-    uncomfortable answer — which is the one that has to be visible."""
+    """The compose and CI databases serve no certificate, so this is the uncomfortable answer."""
     async with customer_database.reader() as connector:
         health = await connector.test_connection()
 
@@ -265,9 +243,7 @@ async def test_requiring_tls_from_a_server_without_it_fails_rather_than_falling_
     assert health.tls is None, "a connection that never opened cannot report a cipher"
 
 
-# ---------------------------------------------------------------------------
-# Failure paths
-# ---------------------------------------------------------------------------
+# --- Failure paths ---
 
 
 async def test_a_wrong_password_fails_without_quoting_the_credential(
@@ -319,26 +295,13 @@ async def test_closing_twice_is_harmless(customer_database: CustomerDatabase) ->
     await connector.aclose()
 
 
-# ---------------------------------------------------------------------------
-# Which failures one rewrite could fix
-# ---------------------------------------------------------------------------
+# --- Which failures one rewrite could fix ---
 
 
 async def test_a_statement_the_engine_rejects_is_marked_as_the_statement_s_fault(
     customer_database: CustomerDatabase,
 ) -> None:
-    """**The defect that ended a live run after one query.**
-
-    `round(double precision, integer)` does not exist in PostgreSQL — only
-    `round(numeric, int)` does — and the engine's own HINT says *"You might need
-    to add explicit type casts."* Every `ConnectorError` used to be reported as
-    unfixable by rewriting, so the loop was told not to try, and the fix was
-    sitting in the error message.
-
-    Asserted against a real database rather than a fake SQLSTATE, because what
-    is being claimed is that **this** engine reports **this** mistake in a way
-    the classifier recognises.
-    """
+    """The defect that ended a live run after one query."""
     async with customer_database.reader() as connector:
         with pytest.raises(ConnectorError) as caught:
             await connector.execute(
@@ -354,10 +317,7 @@ async def test_a_statement_the_engine_rejects_is_marked_as_the_statement_s_fault
 async def test_a_database_that_cannot_be_reached_is_not_the_statement_s_fault(
     customer_database: CustomerDatabase,
 ) -> None:
-    """The other half, and the half that must not regress. Rewriting the SQL
-    cannot fix a login that is wrong, so a run that keeps trying would spend its
-    whole budget learning what the first attempt already knew — which is the
-    rule WP7.2b set and this change must not weaken."""
+    """The other half, and the half that must not regress."""
     broken = PostgresConnector(
         host=customer_database.host,
         port=customer_database.port,
@@ -376,10 +336,7 @@ async def test_a_database_that_cannot_be_reached_is_not_the_statement_s_fault(
 async def test_an_error_carries_no_sqlstate_into_its_message(
     customer_database: CustomerDatabase,
 ) -> None:
-    """The classification is a flag, not a wider message. `ConnectorError`'s
-    whole contract is that what leaves the connector is sanitized, and a change
-    that started appending engine internals to it would be widening that hole
-    for the sake of a boolean."""
+    """The classification is a flag, not a wider message."""
     async with customer_database.reader() as connector:
         with pytest.raises(ConnectorError) as caught:
             await connector.execute(

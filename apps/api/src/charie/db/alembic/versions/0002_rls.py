@@ -1,25 +1,4 @@
-"""row-level security, the application role, and append-only audit_log
-
-Architecture Part 6.3. This is the structural half of tenant isolation: even a
-repository that forgets its ``WHERE org_id = ...`` cannot return another
-organization's rows, because the database will not hand them over.
-
-Three things make that true, and all three are needed:
-
-* ``ENABLE ROW LEVEL SECURITY`` turns policies on for ordinary roles.
-* ``FORCE ROW LEVEL SECURITY`` applies them to the table **owner** as well —
-  without it, whoever owns the table silently bypasses every policy.
-* ``charie_app`` is a plain role: no superuser, no BYPASSRLS, and not the
-  owner of anything. It is what the API connects as.
-
-The role is created here without a password and without LOGIN, because a
-migration must never contain a credential. Granting it LOGIN and a password is
-environment provisioning: `make db.setup` locally, Key Vault + Bicep in Phase 12.
-
-Revision ID: 0002
-Revises: 0001
-Create Date: 2026-08-11
-"""
+"""row-level security, the application role, and append-only audit_log"""
 
 from __future__ import annotations
 
@@ -35,10 +14,7 @@ depends_on: str | Sequence[str] | None = None
 APP_ROLE = "charie_app"
 POLICY = "org_isolation"
 
-#: table -> the column that identifies its tenant. Mirrors
-#: charie.db.models.TENANT_TABLES; a test asserts the two agree, so this copy
-#: cannot rot. It is duplicated deliberately: a migration must describe the
-#: schema as it was at this revision, not as the models happen to look today.
+#: table -> the column that identifies its tenant.
 TENANT_TABLES: dict[str, str] = {
     "organizations": "id",
     "org_memberships": "org_id",
@@ -48,8 +24,7 @@ TENANT_TABLES: dict[str, str] = {
 
 
 def upgrade() -> None:
-    # Idempotent: the role is a cluster-level object, so it may already exist
-    # from another database on the same server (a test database, for instance).
+    # Idempotent: the role is a cluster-level object.
     op.execute(f"""
         DO $$
         BEGIN
@@ -72,9 +47,7 @@ def upgrade() -> None:
     # Identity columns draw from a sequence; without USAGE, every audit insert fails.
     op.execute(f"GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO {APP_ROLE}")
 
-    # Tables added by later revisions inherit the same grants, so a new table is
-    # never accidentally unreadable — or, worse, quietly readable by no one until
-    # someone "fixes" it with a broader grant.
+    # Tables added by later revisions inherit the same grants.
     op.execute(f"""
         ALTER DEFAULT PRIVILEGES IN SCHEMA public
         GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO {APP_ROLE}
@@ -84,17 +57,13 @@ def upgrade() -> None:
         GRANT USAGE, SELECT ON SEQUENCES TO {APP_ROLE}
     """)
 
-    # Append-only, enforced by the database rather than by discipline
-    # (architecture Part 8.2). The application can write history; it cannot
-    # rewrite it.
+    # Append-only, enforced by the database rather than by discipline (architecture Part 8.2).
     op.execute(f"REVOKE UPDATE, DELETE ON audit_log FROM {APP_ROLE}")
 
     for table, key in TENANT_TABLES.items():
         op.execute(f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY")
         op.execute(f"ALTER TABLE {table} FORCE ROW LEVEL SECURITY")
-        # USING filters what can be read; WITH CHECK stops a row being written
-        # under another organization's id. Both, or the protection is half a
-        # protection.
+        # USING filters what can be read.
         op.execute(f"""
             CREATE POLICY {POLICY} ON {table}
             USING ({key} = current_setting('app.org_id')::uuid)
@@ -127,6 +96,4 @@ def downgrade() -> None:
         $$;
     """)
 
-    # The role itself is deliberately left in place: it is cluster-wide, so
-    # another database on this server may still be using it. Dropping it here
-    # would break that database from underneath.
+    # The role itself is deliberately left in place: it is cluster-wide.

@@ -1,48 +1,4 @@
-"""Importing the definitions a database already carries (**B-059**, WP10.2d).
-
-The F&B trial on 2026-08-16 is the whole argument. That warehouse arrived with
-**18 metrics**, each with a definition and the tables it requires, plus an
-assumptions table, a capability matrix and a data-quality gate table whose open
-questions name — in English — the exact trap the agent then fell into. All of it
-sat in the catalog as ordinary tables, indistinguishable from facts, and the
-agent aggregated straight past it: asked how many units of the top-selling set
-were sold, it answered **0**, with correct SQL and business nonsense.
-
-A mature warehouse tends to arrive this way, and **a product that can only accept
-a definition retyped will mostly be given none** — nobody re-keys eighteen
-metrics they already wrote down. So the layer imports.
-
-Four properties, and each is a refusal to take a shortcut.
-
-**Nothing is imported silently.** An imported definition constrains generated
-SQL, which makes it a privileged object rather than data a crawler may trust —
-the same rule that says the LLM is never a security boundary says a customer's
-own metadata table is not one either. Every row arrives `proposed`, and only an
-Admin's acceptance makes it `active`. `definitions_for` loads active ones alone,
-so a proposal binds nothing while it waits.
-
-**The rows are read through the DAL, like all customer data.** No connector is
-opened here. The statement is validated against the catalog, the row cap applies,
-sensitive columns come back masked, and the read leaves a `query_executions` row
-— an import is a customer-data access and is recorded as one.
-
-**The mapping is configuration, not a guess.** Nothing here divines that a table
-called `meta_metric` is authoritative or that `definition_text` is a description.
-An Admin says which table and which columns; being wrong about that is then a
-visible mistake in a proposal they are about to review, rather than an invisible
-one in a definition that already binds.
-
-**Provenance is kept.** A definition records the source, the table and the
-snapshot it came from, so that when the customer's own table moves on, the drift
-is visible rather than silently stale.
-
-One consequence is worth stating plainly rather than discovering later: an
-imported definition arrives as **prose**, because a metric table holds sentences
-and not machine-readable filters. By **D-033** that means it *informs* and does
-not *bind*, and an answer resting on it still carries the limitation saying so.
-Adding `required_filters` is what converts it, and `accept` is where an Admin
-does that — the moment prose becomes a constraint.
-"""
+"""Importing the definitions a database already carries (B-059, WP10.2d)."""
 
 from __future__ import annotations
 
@@ -71,34 +27,16 @@ STATUS_PROPOSED = "proposed"
 STATUS_ACTIVE = "active"
 STATUS_RETIRED = "retired"
 
-#: How many rows one import may read. A metric table is tens of rows; anything
-#: past this is not a metric table, and importing a thousand "definitions" would
-#: be a way to fill an organization's semantic layer with somebody's fact table.
+#: How many rows one import may read.
 MAX_ROWS = 200
 
-#: A bare SQL identifier. Everything this module interpolates into a statement —
-#: schema, table, column — must match, and anything that does not is refused
-#: rather than quoted or escaped.
-#:
-#: **The DAL is not the only line here, deliberately.** Every statement below
-#: goes through `dal.run`, which grounds each name against the catalog and
-#: refuses anything it cannot resolve — so an injected fragment would be caught
-#: there. But building SQL by concatenation and relying on a downstream check is
-#: how the check eventually gets moved; 5.10 asks for two independent layers and
-#: this is the cheap one. It is also a better error: an Admin who mistypes a
-#: column name is told which one, here, instead of receiving a policy violation
-#: about a statement they did not write.
+#: A bare SQL identifier. Everything this module interpolates into a statement — schema, table.
 _IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
 @dataclass(frozen=True, slots=True)
 class ColumnMapping:
-    """Which of the customer's columns mean what.
-
-    Per source, supplied by the Admin doing the import. ``name`` and
-    ``description`` are required because a definition without either is not one;
-    the rest are optional because most metric tables do not have them.
-    """
+    """Which of the customer's columns mean what."""
 
     name: str
     description: str
@@ -107,11 +45,7 @@ class ColumnMapping:
     caveat: str | None = None
 
     def columns(self) -> tuple[str, ...]:
-        """The columns to select, deduplicated and in order.
-
-        Two mapped fields may legitimately read the same column, and `SELECT a,
-        a` is a statement the validator would have to think about for no reason.
-        """
+        """The columns to select, deduplicated and in order."""
         seen: dict[str, None] = {}
         for column in (self.name, self.description, self.expression, self.synonyms, self.caveat):
             if column:
@@ -141,26 +75,16 @@ async def propose_from_table(
     actor_user_id: uuid.UUID | None = None,
     schema: str = "public",
 ) -> tuple[Proposal, ...]:
-    """Read a customer's metric table and write what it says as proposals.
-
-    Returns what was created. Nothing binds until an Admin accepts it, and a name
-    this source already knows is **skipped rather than overwritten** — an import
-    must not be able to silently redefine a metric somebody blessed, nor to
-    re-propose one they have already turned down.
-    """
+    """Read a customer's metric table and write what it says as proposals."""
     from charie.dal import service as dal
 
     qualified = f"{_identifier(schema, 'schema')}.{_identifier(table, 'table')}"
     columns = ", ".join(_identifier(name, "column") for name in mapping.columns())
-    # Through the DAL, so the catalog grounds it, the cap applies and the read is
-    # recorded. A hand-built connector call here would be the one path around the
-    # boundary Part 7 exists to keep singular.
+    # Through the DAL, so the catalog grounds it, the cap applies and the read is recorded.
     execution = await dal.run(
         org_id=org_id,
         data_source_id=data_source_id,
-        # Every fragment here has been through `_IDENTIFIER`, so nothing a
-        # caller supplied can be anything but a bare name — and `dal.run`
-        # grounds those names against the catalog regardless.
+        # Every fragment here has been through `_IDENTIFIER`.
         sql=f"SELECT {columns} FROM {qualified}",  # noqa: S608
         actor_user_id=actor_user_id,
         max_rows=MAX_ROWS,
@@ -186,10 +110,7 @@ async def propose_from_table(
             name = _cell(row, position, mapping.name)
             description = _cell(row, position, mapping.description)
             if not name.strip() or not description.strip():
-                # A row missing either is not a definition. Skipped quietly: a
-                # metric table with a blank line in it is ordinary, and failing
-                # a whole import over one would make the feature unusable on the
-                # databases it exists for.
+                # A row missing either is not a definition.
                 continue
             key = name.strip().lower()
             if key in taken:
@@ -277,28 +198,7 @@ async def accept(
     synonyms: Sequence[str] | None = None,
     actor_user_id: uuid.UUID | None = None,
 ) -> Definition:
-    """Bless a proposal into a definition, optionally giving it filters.
-
-    **This is where prose becomes a constraint** (D-033). An imported definition
-    arrives as sentences, which inform the model and bind nothing; adding
-    `required_filters` here is what lets the critic enforce it — and it is an
-    Admin's act, deliberately, because a filter that binds generated SQL is a
-    privileged thing to write.
-
-    Filters are validated against the catalog **before** the row is activated, so
-    one naming a column this database does not have is refused now rather than
-    surfacing later as a critic finding nobody can act on.
-
-    **`synonyms` is the other half of making it real** (B-085). A definition is
-    matched to a question by name and synonym, and an imported one answers only
-    to its key and to the label its own table carried. Nobody asks a question in
-    those words: the F&B warehouse's own golden question for `prep_quantity` is
-    *"how much should I prepare of each item tomorrow?"*, which reaches neither
-    the key nor the label. An import that no question can reach binds nothing, so
-    acceptance is where an Admin says what people actually call it. `None` keeps
-    what the import found; a list replaces it, because correcting a bad label has
-    to be possible and appending forever is not a correction.
-    """
+    """Bless a proposal into a definition, optionally giving it filters."""
     from charie.dal.policy import source_policy
 
     async with org_session(org_id) as session:
@@ -332,11 +232,9 @@ async def accept(
         ]
         row.synonyms = list(definition.synonyms)
         row.status = STATUS_ACTIVE
-        # Who blessed it, over who imported it: acceptance is the act that made
-        # this bind anything, and it is the one worth being able to ask about.
+        # Who blessed it, over who imported it: acceptance is the act that made this bind anything.
         row.created_by = actor_user_id or row.created_by
-        # Version 1 is the first state it was ever *in force* in, which is this
-        # one — the proposal it was before bound nothing (B-088, revision 0022).
+        # Version 1 is the first state it was ever in force in, which is this one.
         record_version(session, row, change="accepted", actor_user_id=actor_user_id)
         audit(
             session,
@@ -354,16 +252,7 @@ async def accept(
 async def reject(
     *, org_id: uuid.UUID, definition_id: uuid.UUID, actor_user_id: uuid.UUID | None = None
 ) -> None:
-    """Retire a proposal rather than deleting it.
-
-    Kept, so that *"we looked at this and said no"* is answerable — and so a
-    second import of the same table does not silently re-propose what an Admin
-    has already turned down.
-
-    **Audited, but not versioned.** A rejected proposal never took effect, so it
-    has no state the history is about; what is worth recording is that somebody
-    considered it and said no, which is what the audit row says.
-    """
+    """Retire a proposal rather than deleting it."""
     async with org_session(org_id) as session:
         row = await session.get(SemanticDefinition, definition_id)
         if row is None or row.status != STATUS_PROPOSED:
@@ -407,12 +296,7 @@ def _synonyms(raw: str) -> tuple[str, ...]:
 
 
 def _snapshot_of(execution: object) -> uuid.UUID | None:
-    """The catalog snapshot the read was grounded against, when it is knowable.
-
-    Best effort on purpose: provenance missing a snapshot is still worth keeping
-    — it names the source and the table — and an import that failed because it
-    could not label itself would be a poor trade.
-    """
+    """The catalog snapshot the read was grounded against, when it is knowable."""
     validated = getattr(execution, "validated", None)
     found = getattr(validated, "snapshot_id", None)
     return found if isinstance(found, uuid.UUID) else None

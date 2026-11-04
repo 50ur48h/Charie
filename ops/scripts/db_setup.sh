@@ -1,14 +1,5 @@
 #!/usr/bin/env sh
-#
-# Prepare the local platform database: run migrations as the owner, then give
-# charie_app a login so the API can connect as an unprivileged role.
-#
-# Local development only. In Azure (Phase 12) the role's credential comes from
-# Key Vault and this script has no equivalent.
-#
-# POSIX sh, not bash: on Windows a bare `bash` resolves to WSL's bash, which
-# cannot see the Docker CLI or this drive the same way. The Makefile runs this
-# with $(SHELL), which is the shell it already verified.
+# Prepare the local platform database: run migrations as the owner.
 
 set -eu
 
@@ -17,10 +8,7 @@ if [ ! -f .env ]; then
   exit 1
 fi
 
-# **Read three values; do not source the file** (**B-102**). The reasoning, and
-# the reader that carries it, live in env_file.sh — shared with web_smoke.sh,
-# which needs the same values for the same reason. Two hand-rolled copies is how
-# the two would drift, and the drifted one would be whichever nobody was running.
+# Read three values; do not source the file (B-102).
 . "$(dirname "$0")/env_file.sh"
 
 PLATFORM_DB_USER=$(env_value PLATFORM_DB_USER)

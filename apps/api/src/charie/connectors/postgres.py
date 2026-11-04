@@ -1,41 +1,4 @@
-"""The PostgreSQL connector (architecture Part 5.1, plan WP3.2).
-
-Four properties are structural here rather than remembered:
-
-**Read-only sessions.** Every connection this class opens for reading sets
-``default_transaction_read_only = on``, and every execution runs inside a
-transaction that is *also* declared read-only. A write would have to get past
-both, and then past the credentials themselves.
-
-**Bounded work.** ``statement_timeout`` is set per call from ``ExecLimits`` and
-rows come back through a server-side cursor that fetches ``max_rows + 1`` — one
-extra, so "there was more" is a fact rather than a guess. There is no code path
-that fetches an unbounded result.
-
-**Sanitized failures.** Nothing leaves this module as a driver exception. Every
-one becomes a ``ConnectorError`` carrying a scrubbed message, with the original
-deliberately *not* chained: ``raise ... from error`` keeps the driver's text in
-``__cause__``, and the next traceback printed anywhere would put a DSN in a log.
-
-**Declared encryption.** ``tls_mode`` is a required constructor argument with no
-default, decided by the policy in ``connectors.tls``, and a verification asks the
-server — not the driver — whether the session ended up encrypted (B-013). The
-answer is reported even when it is the one nobody wants to see.
-
-The read-only *verification* deserves its own paragraph, because it is easy to
-write a version that proves nothing. Asking a read-only session to write and
-watching it fail tests our own session setting, not the customer's credentials.
-So verification (a) reads the engine's privilege catalog — what may this *role*
-do — and (b) attempts one `CREATE TABLE` on a **separate connection with normal
-session settings**, inside a transaction that is always rolled back. Only both
-together justify `readonly_verified`.
-
-One note on typing. asyncpg ships partial annotations, so pyright in strict mode
-reports most of its surface as unknown. Rather than relax the setting for the
-whole package, its objects are held as ``Any`` at this one boundary and every
-value that leaves this module is converted to a declared type on the way out.
-The untyped area is therefore exactly this file, and it is visible.
-"""
+"""The PostgreSQL connector (architecture Part 5.1, plan WP3.2)."""
 
 from __future__ import annotations
 
@@ -70,10 +33,7 @@ __all__ = ["POSTGRES_CAPS", "PostgresConnector"]
 #: asyncpg's own objects, deliberately untyped here — see the module note.
 type AsyncpgConnection = Any
 
-#: Bound through an Any-typed name for the same reason, and this is the one
-#: suppression in the file: asyncpg's own signature for connect() declares
-#: `timeout: int`, which its documentation contradicts, and every keyword it
-#: takes is otherwise reported as unknown.
+#: Bound through an Any-typed name for the same reason, and this is the one suppression in the file.
 _connect: Any = asyncpg.connect  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
 
 #: Shows up in pg_stat_activity, so a DBA can see who is asking.
@@ -94,12 +54,7 @@ POSTGRES_CAPS = Caps(
 
 
 class PostgresConnector:
-    """One customer PostgreSQL database.
-
-    Holds at most one open connection, lazily. Use it as an async context
-    manager, or call ``aclose()``: a connector that outlives its close leaves a
-    session open on somebody else's server.
-    """
+    """One customer PostgreSQL database."""
 
     def __init__(
         self,
@@ -118,9 +73,7 @@ class PostgresConnector:
         self._database = database
         self._username = username
         self._password = password
-        # Required, with no default: how much encryption a customer's credentials
-        # travel under is not a decision this class gets to make quietly. The
-        # policy that answers it is `connectors.tls.resolve_tls_mode` (B-013).
+        # Required, with no default: how much encryption a customer's credentials travel under...
         self._tls_mode = tls_mode
         self._tls_ca_file = tls_ca_file
         self._connect_timeout = connect_timeout_seconds
@@ -174,10 +127,7 @@ class PostgresConnector:
                 database=self._database,
                 timeout=self._connect_timeout,
                 server_settings=settings,
-                # Whatever the policy decided for this data source. A mode the
-                # server cannot satisfy fails the connection here, which is the
-                # behaviour worth having: better a refusal an admin can read than
-                # a silent fallback to plaintext.
+                # Whatever the policy decided for this data source.
                 ssl=ssl_parameter(self._tls_mode, self._tls_ca_file),
             )
         except Exception as error:
@@ -191,18 +141,13 @@ class PostgresConnector:
     # -- the one execution path -------------------------------------------
 
     async def execute(self, query: ValidatedQuery, limits: ExecLimits) -> ResultFrame:
-        """Run approved SQL. The only place this module sends a query.
-
-        Column names come from the prepared statement rather than from the first
-        row, so an empty result still describes its own shape.
-        """
+        """Run approved SQL. The only place this module sends a query."""
         connection = await self._reader()
         started = time.perf_counter()
 
         try:
             async with connection.transaction(readonly=True):
-                # SET LOCAL: bounded by this transaction, so a connection handed
-                # back for the next call carries no leftover deadline.
+                # SET LOCAL: bounded by this transaction.
                 await connection.execute(_statement_timeout(limits))
                 statement = await connection.prepare(query.sql)
                 columns = tuple(str(attribute.name) for attribute in statement.get_attributes())
@@ -268,12 +213,7 @@ class PostgresConnector:
     # -- verification ------------------------------------------------------
 
     async def test_connection(self) -> Health:
-        """Connect, then prove the credentials cannot write.
-
-        Never raises: an unusable data source is an answer this endpoint exists
-        to give. ``readonly_verified`` is false unless there is evidence for it —
-        an error, a timeout or an unexpected shape all leave it false.
-        """
+        """Connect, then prove the credentials cannot write."""
         checked_at = datetime.now(UTC)
 
         try:
@@ -286,8 +226,7 @@ class PostgresConnector:
                 checked_at=checked_at,
             )
 
-        # Asked before the privilege questions, because it describes the channel
-        # every later answer travelled over.
+        # Asked before the privilege questions.
         tls = await self._tls_status()
         tls_note = () if tls is None else (f"TLS: {tls.detail}",)
 
@@ -312,9 +251,7 @@ class PostgresConnector:
         evidence = (*tls_note, *writable, probe_note, *self._role_note(facts))
 
         verified = not writable and probe_refused
-        # The role's *name* is not repeated back. It is half a credential, and
-        # architecture Part 7.3 allows a response to carry only its last four
-        # characters — which the data-source row already stores.
+        # The role's name is not repeated back.
         detail = (
             "Connected. These credentials cannot write."
             if verified
@@ -333,13 +270,7 @@ class PostgresConnector:
         )
 
     async def _tls_status(self) -> TlsStatus | None:
-        """Whether this session is encrypted, according to the server (B-013).
-
-        The driver knows what it *asked* for; only the engine knows what it got,
-        and with ``prefer`` those differ silently whenever the server serves no
-        certificate. An engine that will not answer leaves this unknown — which
-        is reported as unknown, never as encrypted.
-        """
+        """Whether this session is encrypted, according to the server (B-013)."""
         try:
             frame = await self.execute(introspection.pg_tls_status(), ExecLimits(1))
             facts = dict(zip(frame.columns, frame.rows[0], strict=True))
@@ -359,29 +290,14 @@ class PostgresConnector:
         )
 
     def _role_note(self, facts: dict[str, object]) -> tuple[str, ...]:
-        """Say *that* the server disagrees about who connected, never who.
-
-        A connection pooler in front of the database can hand the session to a
-        different role than the one configured, which quietly makes every
-        privilege fact above true of somebody else. Worth surfacing; not worth
-        printing two usernames to do it.
-        """
+        """Say that the server disagrees about who connected, never who."""
         reported = facts.get("role_name")
         if isinstance(reported, str) and reported != self._username:
             return ("the server reports a different role than the one configured",)
         return ()
 
     async def _write_probe(self) -> tuple[bool, str]:
-        """Attempt one write, on a connection that is *not* read-only.
-
-        This is the check that would be worthless done any other way: a session
-        with ``default_transaction_read_only`` would refuse the statement no
-        matter how privileged the credentials are, and we would learn nothing
-        except that we can configure our own driver.
-
-        The transaction is rolled back unconditionally, so even the outcome we
-        do not want leaves nothing behind.
-        """
+        """Attempt one write, on a connection that is not read-only."""
         try:
             connection = await self._open(read_only=False)
         except ConnectorError as error:
@@ -395,9 +311,7 @@ class PostgresConnector:
             except asyncpg.InsufficientPrivilegeError:
                 return True, "CREATE TABLE was refused: permission denied"
             except asyncpg.PostgresError as error:
-                # Any other refusal — no schema it may create in, for instance —
-                # is still a refusal. The SQLSTATE goes in the evidence so an
-                # admin can see *how* it was refused.
+                # Any other refusal — no schema it may create in, for instance — is still a refusal.
                 return True, f"CREATE TABLE was refused (SQLSTATE {_sqlstate(error)})"
             else:
                 return False, (
@@ -413,8 +327,7 @@ class PostgresConnector:
                 await connection.close()
 
 
-#: Metadata results are bounded by the size of the customer's schema, not by
-#: their data. Generous, and still a limit.
+#: Metadata results are bounded by the size of the customer's schema, not by their data.
 _METADATA_LIMITS = ExecLimits(max_rows=50_000, timeout_seconds=30.0)
 
 
@@ -472,36 +385,19 @@ def _version(facts: dict[str, object]) -> str | None:
     raw = facts.get("server_version")
     if not isinstance(raw, str):
         return None
-    # "PostgreSQL 16.4 (Debian …) on x86_64…" — the first two words are the part
-    # anyone reads, and the rest names the host's architecture.
+    # "PostgreSQL 16.4 (Debian …) on x86_64…" — the first two words are the part anyone reads.
     return " ".join(raw.split()[:2])
 
 
-#: SQLSTATE classes where the *statement* was rejected rather than the
-#: connection lost — the cases one rewrite can fix, and where PostgreSQL usually
-#: says how.
-#:
-#: * ``42`` syntax error or access rule violation: an undefined function
-#:   (``42883``, the one that ended a live run), an undefined column, a type
-#:   mismatch. The engine names the identifier or the types.
-#: * ``22`` data exception: a division by zero, a cast that will not parse.
-#:   Fixable with ``NULLIF`` or a different cast.
+#: SQLSTATE classes where the statement was rejected rather than the connection lost.
 _STATEMENT_FAULT_CLASSES: Final = ("42", "22")
 
-#: Inside ``42`` and deliberately excluded. **Insufficient privilege is not a
-#: statement to rewrite**: the login lacks a right, and asking a model to try
-#: again is asking it to probe someone else's permissions until something works.
+#: Inside ``42`` and deliberately excluded.
 _NOT_A_REWRITE: Final = frozenset({"42501"})
 
 
 def _statement_fault(error: Exception) -> bool:
-    """Whether rewriting the SQL could plausibly fix this.
-
-    **A timeout is deliberately not one**, though a narrower query would fix it.
-    `57014` means the statement was too expensive, and answering that with
-    another attempt spends more of the customer's database to learn the same
-    thing; the budget is the honest signal there, and it already exists.
-    """
+    """Whether rewriting the SQL could plausibly fix this."""
     if not isinstance(error, asyncpg.PostgresError):
         return False
     state = _sqlstate(error)

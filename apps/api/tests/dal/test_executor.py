@@ -1,10 +1,4 @@
-"""The path from a statement to rows (architecture Part 7.1, steps 4 to 6).
-
-The connector is a stand-in here — what it would send to a real engine is
-recorded rather than executed — because what these tests are about is what the
-DAL *does* with a statement and with the answer, and both are decided before any
-network is involved. The connectors have their own suites against real servers.
-"""
+"""The path from a statement to rows (architecture Part 7.1, steps 4 to 6)."""
 
 from __future__ import annotations
 
@@ -46,10 +40,7 @@ class RecordingConnector:
             raise self.error
         return self.frame
 
-    # The rest of the Connector protocol. Stubbed rather than left off, so that
-    # pyright checks this double against the same interface a real connector
-    # implements — a test double that has quietly drifted from the protocol is a
-    # test that proves something about nothing.
+    # The rest of the Connector protocol.
     async def test_connection(self) -> Any:  # pragma: no cover - not exercised here
         raise NotImplementedError
 
@@ -68,8 +59,7 @@ class RecordingConnector:
 
 @pytest.fixture(autouse=True)
 def stub_policy(monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest) -> SourcePolicy:
-    """`run` loads its own policy, so the loader is what gets stubbed — the test
-    then exercises the real validate → execute → mask chain end to end."""
+    """`run` loads its own policy, so the loader is what gets stubbed."""
     invalidate_all()
     source = build_source(getattr(request, "param", "pg"), max_rows=1000)
 
@@ -107,9 +97,7 @@ async def test_the_connector_receives_the_canonical_statement() -> None:
 
 
 async def test_the_row_cap_is_written_into_the_sql_and_into_the_fetch() -> None:
-    """Twice, in two places: the engine stops early, and the read stops too. A
-    query that would scan a hundred million rows should be cheap for the
-    customer's server, not merely survivable for ours."""
+    """Twice, in two places: the engine stops early, and the read stops too."""
     connector = RecordingConnector()
 
     execution = await run("SELECT id FROM orders", connector)
@@ -131,8 +119,7 @@ async def test_a_caller_may_ask_for_fewer_rows() -> None:
 
 
 async def test_a_caller_may_not_ask_for_more_than_policy_allows() -> None:
-    """Not an error — an agent guessing at a number — so it is held to the
-    ceiling rather than refused."""
+    """Not an error — an agent guessing at a number."""
     connector = RecordingConnector()
 
     await run("SELECT id FROM orders", connector, max_rows=1_000_000)
@@ -188,8 +175,7 @@ async def test_a_truncated_result_says_so() -> None:
 
 
 async def test_the_execution_carries_what_an_audit_row_needs() -> None:
-    """Assembled from the validation rather than remembered separately: an audit
-    row built from a copy is one that can disagree with what ran."""
+    """Assembled from the validation rather than remembered separately."""
     connector = RecordingConnector(
         ResultFrame(columns=("email",), rows=((PLANTED,),), truncated=False, duration_ms=2)
     )
@@ -216,8 +202,7 @@ async def test_a_query_touching_nothing_sensitive_says_that_too() -> None:
 
 
 async def test_a_refused_statement_never_reaches_the_connector() -> None:
-    """A rejected query costs the customer's database nothing — not a
-    connection, not a round trip."""
+    """A rejected query costs the customer's database nothing — not a connection."""
     connector = RecordingConnector()
 
     with pytest.raises(PolicyViolation) as caught:
@@ -228,8 +213,7 @@ async def test_a_refused_statement_never_reaches_the_connector() -> None:
 
 
 async def test_a_connector_failure_is_not_wrapped_in_anything_new() -> None:
-    """`ConnectorError` is already sanitized. Re-raising it as something else
-    would mean re-deciding what is safe to say, in a second place."""
+    """`ConnectorError` is already sanitized."""
     connector = RecordingConnector(error=ConnectorError("could not connect"))
 
     with pytest.raises(ConnectorError):
@@ -262,8 +246,7 @@ async def test_both_engines_run_the_same_path(stub_policy: SourcePolicy) -> None
 
 
 async def test_the_masked_frame_is_what_a_caller_gets_even_when_the_result_is_odd() -> None:
-    """Fails closed: a result whose shape does not match the statement is masked
-    entirely rather than passed through on the assumption it is fine."""
+    """Fails closed: a result whose shape does not match the statement is masked entirely..."""
     connector = RecordingConnector(
         ResultFrame(columns=("id", "email"), rows=((1, PLANTED),), truncated=False, duration_ms=1)
     )
@@ -276,8 +259,7 @@ async def test_the_masked_frame_is_what_a_caller_gets_even_when_the_result_is_od
 async def test_a_connector_opened_here_is_closed_even_when_the_query_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A session left open is left open on somebody else's server, so the close
-    is in a `finally` — and a failing query is exactly when it gets forgotten."""
+    """A session left open is left open on somebody else's server."""
     connector = RecordingConnector(error=ConnectorError("gone away"))
 
     async def fake_view(org_id: uuid.UUID, data_source_id: uuid.UUID) -> object:

@@ -1,18 +1,4 @@
-"""Card search by meaning, not only by wording (**B-018**).
-
-The oldest item in Phase 10, open since WP4.3. Lexical search finds `orders`
-from *"revenue"* only because the word "revenue" happens to appear in that
-card's prose; it cannot find it from *"how much did we make"* at all. Golden eval
-**#14** — *"which day of the week is busiest?"* — fails live for exactly that
-reason, and `test_a_card_is_found_by_a_question_that_shares_no_word_with_it` is
-that failure in miniature, without a model and without a dollar.
-
-Everything here uses a stub embedder whose vectors the test chooses, so
-"semantically near" is a fact the test states rather than a model's opinion. What
-that buys is that these tests are about the **merge, the backfill and the
-degradation**, which is the code this WP wrote — the quality of the embeddings
-themselves is the provider's business and is checked live, once, in the PR.
-"""
+"""Card search by meaning, not only by wording (B-018)."""
 
 from __future__ import annotations
 
@@ -37,13 +23,7 @@ DIMENSIONS = 1536
 
 
 class StubEmbedder:
-    """Vectors the test chooses, and a count of what it was asked to embed.
-
-    A copy of the knowledge suite's stub rather than an import of it, for
-    **B-074**'s reason: every `conftest.py` is the module `conftest`, so
-    importing across suites is what makes `pytest tests/a tests/b` fail to
-    collect. Small enough that duplicating it costs less than the collision.
-    """
+    """Vectors the test chooses, and a count of what it was asked to embed."""
 
     def __init__(self, vector_for: dict[str, list[float]] | None = None) -> None:
         self.vector_for = vector_for or {}
@@ -80,8 +60,7 @@ class StubEmbedder:
 
 
 def unit(index: int) -> list[float]:
-    """A basis vector: 1.0 in one position and 0.0 elsewhere, so "nearest by
-    cosine distance" has an answer a test can state without arithmetic."""
+    """A basis vector: 1.0 in one position and 0.0 elsewhere."""
     vector = [0.0] * DIMENSIONS
     vector[index] = 1.0
     return vector
@@ -155,12 +134,7 @@ async def _catalogued(
     await discovery.discover(
         org_id=org_id, actor_user_id=user_id, data_source_id=view.id, embedder=embedder
     )
-    # Profiled, like `test_cards_and_search.py`'s fixture, because a profile
-    # changes what a card says and therefore how it ranks — an unprofiled
-    # catalog would make these tests measure a shape the product never has. It
-    # also exercises the path that matters most for the backfill: a re-carded
-    # table loses the vector describing words it no longer contains, and
-    # `profile` fills it back in.
+    # Profiled, like `test_cards_and_search.py`'s fixture.
     await profiler.profile(
         org_id=org_id, actor_user_id=user_id, data_source_id=view.id, embedder=embedder
     )
@@ -190,17 +164,13 @@ async def _embedded(url: URL, org_id: uuid.UUID) -> dict[str, bool]:
         await engine.dispose()
 
 
-# ---------------------------------------------------------------------------
-# The backfill
-# ---------------------------------------------------------------------------
+# --- The backfill ---
 
 
 async def test_discovering_a_catalog_embeds_its_cards(
     platform: URL, migrated_database: URL, isolated_customer_database: CustomerDatabase
 ) -> None:
-    """One pass, at the moment the cards are written. A catalog whose cards are
-    searchable by wording and not by meaning is half a catalog, and nothing
-    later would tell anyone which half they had."""
+    """One pass, at the moment the cards are written."""
     embedder = StubEmbedder()
 
     org_id, _ = await _catalogued(migrated_database, isolated_customer_database, embedder=embedder)
@@ -213,9 +183,7 @@ async def test_discovering_a_catalog_embeds_its_cards(
 async def test_a_deployment_with_no_embedder_still_gets_its_cards(
     platform: URL, migrated_database: URL, isolated_customer_database: CustomerDatabase
 ) -> None:
-    """The absence of an embedding model is a supported state. The cards are
-    written, they stay lexically searchable, and nothing raises — because catalog
-    refresh is the one thing a new organization cannot skip."""
+    """The absence of an embedding model is a supported state."""
     org_id, _ = await _catalogued(migrated_database, isolated_customer_database)
 
     embedded = await _embedded(platform, org_id)
@@ -226,9 +194,7 @@ async def test_a_deployment_with_no_embedder_still_gets_its_cards(
 async def test_the_backfill_is_idempotent(
     platform: URL, migrated_database: URL, isolated_customer_database: CustomerDatabase
 ) -> None:
-    """What makes it a backfill rather than a rebuild. Running it twice must cost
-    one provider call, not two — otherwise every catalog refresh re-buys every
-    vector it already has."""
+    """What makes it a backfill rather than a rebuild."""
     embedder = StubEmbedder()
     org_id, source_id = await _catalogued(
         migrated_database, isolated_customer_database, embedder=embedder
@@ -246,9 +212,7 @@ async def test_the_backfill_is_idempotent(
 async def test_a_provider_failure_leaves_the_cards_lexically_searchable(
     platform: URL, migrated_database: URL, isolated_customer_database: CustomerDatabase
 ) -> None:
-    """The cards were already written. Losing a catalog to a rate limit would
-    trade working search for tidy bookkeeping — and the rows stay queued, so the
-    next refresh finishes the job."""
+    """The cards were already written."""
     from charie.knowledge.embeddings import EmbeddingError
 
     broken = StubEmbedder()
@@ -265,9 +229,7 @@ async def test_a_provider_failure_leaves_the_cards_lexically_searchable(
 async def test_an_unchanged_card_keeps_the_vector_it_already_paid_for(
     platform: URL, migrated_database: URL, isolated_customer_database: CustomerDatabase
 ) -> None:
-    """D-012's rule — a refresh that finds no change writes nothing — applied to
-    the half that costs money. Re-carding a table whose text is identical must
-    not invalidate a vector we would then buy again."""
+    """D-012's rule — a refresh that finds no change writes nothing."""
     embedder = StubEmbedder()
     org_id, source_id = await _catalogued(
         migrated_database, isolated_customer_database, embedder=embedder
@@ -281,20 +243,13 @@ async def test_an_unchanged_card_keeps_the_vector_it_already_paid_for(
     assert all((await _embedded(platform, org_id)).values())
 
 
-# ---------------------------------------------------------------------------
-# What the vector arm buys
-# ---------------------------------------------------------------------------
+# --- What the vector arm buys ---
 
 
 async def test_a_card_is_found_by_a_question_that_shares_no_word_with_it(
     platform: URL, migrated_database: URL, isolated_customer_database: CustomerDatabase
 ) -> None:
-    """**B-018 in one test, and golden eval #14 in miniature.**
-
-    The question contains no word from the card, so the lexical arm returns
-    nothing at all and the vector arm has to be what finds it. Before this WP the
-    planner was handed an empty catalog for exactly this shape of question.
-    """
+    """B-018 in one test, and golden eval #14 in miniature."""
     embedder = StubEmbedder(vector_for={"shops (public.shops)": unit(3), "outlets we run": unit(3)})
     org_id, _ = await _catalogued(migrated_database, isolated_customer_database, embedder=embedder)
     question = "outlets we run"
@@ -313,9 +268,7 @@ async def test_a_card_is_found_by_a_question_that_shares_no_word_with_it(
 async def test_a_card_both_arms_agree_on_outranks_one_either_found_alone(
     platform: URL, migrated_database: URL, isolated_customer_database: CustomerDatabase
 ) -> None:
-    """What Reciprocal Rank Fusion is for. Agreement between two independent
-    signals is the strongest thing this retrieval can say, and it must survive
-    the merge rather than being averaged away."""
+    """What Reciprocal Rank Fusion is for."""
     embedder = StubEmbedder(vector_for={"shops (public.shops)": unit(3), "trading name": unit(3)})
     org_id, _ = await _catalogued(migrated_database, isolated_customer_database, embedder=embedder)
 
@@ -332,9 +285,7 @@ async def test_a_card_both_arms_agree_on_outranks_one_either_found_alone(
 async def test_without_an_embedder_the_ranking_is_the_one_it_always_was(
     platform: URL, migrated_database: URL, isolated_customer_database: CustomerDatabase
 ) -> None:
-    """A regression guard rather than a feature. With one arm, RRF is a monotone
-    transformation of that arm's own order — so a deployment with no embedding
-    key must get exactly the results it got before this WP, in the same order."""
+    """A regression guard rather than a feature."""
     embedder = StubEmbedder()
     org_id, _ = await _catalogued(migrated_database, isolated_customer_database, embedder=embedder)
 
@@ -347,9 +298,7 @@ async def test_without_an_embedder_the_ranking_is_the_one_it_always_was(
 async def test_the_search_says_which_arm_found_each_card(
     platform: URL, migrated_database: URL, isolated_customer_database: CustomerDatabase
 ) -> None:
-    """`found_by` reaches `context_selected`, and a run whose tables all came
-    from the lexical arm on a deployment that has an embedder is a retrieval
-    regression with no other symptom (B-060's family)."""
+    """`found_by` reaches `context_selected`."""
     embedder = StubEmbedder(
         vector_for={"regions (public.regions)": unit(7), "areas of the country": unit(7)}
     )
@@ -367,9 +316,7 @@ async def test_the_search_says_which_arm_found_each_card(
 async def test_a_failed_query_embedding_falls_back_to_wording_rather_than_failing(
     platform: URL, migrated_database: URL, isolated_customer_database: CustomerDatabase
 ) -> None:
-    """This is the **context** stage of every run, so raising here would turn a
-    busy provider into a question that cannot be answered at all. The lexical arm
-    has already been paid for and still answers."""
+    """This is the context stage of every run."""
     from charie.knowledge.embeddings import EmbeddingError
 
     working = StubEmbedder()
@@ -388,36 +335,12 @@ async def test_a_failed_query_embedding_falls_back_to_wording_rather_than_failin
 async def test_a_loose_question_is_answered_by_meaning_and_not_by_word_overlap(
     platform: URL, migrated_database: URL, isolated_customer_database: CustomerDatabase
 ) -> None:
-    """**B-159.** The OR fallback does not vote once there is a vector arm.
-
-    B-041's fallback was written for a deployment where the strict pass matched
-    nothing and there *was* nothing else to ask. Once B-018 added the vector arm
-    it stopped being a last resort and became a second opinion — a much worse
-    one, because its ordering is word overlap, so a table wins on having a word
-    of the question in its **name**. That is the move `inference.py` refuses by
-    construction.
-
-    And it is worse than noise: `_merge` scores a card once per arm, so anything
-    the fallback surfaced *and* the vector arm found collects roughly double and
-    is promoted **above** vector-only hits. On MiseQ that pushed `fact_sale` —
-    the only real sales table — from vector rank 8 to merged rank 11, past a
-    bundle that takes five, while a synthetic back-cast came first for having
-    "monthly" in its name.
-
-    Asserted on `found_by`, which is the one field that says *which arm* answered:
-    with an embedder and a question the strict pass cannot match, every hit must
-    have come from meaning. Before this change the same call returned hits marked
-    `lexical` and `both`.
-    """
-    # Real vectors rather than the stub's zeros: a zero vector has no cosine
-    # distance, so a test resting on one would be resting on how NaN happens to
-    # sort. The query and the regions card share `unit(1)`, which makes the
-    # vector arm a real answer rather than an accident.
+    """B-159. The OR fallback does not vote once there is a vector arm."""
+    # Real vectors rather than the stub's zeros: a zero vector has no cosine distance.
     embedder = StubEmbedder(vector_for={"1999": unit(1), "region": unit(1)})
     org_id, _ = await _catalogued(migrated_database, isolated_customer_database, embedder=embedder)
 
-    # "1999" appears in no card, so `websearch_to_tsquery`'s AND cannot match and
-    # the fallback is the only thing that could add a lexical hit.
+    # "1999" appears in no card, so `websearch_to_tsquery`'s AND cannot match and the fallback...
     hits = await search.search_cards(
         org_id,
         "How did our shops and regions look in 1999?",
@@ -434,14 +357,7 @@ async def test_a_loose_question_is_answered_by_meaning_and_not_by_word_overlap(
 async def test_without_an_embedder_the_or_fallback_still_answers(
     platform: URL, migrated_database: URL, isolated_customer_database: CustomerDatabase
 ) -> None:
-    """The other half of B-159, and the half that must not regress.
-
-    The fallback keeps the job B-041 gave it. A deployment with no embedding key
-    — or a catalog whose cards are not embedded yet — has nothing else to ask,
-    and a loose question there must still return candidates rather than the empty
-    catalog that cost the M7 gate. Both directions are asserted because only
-    together do they say *when* the fallback runs.
-    """
+    """The other half of B-159, and the half that must not regress."""
     org_id, _ = await _catalogued(migrated_database, isolated_customer_database)
 
     hits = await search.search_cards(org_id, "How did our shops and regions look in 1999?")

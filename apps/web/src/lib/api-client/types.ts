@@ -1,9 +1,4 @@
-/**
- * Response shapes of the Charie API.
- *
- * Hand-written, and narrowed at runtime rather than cast — a lying type is worse
- * than no type. Generated from the OpenAPI schema in Phase 7 (backlog B-003).
- */
+/** Response shapes of the Charie API. */
 
 export interface Health {
   status: "ok";
@@ -26,13 +21,7 @@ export interface Me {
   memberships: Membership[];
 }
 
-/**
- * The database an organization asks its questions of (D-045).
- *
- * Both fields are null together when no Admin has chosen yet — not an error, and
- * the state every organization was in before revision 0031. The name travels
- * with the id because every screen that shows this shows it to a person.
- */
+/** The database an organization asks its questions of (D-045). */
 export interface ActiveDataSource {
   data_source_id: string | null;
   data_source_name: string | null;
@@ -53,14 +42,7 @@ export interface Invitation {
   token: string;
 }
 
-/**
- * A way back into an organization whose Admins can no longer sign in (B-017).
- *
- * An Admin arms one in advance and keeps the token outside the product. It is a
- * bearer credential: whoever holds it can make themselves an Admin of this one
- * organization, which is why the raw token appears exactly once, at the moment
- * it is armed, and never in a listing.
- */
+/** A way back into an organization whose Admins can no longer sign in (B-017). */
 export interface RecoveryGrant {
   id: string;
   label: string;
@@ -77,14 +59,7 @@ export interface ArmedRecoveryGrant extends RecoveryGrant {
   token: string;
 }
 
-/**
- * A registered customer database.
- *
- * What is missing is the point: there is no `password` and no `username`. The
- * API has no such field to send (architecture Part 7.3), so this type could not
- * carry one even if a screen asked. `username_last4` identifies the account and
- * `secret_ref` says where its credentials are kept, not what they are.
- */
+/** A registered customer database. */
 export interface DataSource {
   id: string;
   name: string;
@@ -121,14 +96,7 @@ export interface TestResult {
   evidence: string[];
 }
 
-/**
- * One uploaded document, and how far indexing got (WP10.1b).
- *
- * `embedded_count` is reported separately from `chunk_count` on purpose: below
- * it, the text is searchable by wording but not yet by meaning. That is a real
- * and temporary state rather than an error, and rounding it up to "indexed"
- * would hide the one thing a person waiting for a large upload wants to know.
- */
+/** One uploaded document, and how far indexing got (WP10.1b). */
 export interface KnowledgeDocument {
   id: string;
   title: string;
@@ -143,20 +111,8 @@ export interface KnowledgeDocument {
   indexed_at: string | null;
 }
 
-/**
- * One predicate a statement must honour to be computing a metric (arch 5.4).
- *
- * The half of a definition a check can act on. The other half — `description`
- * and `expression` — is prose for the prompt, and nothing parses it.
- */
-/**
- * A chart to draw, or the sentence saying why there is none (WP11.1).
- *
- * `spec` is a Vega-Lite document the browser renders. It carries its values
- * inline and never a URL: the server assembles it from a closed vocabulary, so
- * there is no field an address could arrive in — which matters because this is
- * rendered in the reader's own browser.
- */
+/** One predicate a statement must honour to be computing a metric (arch 5.4). */
+/** A chart to draw, or the sentence saying why there is none (WP11.1). */
 export interface RunChart {
   spec?: Record<string, unknown> | null;
   declined?: string | null;
@@ -171,16 +127,7 @@ export interface RequiredFilter {
   values: string[];
 }
 
-/**
- * What a metric means here, in the form the critic can enforce (D-033).
- *
- * `binds` is sent by the API rather than inferred from an empty
- * `required_filters`, and the difference it names is the whole of D-033: a
- * definition with filters **constrains** generated SQL and the critic blocks a
- * statement that ignores one; a definition without them **informs** the model
- * and is checked by nothing. A screen that worked that out for itself would
- * eventually work it out wrongly.
- */
+/** What a metric means here, in the form the critic can enforce (D-033). */
 export interface SemanticDefinition {
   id: string;
   name: string;
@@ -188,40 +135,18 @@ export interface SemanticDefinition {
   kind: string;
   description: string;
   expression: string | null;
-  /**
-   * What an answer resting on this definition must say, or null.
-   *
-   * The one field here that reaches the *reader*. `description` and
-   * `expression` are prose for the prompt and bind nothing, so a limit stated
-   * only there is one a model can drop with nothing to contradict it.
-   */
+  /** What an answer resting on this definition must say, or null. */
   caveat: string | null;
   required_filters: RequiredFilter[];
   synonyms: string[];
   binds: boolean;
-  /**
-   * Required filters that currently exclude no row at all (**B-171**).
-   *
-   * `binds` stays true — the critic really does check these — but a badge
-   * reading only *enforced* would overstate the guarantee, which is the kind of
-   * claim this project keeps removing. Derived from the live catalog on every
-   * read, never stored: a stored answer is what went quietly wrong when MiseQ
-   * v6.7 made `edible_flag` constant and a filter that had split 3,005.75 kg
-   * from 2,522.76 started excluding nothing, with no edit and no signal.
-   */
+  /** Required filters that currently exclude no row at all (B-171). */
   excluding_nothing?: string[];
   /** Which state of this definition is in force. Every edit bumps it (B-088). */
   version: number;
 }
 
-/**
- * One state a definition has been in force in (B-088, D-036).
- *
- * A definition binds, so *what did this metric require when that answer was
- * written* is a question about whether an answer was right. The whole state is
- * kept rather than a diff, because the person asking has an answer they distrust
- * in front of them and will not replay a chain of changes.
- */
+/** One state a definition has been in force in (B-088, D-036). */
 export interface DefinitionVersion {
   version: number;
   /** created | accepted | updated | retired */
@@ -238,13 +163,7 @@ export interface DefinitionVersion {
   changed_at: string;
 }
 
-/**
- * An imported definition waiting for an Admin (B-059).
- *
- * `provenance` is here because the review screen's first question is *where did
- * this sentence come from* — the source table and the snapshot it was read at.
- * A proposal whose origin cannot be shown is one nobody can responsibly accept.
- */
+/** An imported definition waiting for an Admin (B-059). */
 export interface DefinitionProposal {
   id: string;
   name: string;
@@ -354,14 +273,7 @@ export interface CardHit {
   rank: number;
 }
 
-/**
- * A thread of questions about one database (architecture 10.1, D-022).
- *
- * `data_source_id` is null for a conversation that named none. That is legal,
- * not broken: the run resolves the organization's single source, or refuses and
- * names the choices. `data_source_name` is null for the same reason, and also
- * when the source has since been removed.
- */
+/** A thread of questions about one database (architecture 10.1, D-022). */
 export interface Conversation {
   id: string;
   title: string | null;
@@ -370,14 +282,7 @@ export interface Conversation {
   last_run_id: string | null;
   data_source_id: string | null;
   data_source_name: string | null;
-  /**
-   * When this thread was archived, or null while it is in the list (D-039).
-   *
-   * Archiving hides a conversation; it never removes the runs, events, findings
-   * or query executions underneath it. That is why the control says *Archive*
-   * and not *Delete* — a button that says delete and hides instead is a lie to
-   * the person clicking it.
-   */
+  /** When this thread was archived, or null while it is in the list (D-039). */
   archived_at?: string | null;
 }
 
@@ -399,23 +304,13 @@ export interface Accepted202 {
   created: boolean;
 }
 
-/**
- * A claim the run made, and the executions backing it.
- *
- * `support` holds `query_executions.id` values — the citation trail. Every id in
- * it was verified by the runner against what this run actually executed, so each
- * one resolves through `GET …/runs/{r}/executions/{q}`.
- */
+/** A claim the run made, and the executions backing it. */
 export interface Finding {
   id: string;
   statement: string;
   support: string[];
   confidence: string;
-  /**
-   * True when the composed answer rests on this finding (WP9.2). A run reaches
-   * several conclusions and an answer uses some; the rest are the
-   * investigation's working and belong in the trace, not under the answer.
-   */
+  /** True when the composed answer rests on this finding (WP9.2). */
   cited: boolean;
 }
 
@@ -424,15 +319,7 @@ export interface RunUsage {
   calls?: number;
   input_tokens?: number;
   output_tokens?: number;
-  /**
-   * How many of `input_tokens` the provider served from its own prompt cache.
-   *
-   * **A subset of the input, and not discounted in `cost_estimate`** (revision
-   * 0034). The provider bills cached input at less than full rate and we price
-   * the whole input at full rate, so this measures how far the total overstates.
-   * `null` means no call reported a cached share — which is not a claim that
-   * none was cached.
-   */
+  /** How many of `input_tokens` the provider served from its own prompt cache. */
   cached_input_tokens?: number | null;
   unpriced_calls?: number;
   /** Calls whose token counts are our arithmetic rather than the provider's. */
@@ -457,110 +344,28 @@ export interface Run {
   status: string;
   question: string;
   answer: string | null;
-  /**
-   * How the run ended: `answered` | `partly` | `refused` (B-134, D-044).
-   *
-   * **Not derivable from `status`, and not a boolean.** WP7.2b's rule is that a
-   * run which could not answer *completes* — `failed` is reserved for the
-   * platform breaking — so `completed` covers all three. And a question can be
-   * half-answered: the first engine trial found runs that recorded "no answer"
-   * while returning "Outlet C, 3.398 kg" with a verified citation behind it.
-   *
-   * Derived by the platform from whether the run produced a verified citation and
-   * whether it named something it could not answer. A model never picks it.
-   *
-   * `null` for runs that ended before the API recorded it and for runs still
-   * going; null falls back to the status word, which is what those runs showed.
-   */
+  /** How the run ended: `answered` | `partly` | `refused` (B-134, D-044). */
   state?: string | null;
-  /**
-   * The part of the question the run could not answer, in the composer's words.
-   *
-   * Non-empty exactly when `state` is `partly` — enforced by a CHECK in the
-   * database, not by convention — so the card always has the missing half to
-   * name. "Could not answer the cost" is useful; "partly answered" alone is not.
-   */
+  /** The part of the question the run could not answer, in the composer's words. */
   unanswered?: string;
-  /**
-   * What this run cost, in USD, or `null` when no total can be stated.
-   *
-   * **Null means unpriced, never free** — the rule the column was born with. A
-   * run holding any call the deployment's price table does not cover reports
-   * null rather than a total that silently omits it, because an understated
-   * number reads as the answer and nothing about it looks wrong. A run with no
-   * metered call at all is also null: nothing was recorded, which is a different
-   * claim from nothing was spent, and the two are indistinguishable from here.
-   *
-   * A string, because the API sends an exact decimal and a JSON number would
-   * round a price on the way in.
-   */
+  /** What this run cost, in USD, or `null` when no total can be stated. */
   cost_estimate?: string | null;
-  /**
-   * Where that cost went: calls, tokens, and a row per model and role.
-   *
-   * `unpriced_calls` is why a null total can still be informative — it says how
-   * many calls could not be priced rather than leaving the reader to guess
-   * whether the run was free or merely unmeasured.
-   */
+  /** Where that cost went: calls, tokens, and a row per model and role. */
   model_usage?: RunUsage;
-  /**
-   * How far through its allowance this run is (**B-177**).
-   *
-   * **Counters, never a prediction.** What ends a run is a model deciding it
-   * has enough, and nothing here knows when that will be — so this says "step 6
-   * of 12, 3:30 of 5:30 allowed" and never draws a bar implying a finish time
-   * it cannot know.
-   *
-   * Spend dimensions are deliberately absent: an organization can switch cost
-   * off (D-066), and a progress strip reporting tokens would hand back through
-   * one door what the other was closed to prevent.
-   */
+  /** How far through its allowance this run is (B-177). */
   progress?: {
     used?: { iterations?: number; queries?: number; wall_seconds?: number };
     limits?: { iterations?: number; queries?: number; wall_seconds?: number };
   };
   findings: Finding[];
-  /**
-   * What this answer does not establish, in plain words — a ceiling that stopped
-   * the search, a reviewer's warning, a period the data does not cover.
-   * Assembled by the platform rather than written by the model, so it cannot be
-   * hedged away. Rendered beside the answer and never instead of it; empty is
-   * the common case and a good one.
-   */
+  /** What this answer does not establish, in plain words — a ceiling that stopped the search. */
   limitations: string[];
-  /**
-   * One line on how the answer was reached — how many queries, over how many
-   * steps, against which tables (B-100).
-   *
-   * Architecture 4.2's fourth part of an answer, and the last to be shown: it
-   * was built on every run from Phase 9 and stored on none, so the one sentence
-   * written for a reader who will not open the SQL never reached them. Built
-   * from the run's own counts, never from a model's account of its reasoning.
-   * Empty for runs answered before it was recorded, and for runs that never
-   * composed.
-   */
+  /** One line on how the answer was reached — how many queries, over how many steps. */
   method?: string;
-  /**
-   * Which semantic definitions governed this answer, and how many there were to
-   * match (B-087).
-   *
-   * They mean nothing apart. Empty beside `0` is an organization that has
-   * defined nothing; empty beside `18` is a question that named none of them —
-   * a fact about the wording rather than the data, and otherwise invisible.
-   * Three gate walks read the second as a broken feature because nothing said
-   * which had happened.
-   */
+  /** Which semantic definitions governed this answer, and how many there were to match (B-087). */
   definitions_applied?: string[];
   definitions_available?: number;
-  /**
-   * The chart this answer carries, or the reason it carries none (WP11.1).
-   *
-   * Exactly one of `spec` and `declined` is set, and `null` means no chart was
-   * asked for — which is most answers. **A refusal is not a limitation**: that
-   * list is about whether the answer is *true*, and a picture that could not be
-   * drawn says nothing about that. It renders where the chart would have been,
-   * because a chart that silently fails to appear looks like a broken page.
-   */
+  /** The chart this answer carries, or the reason it carries none (WP11.1). */
   chart?: RunChart | null;
   started_at: string | null;
   finished_at: string | null;
@@ -581,14 +386,7 @@ export interface RunEvents {
   last_seq: number;
 }
 
-/**
- * The query behind a citation (architecture 10.2, B-034).
- *
- * `sample_rows` was masked before it was ever stored (WP5.2b), so there is no
- * unmasked copy for this screen to have asked for. A `refused` execution reached
- * no engine: it has no rows and no duration, and carries the violation code that
- * stopped it instead.
- */
+/** The query behind a citation (architecture 10.2, B-034). */
 export interface Execution {
   id: string;
   run_id: string;

@@ -1,37 +1,5 @@
 #!/usr/bin/env sh
-#
 # The Phase 11 gate's smoke: a real stack, a real browser, a scripted model.
-#
-#     make test.web.smoke
-#
-# Brings up compose, migrates, seeds the pizza fixture, drives the product in
-# Chromium (`apps/web/e2e-compose/`), and takes the stack down again.
-#
-# **Its own compose project, on its own ports.** Not politeness — three things
-# would otherwise go wrong on a developer's machine, and two of them silently.
-# A developer's stack holds demo fixtures the walks of WP11.2b depended on, and
-# `down` on the shared project would take them with it. Their api container is
-# configured with a real key, so a smoke that used it would spend their money and
-# turn a model's variability into a red build. And the ports are already taken.
-# A parallel project is the same method both README walks used (`-p
-# charie-clean`), for the same reason.
-#
-# **The model is scripted, and this script is what guarantees that.** The
-# variables below are exported, and an exported variable beats `--env-file` in
-# compose's interpolation order, so a developer's `LLM_PROVIDERS=openai` cannot
-# reach this stack. `OPENAI_API_KEY` and `EMBEDDINGS_PROVIDER` are blanked in the
-# same breath: discovery embeds catalog cards when an embedder is configured, so
-# a smoke that left that alone would quietly bill the owner for the schema it
-# just read.
-#
-# POSIX sh, not bash: on Windows a bare `bash` is WSL's, which cannot reach the
-# Docker CLI or this drive the same way. The Makefile runs this with $(SHELL).
-#
-# Knobs, all optional:
-#   SMOKE_KEEP=1     leave the stack up afterwards (for debugging a red run)
-#   SMOKE_REUSE=1    do not build or migrate or seed; the stack is already there
-#   SMOKE_PROJECT    compose project name (default charie-smoke)
-#   SMOKE_*_PORT     host ports, if the defaults below are taken too
 
 set -eu
 
@@ -44,10 +12,7 @@ fi
 
 PROJECT=${SMOKE_PROJECT:-charie-smoke}
 
-# Deliberately not one off the defaults. 3100 is the hermetic Playwright suite's
-# and 5433 is the first port somebody reaches for when 5432 is taken, so a smoke
-# that used either would collide with exactly the thing a developer is running
-# while they debug this.
+# Deliberately not one off the defaults. 3100 is the hermetic Playwright suite's and 5433 is the...
 SMOKE_WEB_PORT=${SMOKE_WEB_PORT:-3200}
 SMOKE_API_PORT=${SMOKE_API_PORT:-8200}
 SMOKE_PG_PORT=${SMOKE_PG_PORT:-5532}
@@ -67,31 +32,22 @@ LOCAL_SECRETS_KEY=$(env_value LOCAL_SECRETS_KEY)
 : "${SEED_PIZZA_READONLY_PASSWORD:?SEED_PIZZA_READONLY_PASSWORD missing from .env}"
 
 # The walk registers a database, so the API must be able to encrypt a credential.
-# Generated rather than demanded: this is the one required value a fresh .env
-# does not carry, and stopping here would make the smoke fail for a reason that
-# has nothing to do with the product.
 if [ -z "$LOCAL_SECRETS_KEY" ]; then
   echo "No LOCAL_SECRETS_KEY in .env — minting one for this stack only."
   LOCAL_SECRETS_KEY=$(uv run --directory apps/api python -c \
     "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())")
 fi
 
-# ---------------------------------------------------------------------------
-# What this stack is, overriding whatever .env says
-# ---------------------------------------------------------------------------
+# --- What this stack is, overriding whatever .env says ---
 export LOCAL_SECRETS_KEY
 export SECRETS_BACKEND=local
 export TLS_LOCAL_HOSTS=seed-pizza-pg
 
-#: A stub in the ordinary image, selected by environment and refused at boot in
-#: production twice over (config.assert_llm_providers_are_production_safe, and
-#: registry.get_provider). See DECISIONS D-040.
+#: A stub in the ordinary image, selected by environment and refused at boot in production twice...
 export LLM_PROVIDERS=scripted
 export LLM_MODELS='{"scripted":{"small":"scripted-1","mid":"scripted-1","strong":"scripted-1"}}'
 export LLM_ROLE_MAP='{}'
-# One model, no prices, no cap. A per-run cost ceiling against an unpriced model
-# refuses the run when LLM_REFUSE_UNPRICED_WHEN_CAPPED is on — which is the
-# correct policy and would look here like the agent declining to answer.
+# One model, no prices, no cap.
 export LLM_PRICES='{}'
 export LLM_RUN_COST_LIMIT_USD=
 export LLM_REFUSE_UNPRICED_WHEN_CAPPED=
@@ -102,23 +58,14 @@ export ANTHROPIC_API_KEY=
 export EMBEDDINGS_PROVIDER=
 export EMBEDDINGS_MODEL=
 
-# Sign-in, pinned end to end. A developer's .env is quite likely to say `entra`
-# — the owner's does — and the smoke has no identity provider to redirect to.
+# Sign-in, pinned end to end. A developer's .env is quite likely to say `entra` — the owner's does.
 export AUTH_MODE=dev
 export NEXT_PUBLIC_AUTH_MODE=dev
 export OIDC_AUTHORITY=
 export OIDC_ISSUER=
 export OIDC_AUDIENCE=charie-api
 
-# **`DEV_ISSUER_URL` is not a browser address, and this is the trap.** It is the
-# `iss` the dev issuer stamps *and* where the API fetches its JWKS from, and the
-# API does that fetch **from inside its own container** — so it must name the
-# port uvicorn is listening on there, which is always 8000 however the host has
-# published it. Pointed at the published port instead, every request comes back
-# 401 `jwks_unavailable`: sign-in appears to work, the profile screen renders,
-# and the first authenticated call fails for a reason that looks like a bad
-# token. The browser never fetches this URL; it only ever calls
-# `NEXT_PUBLIC_API_URL/dev/token`.
+# `DEV_ISSUER_URL` is not a browser address, and this is the trap.
 export DEV_ISSUER_URL="http://localhost:8000/dev"
 
 # These two are the browser's view, and so do carry the published port.
@@ -130,33 +77,28 @@ export API_PORT=$SMOKE_API_PORT
 export PLATFORM_DB_PORT=$SMOKE_PG_PORT
 export SEED_PIZZA_PORT=$SMOKE_PIZZA_PORT
 
-# The smoke overlay replaces the two host bind mounts with named volumes; see
-# ops/docker-compose.smoke.yml for what that is worth and what it cost to learn.
+# The smoke overlay replaces the two host bind mounts with named volumes.
 COMPOSE="docker compose --profile test-fixtures -p $PROJECT --env-file .env -f ops/docker-compose.yml -f ops/docker-compose.smoke.yml"
 
 teardown() {
   if [ "${SMOKE_KEEP:-}" = "1" ]; then
     echo
     echo "Stack left up as $PROJECT: web http://localhost:${SMOKE_WEB_PORT}"
-    # `--env-file .env` is not optional in that command: compose resolves
-    # `${PLATFORM_DB_PASSWORD:?...}` for every service in the file before it
-    # will do anything at all, including stopping things.
+    # `--env-file .env` is not optional in that command.
     echo "Take it down with:"
     echo "  docker compose --profile test-fixtures -p $PROJECT --env-file .env -f ops/docker-compose.yml -f ops/docker-compose.smoke.yml down --volumes"
     return
   fi
   echo
   echo "Taking $PROJECT down..."
-  # Volumes too: this database exists only for one walk, and leaving it behind
-  # would make the next run answer from the last one's rows.
+  # Volumes too: this database exists only for one walk.
   $COMPOSE down --volumes --remove-orphans >/dev/null 2>&1 || true
 }
 trap teardown EXIT INT TERM
 
 if [ "${SMOKE_REUSE:-}" != "1" ]; then
   echo "Starting $PROJECT (model: scripted)..."
-  # `--wait` rather than a sleep: every service in the file has a healthcheck,
-  # and web's is also what warms `next dev`'s first compile.
+  # `--wait` rather than a sleep: every service in the file has a healthcheck.
   $COMPOSE up -d --build --wait
 
   echo "Applying migrations..."
@@ -178,8 +120,7 @@ fi
 echo
 echo "Driving http://localhost:${SMOKE_WEB_PORT} in Chromium..."
 
-# `seed-pizza-pg` is how the **API** reaches the database — a compose service
-# name on the smoke project's own network. The browser never resolves it.
+# `seed-pizza-pg` is how the API reaches the database.
 if SMOKE_BASE_URL="http://localhost:${SMOKE_WEB_PORT}" \
   SMOKE_DB_HOST=seed-pizza-pg \
   SMOKE_DB_PORT=5432 \
@@ -188,10 +129,7 @@ if SMOKE_BASE_URL="http://localhost:${SMOKE_WEB_PORT}" \
   exit 0
 fi
 
-# **Say what the containers saw, here rather than in the caller.** The trap set
-# above takes the stack down on the way out, so a CI step that wanted these logs
-# afterwards would find nothing left to ask. A browser-side failure is very often
-# a server-side one seen from the far end.
+# Say what the containers saw, here rather than in the caller.
 echo
 echo "--- api, last 100 lines -------------------------------------------------"
 $COMPOSE logs --tail 100 api || true

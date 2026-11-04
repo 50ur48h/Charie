@@ -1,23 +1,4 @@
-"""Embedding spend inside a run, and the ceiling that bounds it (**B-073**).
-
-This is the file the backlog entry asks for. An embedder on `ToolContext` is a
-spending capability reaching the agent loop, and until this existed the two
-guards around spending could not see it: D-019's per-run ceiling reads
-`usage_ledger` rows *for the run*, and the query embedding was charged to no run
-at all — so an agent searching its documents on every iteration spent money
-somewhere the cap was not looking.
-
-Three properties, and the order matters. **The spend is on the run's own ledger
-line**, which is what makes it countable at all. **The ceiling refuses the next
-embedding**, before it is made rather than after. And **a refusal degrades the
-search rather than breaking it** — 8.5 calls budget exhaustion not a failure, the
-lexical arm has already been paid for, and taking a working half of retrieval
-away for the sake of consistency would be the wrong trade. What must not happen
-is that any of it goes unsaid, which is what `Retrieval.degraded` is for.
-
-Every embedding here is a stub. No test in this file can reach a provider, which
-is B-040's rule and the reason `StubEmbedder` declares `is_stub`.
-"""
+"""Embedding spend inside a run, and the ceiling that bounds it (B-073)."""
 
 from __future__ import annotations
 
@@ -45,10 +26,7 @@ POLICY = b"""\
 Net revenue excludes cancelled and refunded orders.
 """
 
-#: The stub's model id, priced so a ceiling can count it. The number is not the
-#: real one and does not need to be: what is under test is that *a* price makes
-#: the spend countable, and a fake price keeps the test from going stale the day
-#: the provider changes theirs.
+#: The stub's model id, priced so a ceiling can count it.
 PRICES = {
     "stub-embedding": {"input": 1.0, "output": 0.0},
     "fake-strong": {"input": 10.0, "output": 30.0},
@@ -56,11 +34,7 @@ PRICES = {
 
 
 async def _ledger(url: URL, org_id: uuid.UUID, run_id: uuid.UUID | None) -> list[dict[str, object]]:
-    """The organization's embedding rows, read as the application role would.
-
-    Filtered to ``role = 'embed'`` so an unrelated chat call cannot make this
-    pass, and ordered so a multi-batch spend reads in the order it happened.
-    """
+    """The organization's embedding rows, read as the application role would."""
     engine = create_async_engine(url)
     try:
         async with engine.connect() as connection:
@@ -94,17 +68,13 @@ async def _upload(
     )
 
 
-# ---------------------------------------------------------------------------
-# The spend lands on the run
-# ---------------------------------------------------------------------------
+# --- The spend lands on the run ---
 
 
 async def test_a_query_embedding_is_charged_to_the_run_that_asked(
     orgs: TwoOrgs, store: LocalDocumentStore, wired: URL, migrated_database: URL
 ) -> None:
-    """The property the ceiling is built on. A row with no ``run_id`` is spend
-    nothing can attribute, and a per-run cap over unattributed rows is a cap over
-    zero."""
+    """The property the ceiling is built on."""
     run_id = await seed_run(migrated_database, orgs.a)
     embedder = StubEmbedder(vector_for={"revenue": unit(0)})
     await _upload(orgs.a, store, None)
@@ -122,8 +92,7 @@ async def test_a_query_embedding_is_charged_to_the_run_that_asked(
     assert len(rows) == 1, "the query embedding did not leave exactly one ledger row"
     charged = rows[0]
     assert charged["run_id"] == run_id
-    # Its own role and tier (revision 0017), never `small`: filing embedding
-    # tokens beside intake calls would make every spend-by-tier query wrong.
+    # Its own role and tier (revision 0017), never `small`.
     assert charged["role"] == "embed"
     assert charged["tier"] == "embed"
     assert charged["model"] == "stub-embedding"
@@ -134,10 +103,7 @@ async def test_a_query_embedding_is_charged_to_the_run_that_asked(
 async def test_ingest_spend_is_recorded_even_though_no_run_asked_for_it(
     orgs: TwoOrgs, store: LocalDocumentStore, wired: URL, migrated_database: URL
 ) -> None:
-    """An upload is not a run and has nothing to accumulate against, which is the
-    hole `llm/budget.py` states plainly. The spend is still *recorded*, because
-    "what did this organization spend" must be answerable from this table — it is
-    only the ceiling that cannot apply."""
+    """An upload is not a run and has nothing to accumulate against."""
     embedder = StubEmbedder(vector_for={"revenue": unit(0)})
 
     await _upload(orgs.a, store, embedder)
@@ -147,18 +113,13 @@ async def test_ingest_spend_is_recorded_even_though_no_run_asked_for_it(
     assert all(row["run_id"] is None for row in rows)
 
 
-# ---------------------------------------------------------------------------
-# The ceiling, and what it does to a search
-# ---------------------------------------------------------------------------
+# --- The ceiling, and what it does to a search ---
 
 
 async def test_a_run_at_its_ceiling_still_gets_a_lexical_answer_and_is_told_why(
     orgs: TwoOrgs, store: LocalDocumentStore, wired: URL, migrated_database: URL
 ) -> None:
-    """The trade this design makes, asserted rather than described. The vector arm
-    is refused because the run has spent its allowance; the lexical arm was paid
-    for by the upload and still answers; and the caller is told which of those
-    happened."""
+    """The trade this design makes, asserted rather than described."""
     run_id = await seed_run(migrated_database, orgs.a)
     embedder = StubEmbedder(vector_for={"revenue": unit(0)})
     await _upload(orgs.a, store, embedder)
@@ -194,9 +155,7 @@ async def test_a_run_at_its_ceiling_still_gets_a_lexical_answer_and_is_told_why(
 async def test_an_unpriced_embedding_model_under_a_ceiling_is_refused_the_same_way(
     orgs: TwoOrgs, store: LocalDocumentStore, wired: URL, migrated_database: URL
 ) -> None:
-    """D-019's rule, arriving through the new door. An unpriced model records a
-    NULL cost, which no ceiling can count — so under a cap it is refused rather
-    than waved through, and the search degrades instead of spending blind."""
+    """D-019's rule, arriving through the new door."""
     run_id = await seed_run(migrated_database, orgs.a)
     embedder = StubEmbedder(vector_for={"revenue": unit(0)})
     await _upload(orgs.a, store, embedder)
@@ -217,8 +176,7 @@ async def test_an_unpriced_embedding_model_under_a_ceiling_is_refused_the_same_w
 async def test_a_provider_failure_degrades_the_search_rather_than_failing_it(
     orgs: TwoOrgs, store: LocalDocumentStore, wired: URL, migrated_database: URL
 ) -> None:
-    """A rate limit is not a reason to answer nothing. It is a reason to answer
-    from the half that still works and say the other half did not run."""
+    """A rate limit is not a reason to answer nothing."""
     from charie.knowledge.embeddings import EmbeddingError
 
     run_id = await seed_run(migrated_database, orgs.a)
@@ -237,18 +195,13 @@ async def test_a_provider_failure_degrades_the_search_rather_than_failing_it(
     assert found.degraded is not None
     assert "could not be run" in found.degraded
     assert found.passages
-    # The failed attempt is on the ledger, as `llm/service.py` records a failed
-    # completion: a provider that died has still been asked, and a ledger that
-    # only holds successes understates the bill exactly when someone is trying
-    # to find out why it is high.
+    # The failed attempt is on the ledger, as `llm/service.py` records a failed completion.
     rows = await _ledger(migrated_database, orgs.a, run_id)
     assert [row["status"] for row in rows] == ["error"]
     assert rows[0]["run_id"] == run_id
 
 
-# ---------------------------------------------------------------------------
-# What the model is told
-# ---------------------------------------------------------------------------
+# --- What the model is told ---
 
 
 async def _call(context: ToolContext, query: str) -> SearchKnowledgeOut:
@@ -260,9 +213,7 @@ async def _call(context: ToolContext, query: str) -> SearchKnowledgeOut:
 async def test_the_tool_searches_by_meaning_when_the_run_has_an_embedder(
     orgs: TwoOrgs, store: LocalDocumentStore, wired: URL, migrated_database: URL
 ) -> None:
-    """B-073's practical cost, closed: a question worded unlike the document used
-    to find nothing through this tool, because the tool called retrieval without
-    an embedder however well configured the deployment was."""
+    """B-073's practical cost, closed."""
     run_id = await seed_run(migrated_database, orgs.a)
     embedder = StubEmbedder(vector_for={"cancelled": unit(0), "takings": unit(0)})
     await _upload(orgs.a, store, embedder)
@@ -284,10 +235,7 @@ async def test_the_tool_searches_by_meaning_when_the_run_has_an_embedder(
 async def test_a_degraded_search_that_finds_nothing_does_not_say_nothing_is_written_down(
     orgs: TwoOrgs, store: LocalDocumentStore, wired: URL, migrated_database: URL
 ) -> None:
-    """The distinction this whole entry turns on. *"Nothing is written down about
-    that"* invites a model to stop looking and answer from its own knowledge; it
-    is only honest when the whole search actually ran. A run with no embedder is
-    told both facts, in that order."""
+    """The distinction this whole entry turns on."""
     run_id = await seed_run(migrated_database, orgs.a)
     await _upload(orgs.a, store, None)
     context = ToolContext(

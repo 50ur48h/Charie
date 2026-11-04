@@ -1,20 +1,6 @@
 "use client";
 
-/**
- * The sidebar: the mark, a new chat, the two places a person returns to, your
- * threads by day, and the way into Settings.
- *
- * **Every role sees this, and it holds no admin controls.** Architecture 6.2
- * grants "ask questions / view own conversations & traces" to every role, and
- * the list shows only your own. Data sources and Members live behind Settings,
- * where they gate themselves.
- *
- * **"Archive" says archive** (D-039). Nothing is destroyed: the runs, their
- * events, their findings and their query executions stay where they are. So the
- * control names the true action and the confirmation says it can be undone.
- *
- * **Collapsed or expanded survives a reload**, in `localStorage`, per browser.
- */
+/** The sidebar: the mark, a new chat, the two places a person returns to, your threads by day. */
 
 import {
   Archive,
@@ -41,10 +27,7 @@ import { cn } from "@/lib/utils";
 import { BrandMark, Wordmark } from "./brand";
 import { useSidebarCollapsed } from "./collapsed";
 
-/**
- * Up to two letters for the avatar, from whatever the identity provider sent.
- * Falls back to the subject, and to a dot when even that is missing.
- */
+/** Up to two letters for the avatar, from whatever the identity provider sent. */
 export function initials(person: Named | null, subject: string | null): string {
   const source = person?.name?.trim() || person?.email?.split("@")[0] || subject || "";
   const parts = source.split(/[\s._-]+/).filter(Boolean);
@@ -206,8 +189,7 @@ export function Sidebar({
     return () => {
       alive = false;
     };
-    // `pathname` is a dependency on purpose: starting a new chat navigates, and
-    // the sidebar has to show the thread that was just created without a reload.
+    // `pathname` is a dependency on purpose: starting a new chat navigates.
   }, [api, orgId, pathname]);
 
   const rename = useCallback(

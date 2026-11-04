@@ -1,61 +1,4 @@
-"""Semantic layer routes (architecture Part 10.2, plan WP10.2d).
-
-**Every verb here is Admin**, the read side included. That is the unusual part of
-this module and the part worth defending, because nothing else in the product
-locks its *read* side to one role.
-
-An accepted definition **constrains generated SQL**. By D-033 a structured
-definition does not merely inform the model, it binds it: `required_filters`
-becomes a rule the critic enforces against the AST of every statement, and a
-statement that ignores one is blocked. That makes a definition a privileged
-object in exactly the sense the DAL means — the same argument that says the LLM
-is never a security boundary says a row that rewrites what the platform will
-accept is not ordinary content. Writing one is Admin work for the obvious
-reason. Reading the list is Admin work for a quieter one: this is the screen
-that says which metrics bind and which are still prose, and it is an
-administrative view of the platform's own controls rather than a view of the
-customer's data. **Fail closed and widen deliberately** — whether a Reader
-should see definitions is a real product question and it is filed as B-082
-rather than answered here by default.
-
-**Import is the route B-059 exists for.** A mature warehouse arrives with its
-metrics already written down, and a product that can only accept a definition
-retyped will mostly be given none. Nothing it reads binds anything: every row
-arrives `proposed`, `definitions_for` loads active ones alone, and the accept
-route is where an Admin turns prose into a constraint by giving it filters.
-
-**Accept and reject are POSTs rather than a PATCH of `status`.** They are not
-edits to a field; they are two different decisions with different consequences,
-and `accept` takes a body — the filters — that `reject` has no meaning for. A
-single status PATCH would also make the interesting one, accepting *with*
-filters, look like a routine update.
-
-**`POST …/reinstate` brings a retired one back** (**B-094**), and it is a POST
-for the reason accept and reject are: it is a decision with consequences, not a
-field. Retiring had no opposite, and three correct rules made that a dead end —
-`accept` takes only proposals, `PATCH` takes only active ones, and an import
-skips a name any row already holds — so a mis-clicked retire was recoverable
-only in `psql`. It validates before it takes effect, and takes optional filters
-for the case that would otherwise be a second dead end: a definition whose
-catalog has moved on cannot be edited while retired, so it is repaired in the
-same act that brings it back.
-
-**PATCH is for an active definition's content, and `DELETE` retires it**
-(**B-088**). Until they existed a definition was write-once — no edit, no
-un-accept, re-accepting a 404 — and the only way to correct a filter was to
-delete the row in psql and import again. The two verbs are separate for the same
-reason accept and reject are: changing what a metric requires and taking it out
-of force are different decisions, and the second one is not a field. Both are
-validated exactly as `accept` is, both are audited, and both append to the
-definition's history, because an edit changes what the platform enforces on
-generated SQL and *"what did this require when that answer was written"* has to
-stay answerable (D-036).
-
-Errors are mapped so that a mistake an Admin can fix says so. A filter naming a
-column this database does not have is a **400** carrying the column's name, not
-a 500 and not a silent success that fails during somebody's run later — which
-is the whole reason `validate` runs at the door.
-"""
+"""Semantic layer routes (architecture Part 10.2, plan WP10.2d)."""
 
 from __future__ import annotations
 
@@ -417,14 +360,7 @@ def _filters(models: list[RequiredFilterModel]) -> list[dict[str, object]]:
 
 
 def _no_such_source(error: Exception) -> HTTPException:
-    """A missing data source and an undiscovered one, told apart.
-
-    ``NotFoundError`` is a 404 because there is nothing there. ``NoCatalogError``
-    is a 409 because the source exists and the request was reasonable — it is
-    simply not possible to validate a filter against a catalog nobody has built
-    yet, and *"refresh the catalog first"* is an instruction rather than a
-    dead end.
-    """
+    """A missing data source and an undiscovered one, told apart."""
     if isinstance(error, NoCatalogError):
         return HTTPException(
             status.HTTP_409_CONFLICT,
@@ -458,12 +394,7 @@ async def create_verified_query(
     context: Annotated[RequestContext, Depends(require_admin)],
     data_source_id: DataSourceId,
 ) -> VerifiedQueryOut:
-    """**Nothing is executed here.** The statement is judged against the catalog,
-    not run: approving an example is not a reason to read a customer's rows.
-
-    A refusal is a 400 carrying the validator's own message, which names the
-    identifier at fault because it was written to be repaired from.
-    """
+    """Nothing is executed here. The statement is judged against the catalog, not run."""
     try:
         example = await verified_service.create(
             org_id=context.org_id,
@@ -490,8 +421,7 @@ async def retire_verified_query(
     data_source_id: DataSourceId,
     verified_query_id: VerifiedQueryId,
 ) -> None:
-    """Retired rather than deleted, so a run grounded in it last month is still
-    explainable this month."""
+    """Retired rather than deleted, so a run grounded in it last month is still explainable..."""
     try:
         await verified_service.retire(org_id=context.org_id, verified_query_id=verified_query_id)
     except LookupError as error:
@@ -511,21 +441,9 @@ async def list_definitions(
         Query(description="`active` binds; `retired` is out of force and can be reinstated."),
     ] = "active",
 ) -> list[DefinitionOut]:
-    """The **active** ones by default, by name.
-
-    Proposals are not here — they have their own route, because a screen that
-    mixes what binds with what is merely suggested is the screen on which
-    somebody mistakes the second for the first.
-
-    `status=retired` exists because they vanished entirely (**B-094**): an Admin
-    could not see there was anything to bring back, which turned a mis-clicked
-    retire into a database job. Listing one changes nothing about it — a retired
-    definition still binds nothing and still reaches no prompt.
-    """
+    """The active ones by default, by name."""
     found = await definitions_service.definitions_for(context.org_id, data_source_id, status=status)
-    # One catalog load for the whole list (**B-171**). Computed here rather than
-    # stored, so the badge is right whenever it is read; a retired definition
-    # binds nothing anyway, so it is not worth the load.
+    # One catalog load for the whole list (B-171).
     policy = None
     if status == "active" and any(d.required_filters for d in found):
         with suppress(NotFoundError, NoCatalogError):
@@ -571,12 +489,7 @@ async def create_definition(
     context: Annotated[RequestContext, Depends(require_admin)],
     data_source_id: DataSourceId,
 ) -> DefinitionOut:
-    """Validated against the catalog before it is written, never after.
-
-    A filter naming a column this database does not have would never match
-    anything, and the run that discovered it would report a critic finding
-    nobody could act on. The 400 here names the column.
-    """
+    """Validated against the catalog before it is written, never after."""
     try:
         definition = await definitions_service.create(
             org_id=context.org_id,
@@ -608,18 +521,7 @@ async def import_definitions(
     context: Annotated[RequestContext, Depends(require_admin)],
     data_source_id: DataSourceId,
 ) -> list[ProposalOut]:
-    """**Nothing imported here binds anything.**
-
-    Every row arrives `proposed` and waits for the accept route. The read goes
-    through the DAL like all customer data — grounded against the catalog,
-    capped, masked, and recorded as a `query_executions` row — so an import is a
-    customer-data access and is auditable as one.
-
-    **201 even when nothing was created**, and deliberately: an import of a table
-    whose every name is already known is a request that succeeded and proposed
-    nothing. An empty list says that plainly, and a 4xx would suggest the
-    mapping was wrong when it was not.
-    """
+    """Nothing imported here binds anything."""
     try:
         created = await proposals_service.propose_from_table(
             org_id=context.org_id,
@@ -636,19 +538,15 @@ async def import_definitions(
             actor_user_id=context.user_id,
         )
     except ValueError as error:
-        # `_identifier` refusing a name that is not a bare identifier. A 400
-        # naming what was wrong with it, because the Admin typed it.
+        # `_identifier` refusing a name that is not a bare identifier.
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(error)) from error
     except PolicyViolation as violation:
-        # The DAL declined the read — most often a table this catalog does not
-        # know. Its message is written to be shown: it names the identifier and
-        # never the statement or a value out of anyone's database.
+        # The DAL declined the read — most often a table this catalog does not know.
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(violation)) from violation
     except (NotFoundError, NoCatalogError) as error:
         raise _no_such_source(error) from error
     except ConnectorError as error:
-        # Already sanitized by the connector: names what failed, never an
-        # address or a credential.
+        # Already sanitized by the connector: names what failed, never an address or a credential.
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(error)) from error
     return [ProposalOut.of(proposal) for proposal in created]
 
@@ -664,14 +562,7 @@ async def accept_proposal(
     data_source_id: DataSourceId,
     definition_id: DefinitionId,
 ) -> DefinitionOut:
-    """**This is where prose becomes a constraint** (D-033).
-
-    An imported definition arrives as sentences, which inform the model and bind
-    nothing. The filters supplied here are what let the critic enforce it, and
-    they are validated against the catalog before the row is activated — so one
-    naming a column this database does not have is refused now rather than
-    surfacing later as a finding nobody can act on.
-    """
+    """This is where prose becomes a constraint (D-033)."""
     try:
         definition = await proposals_service.accept(
             org_id=context.org_id,
@@ -700,33 +591,14 @@ async def update_definition(
     data_source_id: DataSourceId,
     definition_id: DefinitionId,
 ) -> DefinitionOut:
-    """**B-088.** The route that makes an Admin's decision revisable.
-
-    Validated exactly as `accept` is — the same catalog check, the same 400
-    naming the column — because an edit changes what the platform enforces on
-    generated SQL and there is no reason a correction should be trusted more
-    than the original. A refused edit changes nothing: the definition is left as
-    it was rather than half-applied.
-
-    **Omitted is not empty**, and the distinction is load-bearing. A field left
-    out keeps its value; a list replaces one. `expression: null` clears the
-    formula, which is the one place where null and absent differ, and it differs
-    because a metric with no formula is a real thing to say.
-
-    Only an **active** definition is editable. A proposal is accepted, not
-    edited, and the accept route already takes the filters and synonyms; a
-    retired one is history and editing history is the thing this design refuses.
-    Both are a 404 for the same reason: there is no active definition there.
-    """
+    """B-088. The route that makes an Admin's decision revisable."""
     sent = body.model_fields_set
     try:
         definition = await definitions_service.update(
             org_id=context.org_id,
             definition_id=definition_id,
             description=body.description,
-            # The sentinel, so "clear the formula" and "do not touch it" are two
-            # requests rather than one. Every other field reads absence off
-            # `None` because none of them has a meaningful null.
+            # The sentinel, so "clear the formula" and "do not touch it" are two requests rather...
             expression=body.expression if "expression" in sent else KEEP,
             caveat=body.caveat if "caveat" in sent else KEEP,
             synonyms=body.synonyms,
@@ -754,13 +626,7 @@ async def retire_definition(
     data_source_id: DataSourceId,
     definition_id: DefinitionId,
 ) -> None:
-    """Retired rather than deleted, like everything else in this layer.
-
-    The metric stops binding and stops reaching the prompt immediately; what it
-    said is kept, so an answer checked against it last month is still
-    explainable this month. Retiring it twice is a 404 — it is no longer in
-    force, and a second call must not read as success.
-    """
+    """Retired rather than deleted, like everything else in this layer."""
     try:
         await definitions_service.retire(
             org_id=context.org_id, definition_id=definition_id, actor_user_id=context.user_id
@@ -780,19 +646,7 @@ async def reinstate_definition(
     definition_id: DefinitionId,
     body: ReinstateIn | None = None,
 ) -> DefinitionOut:
-    """**B-094.** `DELETE` had no opposite, and the absence was a dead end rather
-    than an inconvenience: a retired definition cannot be accepted, cannot be
-    edited, and cannot be re-imported, because its name is still taken.
-
-    Validated before it takes effect, exactly as an edit is — a definition
-    retired last month may name a column the catalog has since lost, and putting
-    it back into force to bind nothing would be worse than leaving it retired.
-    The optional `required_filters` is what stops *that* being a second dead end.
-
-    A definition that is not retired is a 404: there is nothing to bring back,
-    and a route that quietly succeeded on an active one would be a second way to
-    write its filters with none of `PATCH`'s framing.
-    """
+    """B-094."""
     try:
         definition = await definitions_service.reinstate(
             org_id=context.org_id,
@@ -823,12 +677,7 @@ async def list_definition_versions(
     data_source_id: DataSourceId,
     definition_id: DefinitionId,
 ) -> list[VersionOut]:
-    """Oldest first, because it reads as a life rather than as a feed.
-
-    An empty list is a real answer rather than a missing one: a definition
-    written before revision 0022 has no recorded history, and saying so plainly
-    beats implying one exists.
-    """
+    """Oldest first, because it reads as a life rather than as a feed."""
     found = await definitions_service.versions_for(context.org_id, definition_id)
     return [VersionOut.of(version) for version in found]
 
@@ -843,9 +692,7 @@ async def reject_proposal(
     data_source_id: DataSourceId,
     definition_id: DefinitionId,
 ) -> None:
-    """Retired rather than deleted, so *"we looked at this and said no"* is
-    answerable — and so a second import of the same table does not silently
-    re-propose what an Admin has already turned down."""
+    """Retired rather than deleted, so "we looked at this and said no" is answerable."""
     try:
         await proposals_service.reject(
             org_id=context.org_id, definition_id=definition_id, actor_user_id=context.user_id

@@ -1,9 +1,6 @@
 "use client";
 
-/**
- * Who belongs to this organization (WP13.1b). The screen gates its own
- * controls on the caller's role (B-008).
- */
+/** Who belongs to this organization (WP13.1b). */
 
 import { Users } from "lucide-react";
 import { use } from "react";

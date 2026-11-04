@@ -1,23 +1,4 @@
-"""The Meta Model API provider (DECISIONS D-069).
-
-Meta serves its Muse models — ``muse-wonder-1.0``, ``muse-spark-1.3`` — behind
-the Responses protocol OpenAI defined: the same request body, the same
-``text.format`` JSON schema with the same strict subset, the same ``output_text``
-items and the same ``usage`` counts, including the cached share D-067 records.
-So this is not a second adapter. It is ``OpenAIProvider`` pointed at Meta's
-endpoint with Meta's key, under its own name — because the ledger records who
-answered, and a Meta call recorded as ``openai`` would put every cost and every
-failure on the wrong bill.
-
-Two things differ from the OpenAI account, and both are deliberate. **No
-embeddings**: the Model API has no embedding model, so ``EMBEDDINGS_PROVIDER`` is
-untouched by choosing ``meta`` for chat. **A reasoning effort on every call**
-(``META_REASONING_EFFORT``, default ``minimal``). Reasoning tokens count against
-``max_output_tokens``, and the caps this product sets per call were sized for
-OpenAI's models. Measured on the owner's key: with no effort sent, Muse Wonder
-spent 798 of an 800-token cap and 1,022 of 1,024 reasoning and returned no text
-at all; at ``minimal`` the same two calls completed in 249 and 167 tokens.
-"""
+"""The Meta Model API provider (DECISIONS D-069)."""
 
 from __future__ import annotations
 
@@ -29,8 +10,7 @@ from charie.llm.openai import OpenAIProvider
 
 __all__ = ["BASE_URL", "MetaProvider"]
 
-#: Meta's documented endpoint for the Responses, Chat Completions and Messages
-#: protocols alike (dev.meta.ai/docs/protocols/responses).
+#: Meta's documented endpoint for the Responses, Chat Completions and Messages protocols alike.
 BASE_URL = "https://api.meta.ai/v1"
 
 

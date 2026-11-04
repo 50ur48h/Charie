@@ -1,9 +1,4 @@
-/**
- * ECharts, registered once with only what the answers draw.
- *
- * Imported lazily from the chart component, so the library never weighs on a
- * page that shows no chart and is never evaluated on the server.
- */
+/** ECharts, registered once with only what the answers draw. */
 import { BarChart, LineChart, ScatterChart, TreeChart } from "echarts/charts";
 import {
   DatasetComponent,

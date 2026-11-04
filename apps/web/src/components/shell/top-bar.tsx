@@ -9,12 +9,7 @@ import { cn } from "@/lib/utils";
 import { BrandMark } from "./brand";
 import { useShell } from "./shell-context";
 
-/**
- * The quiet bar across the top of the main column (design: `.topbar`).
- *
- * A centred title, actions on the right, and — on a small screen, where the
- * sidebar is a drawer — the button that opens it.
- */
+/** The quiet bar across the top of the main column (design: `.topbar`). */
 export function TopBar({
   title,
   children,

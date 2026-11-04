@@ -49,15 +49,7 @@ function json(body: unknown, status = 200): Response {
 /** Nothing chosen — the state every organization is in until an Admin picks. */
 const NOTHING_CHOSEN = { data_source_id: null, data_source_name: null };
 
-/**
- * A fetch stub that answers each call from a queue, remembering every request.
- *
- * `…/active-data-source` is answered off the queue rather than from it (D-045).
- * The screen loads it in the same `Promise.all` as the source list, so a single
- * queue would hand one of the two the other's body and every test would fail on
- * a shape error rather than on what it is about. `chosen` overrides it for the
- * tests that are about the choice.
- */
+/** A fetch stub that answers each call from a queue, remembering every request. */
 function stubFetch(...responses: Response[]) {
   return stubFetchWith({ chosen: NOTHING_CHOSEN }, ...responses);
 }
@@ -68,8 +60,7 @@ function stubFetchWith(options: { chosen: unknown }, ...responses: Response[]) {
   const fetchMock = vi.fn((url: string, init: RequestInit = {}) => {
     calls.push({ url, init });
     if (url.includes("/active-data-source")) {
-      // A PUT answers with what it was asked to set, which is what the API does
-      // and what lets a test assert the screen re-reads rather than guesses.
+      // A PUT answers with what it was asked to set.
       if (init.method === "PUT") {
         return Promise.resolve(json(JSON.parse(String(init.body ?? "{}")).data_source_id === null
           ? NOTHING_CHOSEN
@@ -102,8 +93,7 @@ describe("<DataSources />", () => {
     expect(await screen.findByText("Pizza demo")).toBeInTheDocument();
     expect(screen.getByText("localhost:6543/pizza")).toBeInTheDocument();
     expect(screen.getByText("read-only verified")).toBeInTheDocument();
-    // Scoped to the source: the register form below offers the engine by the
-    // same name, as one of its choices.
+    // Scoped to the source: the register form below offers the engine by the same name.
     const listed = screen.getByText("Pizza demo").closest("li") as HTMLElement;
     expect(within(listed).getByText("PostgreSQL")).toBeInTheDocument();
     // The mode itself, not a green tick: `prefer` may not be encrypted at all.
@@ -143,8 +133,7 @@ describe("<DataSources />", () => {
     const posts = calls.filter((call) => call.init.method === "POST");
     expect(posts).toHaveLength(1);
     expect(String(posts[0]?.init.body)).toContain(TYPED_SECRET);
-    // Not in a URL — a query string would put it in history and in every log
-    // between the browser and the API.
+    // Not in a URL — a query string would put it in history and in every log between the...
     expect(calls.every((call) => !call.url.includes(TYPED_SECRET))).toBe(true);
     // And not left rendered anywhere, including as a value attribute.
     expect(document.body.innerHTML).not.toContain(TYPED_SECRET);
@@ -265,9 +254,7 @@ describe("<DataSources />", () => {
     expect(await screen.findByText("Your role does not permit this action")).toBeInTheDocument();
   });
 
-  // -------------------------------------------------------------------------
-  // The database the organization answers from (D-045)
-  // -------------------------------------------------------------------------
+  // --- The database the organization answers from (D-045) ---
 
   it("says which database answers questions, before any badge is read", async () => {
     stubFetchWith(
@@ -277,8 +264,7 @@ describe("<DataSources />", () => {
 
     render(<DataSources orgId="org1" role="reader" />);
 
-    // The sentence, not only the badge: a member cannot change this and still
-    // needs to know what their answers are drawn from.
+    // The sentence, not only the badge.
     expect(await screen.findByText(/Questions are answered from/)).toBeInTheDocument();
     expect(await screen.findByText("Answers questions")).toBeInTheDocument();
   });
@@ -311,12 +297,7 @@ describe("<DataSources />", () => {
   });
 
   it("offers the opposite word on the source that is already chosen", async () => {
-    /**
-     * The control's word has to match what pressing it does. A single button
-     * that says "Answer questions from this" on a source already answering them
-     * would be the same class of lie as a badge reading *answered* on a refusal
-     * (B-133) — the word and the action disagreeing, with the word winning.
-     */
+    /** The control's word has to match what pressing it does. */
     const calls = stubFetchWith(
       { chosen: { data_source_id: "ds1", data_source_name: "Pizza demo" } },
       json([SOURCE]),

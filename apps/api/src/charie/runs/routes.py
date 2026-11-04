@@ -1,24 +1,4 @@
-"""Conversation and run routes (architecture Part 10.2).
-
-Every route here is open to every role: asking questions and reading your own
-traces is what the role matrix in 6.2 grants a Reader. What a Reader cannot do is
-see somebody else's conversation, and that is not a role check at all — it is the
-ownership check in ``runs/service.py``, which answers 404 rather than 403 so a
-member cannot use the difference to discover that a conversation exists.
-
-``POST …/messages`` answers **202** and a run id, not an answer. The question is
-accepted and recorded, and the work happens in a background task (architecture
-0.2.4) — a research run takes thirty seconds to four minutes, which is longer
-than any request should be held open. The client polls ``GET …/runs/{id}`` for
-status and ``GET …/runs/{id}/events`` for the trace; Phase 8 turns the second
-into SSE over the same rows, which is why the poll response already carries
-``last_seq``.
-
-The route schedules and returns. It does not wait, it does not report whether the
-run succeeded, and it does not fail the request when the run does — everything a
-run has to say about itself is in ``agent_runs`` and ``agent_events``, the only
-channel that outlives the request that started it.
-"""
+"""Conversation and run routes (architecture Part 10.2)."""
 
 from __future__ import annotations
 
@@ -393,12 +373,7 @@ async def rename_conversation(
     context: Annotated[RequestContext, Depends(require_member)],
     conversation_id: ConversationId,
 ) -> ConversationOut:
-    """Retitle your own thread.
-
-    Any member may be here — architecture 6.2 gives every role its own
-    conversations — and `service` enforces that "your own" is literal: a
-    colleague's thread is a 404 even to an Admin (**B-037**).
-    """
+    """Retitle your own thread."""
     try:
         return _conversation_out(
             await service.rename_conversation(
@@ -422,16 +397,7 @@ async def archive_conversation(
     context: Annotated[RequestContext, Depends(require_member)],
     conversation_id: ConversationId,
 ) -> ConversationOut:
-    """Put a thread away without destroying what it produced (**D-039**).
-
-    A POST rather than a DELETE, and the noun in the path says `archive` rather
-    than the method implying removal — because nothing is removed. The runs,
-    their events, their findings and their query executions all stay exactly
-    where they were, which is what makes the trace worth having.
-
-    It is also the honest shape for the reverse: `archived: false` brings the
-    thread back, and there is no such thing as an un-DELETE.
-    """
+    """Put a thread away without destroying what it produced (D-039)."""
     try:
         return _conversation_out(
             await service.set_conversation_archived(
@@ -497,12 +463,7 @@ async def post_message(
     context: Annotated[RequestContext, Depends(require_member)],
     conversation_id: ConversationId,
 ) -> AskOut:
-    """202, because the question is accepted rather than answered.
-
-    A repeat with the same ``idempotency_key`` answers 202 as well, with the run
-    that already exists and ``created: false``. Same question, same run — which is
-    what the client asked for by sending the key.
-    """
+    """202, because the question is accepted rather than answered."""
     try:
         result = await service.post_message(
             org_id=context.org_id,
@@ -515,17 +476,13 @@ async def post_message(
         raise _not_found("conversation") from error
 
     if result.created:
-        # Only for a question that is new. A replayed idempotency key already has
-        # a run — scheduling again would answer it twice and bill for both, which
-        # is the whole thing the key exists to prevent.
+        # Only for a question that is new.
         await schedule_run(
             org_id=context.org_id,
             run_id=result.run_id,
             actor_user_id=context.user_id,
             role=context.role,
-            # The conversation's own choice (D-022). None means it named none,
-            # and the scheduler resolves or refuses — which is why this is
-            # passed through rather than defaulted to anything here.
+            # The conversation's own choice (D-022).
             data_source_id=result.data_source_id,
         )
     return AskOut(
@@ -552,20 +509,7 @@ async def get_run(
 
 
 def run_out(view: service.RunView, *, show_cost: bool = True) -> RunOut:
-    """One run, as the API states it.
-
-    Shared by the single-run route and the thread's list (**B-106**) so the two
-    cannot drift: a field added to one and not the other would make an answer
-    look different depending on which request fetched it, and the thread is the
-    place a reader compares two answers side by side.
-
-    **`show_cost=False` withholds spend rather than hiding it** (D-066). The
-    organization's switch is enforced here, where the bytes are chosen, and not
-    in the browser: a screen that merely declines to render `cost_estimate` has
-    still sent it, and anyone who opens the network tab reads what the switch
-    was set to conceal. The web needs no change for this — `Cost` already
-    renders nothing when there are no calls and no total.
-    """
+    """One run, as the API states it."""
     return RunOut(
         id=view.id,
         conversation_id=view.conversation_id,
@@ -587,8 +531,7 @@ def run_out(view: service.RunView, *, show_cost: bool = True) -> RunOut:
         started_at=view.started_at,
         finished_at=view.finished_at,
         failure_reason=view.failure_reason,
-        # Not gated on `show_cost`: progress is steps and seconds, and the two
-        # dimensions that are spend never reach it.
+        # Not gated on `show_cost`: progress is steps and seconds.
         progress=view.progress,
         cost_estimate=view.cost_estimate if show_cost else None,
         model_usage=view.model_usage if show_cost else {},
@@ -609,12 +552,7 @@ async def list_conversation_runs(
     context: Annotated[RequestContext, Depends(require_member)],
     conversation_id: ConversationId,
 ) -> list[RunOut]:
-    """What the thread needs to render an answer as more than its words (**B-106**).
-
-    The screen used to hold one run and render one answer card, so every answer
-    but the newest lost its chart, its method, its findings, its evidence and its
-    trace. One request for the thread, rather than one per assistant message.
-    """
+    """What the thread needs to render an answer as more than its words (B-106)."""
     try:
         views = await service.list_conversation_runs(
             org_id=context.org_id,
@@ -637,12 +575,7 @@ async def get_execution(
     run_id: RunId,
     execution_id: Annotated[uuid.UUID, Path(description="An execution produced by this run")],
 ) -> ExecutionOut:
-    """Resolve one of a finding's ``support`` ids into evidence a person can read.
-
-    The execution is looked up **through** the run, so one belonging to another
-    run is not found rather than refused — the run's own ownership check is the
-    only one, and there is no second rule here that could drift away from it.
-    """
+    """Resolve one of a finding's ``support`` ids into evidence a person can read."""
     try:
         view = await service.get_execution(
             org_id=context.org_id,
@@ -691,22 +624,10 @@ async def get_run_events(
         ),
     ] = 0,
 ) -> EventsOut | StreamingResponse:
-    """One URL, two deliveries of the same durable rows (architecture 10.2, 10.3).
-
-    `Accept: text/event-stream` streams the trace and keeps streaming until the
-    run ends; anything else answers once with JSON. **One route rather than two**
-    because 10.2 lists one, and because a separate streaming URL would be a
-    second contract that could drift from the poll — they read the same rows
-    through the same function, and that is worth keeping structurally true.
-
-    Ownership is checked before a stream begins, so an unauthorised caller gets
-    a 404 rather than an empty stream that looks like a run with no trace.
-    """
+    """One URL, two deliveries of the same durable rows (architecture 10.2, 10.3)."""
     if "text/event-stream" in request.headers.get("accept", ""):
         try:
-            # Awaited here rather than inside the generator: an exception raised
-            # after streaming has begun cannot become a status code, and a 404
-            # delivered as an empty 200 stream is not a refusal anyone can see.
+            # Awaited here rather than inside the generator.
             await service.list_events(
                 org_id=context.org_id, run_id=run_id, user_id=context.user_id, after=after
             )
@@ -722,8 +643,7 @@ async def get_run_events(
             ),
             media_type="text/event-stream",
             headers={
-                # Proxies buffer by default, which turns a live trace into one
-                # burst at the end; both headers are how you ask them not to.
+                # Proxies buffer by default, which turns a live trace into one burst at the end.
                 "Cache-Control": "no-cache",
                 "X-Accel-Buffering": "no",
             },
@@ -740,7 +660,6 @@ async def get_run_events(
             EventOut(seq=event.seq, type=event.type, payload=event.payload, ts=event.ts)
             for event in events
         ],
-        # The caller's own `after` when nothing new arrived, so a poll loop that
-        # blindly passes this back does not rewind to the start of the trace.
+        # The caller's own `after` when nothing new arrived.
         last_seq=events[-1].seq if events else after,
     )
