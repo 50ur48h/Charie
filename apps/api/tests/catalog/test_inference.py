@@ -96,7 +96,7 @@ def _columns(schema: str, table: str, names: list[str]) -> tuple[ColumnInfo, ...
     )
 
 
-MISEQ: dict[tuple[str, str], dict[str, list[object]]] = {
+CUSTOMER_SCHEMA: dict[tuple[str, str], dict[str, list[object]]] = {
     # Five outlets, each key once — a parent.
     ("public", "dim_outlet"): {"outlet_key": list[object](["1", "2", "3", "4", "5"])},
     # Sales across those five, repeated — a child, fully contained.
@@ -106,8 +106,8 @@ MISEQ: dict[tuple[str, str], dict[str, list[object]]] = {
     ("public", "map_item_key"): {"item_key": list[object](f"WB-{i}" for i in range(60))},
 }
 
-TABLES = [TableRef(schema="public", name=name, kind="table") for _, name in MISEQ]
-COLUMNS = {key: _columns(key[0], key[1], list(cols)) for key, cols in MISEQ.items()}
+TABLES = [TableRef(schema="public", name=name, kind="table") for _, name in CUSTOMER_SCHEMA]
+COLUMNS = {key: _columns(key[0], key[1], list(cols)) for key, cols in CUSTOMER_SCHEMA.items()}
 
 
 async def _infer(data: dict[tuple[str, str], dict[str, list[object]]]) -> Any:
@@ -122,7 +122,9 @@ async def _infer(data: dict[tuple[str, str], dict[str, list[object]]]) -> Any:
 
 
 async def test_it_finds_the_key_the_database_forgot_to_declare() -> None:
-    report = await _infer({k: v for k, v in MISEQ.items() if k[1] in {"dim_outlet", "fact_sale"}})
+    report = await _infer(
+        {k: v for k, v in CUSTOMER_SCHEMA.items() if k[1] in {"dim_outlet", "fact_sale"}}
+    )
 
     found = {(k.from_table, k.from_column, k.to_table, k.to_column) for k in report.keys}
     assert ("fact_sale", "outlet_key", "dim_outlet", "outlet_key") in found
@@ -137,7 +139,9 @@ async def test_it_finds_the_key_the_database_forgot_to_declare() -> None:
 
 async def test_it_refuses_two_columns_that_only_share_a_name() -> None:
     """The test the owner set: 0.0% containment must produce no edge."""
-    report = await _infer({k: v for k, v in MISEQ.items() if k[1] in {"dim_item", "map_item_key"}})
+    report = await _infer(
+        {k: v for k, v in CUSTOMER_SCHEMA.items() if k[1] in {"dim_item", "map_item_key"}}
+    )
 
     found = {(k.from_table, k.from_column, k.to_table, k.to_column) for k in report.keys}
     assert ("map_item_key", "item_key", "dim_item", "item_key") not in found
@@ -146,7 +150,7 @@ async def test_it_refuses_two_columns_that_only_share_a_name() -> None:
 
 async def test_both_at_once_on_one_schema() -> None:
     """Together, because a rule that gets one right in isolation proves little."""
-    report = await _infer(MISEQ)
+    report = await _infer(CUSTOMER_SCHEMA)
 
     found = {(k.from_table, k.from_column, k.to_table, k.to_column) for k in report.keys}
     assert ("fact_sale", "outlet_key", "dim_outlet", "outlet_key") in found
@@ -193,7 +197,7 @@ async def test_too_few_rows_scores_below_the_threshold() -> None:
 
 
 async def test_a_small_domain_inside_a_dense_range_is_not_a_key() -> None:
-    """The defect the miseq run actually found, and the reason for coverage."""
+    """The defect a real customer schema exposed, and the reason for coverage."""
     data: dict[tuple[str, str], dict[str, list[object]]] = {
         ("public", "orders"): {"outlet_key": list[object](str(1 + i % 5) for i in range(200))},
         ("public", "receipts"): {"receipt_id": list[object](str(i) for i in range(1, 101))},
