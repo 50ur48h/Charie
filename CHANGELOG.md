@@ -9,6 +9,9 @@ under "Unreleased", only for changes a user would notice.
 
 ## [Unreleased]
 
+- The image runs on its own with only `META_API_KEY`: it brings its own database,
+  Meta model settings and the demo data, so `docker run` and Railway need nothing else.
+
 - Every Meta model call now appears live in the thinking panel, naming the model, what it
   did, the seconds and the tokens; finished answers count their Meta model calls.
 

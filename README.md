@@ -2,7 +2,7 @@
 
 ### Your data and business analyst. A clearer plan for what to do next.
 
-[What you can do](#what-you-can-do) · [How it works](#how-charie-works) · [Meta models](#how-meta-models-are-used) · [Try it in one command](#try-charie-in-one-command) · [Run it locally](#run-charie-locally)
+[What you can do](#what-you-can-do) · [How it works](#how-charie-works) · [Meta models](#how-meta-models-are-used) · [Try it](#try-charie) · [Develop it](#develop-charie-locally)
 
 It's Monday morning. You need to order stock, choose this week's promotion, and work out why sales slowed down. You have the records, but you still don't know where to start.
 
@@ -97,37 +97,55 @@ The finished answer counts its Meta model calls, the text under the question box
 
 The calls run from Charie's API container to `https://api.meta.ai/v1` with your `META_API_KEY`. Charie controls the database connection, permissions, query checks, and run limits. Relevant schema details, document excerpts, and query results may be included in the requests.
 
-## Try Charie in one command
+## Try Charie
 
-Everything needed for the demo is in this repository. You need [Docker Desktop](https://docs.docker.com/get-started/get-docker/) and a [Meta Model API key](https://dev.meta.ai/) with API billing enabled. No other key or password is needed.
+Everything needed is in this repository and in one image. You need only a [Meta Model API key](https://dev.meta.ai/) with API billing enabled: no other key, password or database. Charie starts with its own database inside the container and is already connected to the demo data.
 
-1. Get the project and add your key:
+**The demo data** is a hosted PostgreSQL database on Neon with synthetic food-delivery data: restaurants, menus, orders, deliveries and suppliers. Charie connects with a read-only login that is published on purpose, and checks that it cannot write before using it. To use your own data, add a database in **Settings → Data sources**.
 
-   ```bash
-   git clone https://github.com/50ur48h/Charie.git
-   cd Charie
-   cp .env.example .env
-   ```
+On first start Charie reads the demo database's structure, which takes about three minutes; the app opens straight away and answers once that finishes. Sign in with any name: everyone lands in the "Charie demo" organization.
 
-   Open `.env` and set `META_API_KEY=` to your key. Never commit `.env`.
+### Run the image
 
-2. Start it:
+With [Docker](https://docs.docker.com/get-started/get-docker/) installed:
 
-   ```bash
-   docker compose up --build
-   ```
+```bash
+docker run -p 3000:3000 -e META_API_KEY=<your key> -v charie-data:/app/ops ghcr.io/50ur48h/charie:latest
+```
 
-   The first start builds the image, sets up Charie's own database and connects the demo database, which takes a few minutes. It is ready when the log shows `Ready`.
+Open http://localhost:3000. The `-v` volume keeps Charie's data between restarts; leave it out for a throwaway run.
 
-3. Open http://localhost:3000 and sign in with any name (**demo** is filled in). Everyone lands in the "Charie demo" organization with the demo database already connected. Ask a question, for example:
+### Deploy the image on Railway
 
-   > Which restaurants grew fastest in 2025, and what drove it?
+1. **New service → Docker image:** `ghcr.io/50ur48h/charie:latest`.
+2. **Variables:** `META_API_KEY` only.
+3. **Settings:** health check path `/api/healthz`, and no custom start command.
 
-**The demo data** is a hosted PostgreSQL database on Neon with synthetic food-delivery data: restaurants, menus, orders, deliveries and suppliers. `docker-compose.yml` connects to it with a read-only login that is published on purpose; Charie checks that it cannot write before using it.
+Optional: mount a volume at `/app/ops` to keep data between deploys. If the log then says `/app/ops is not writable`, also set `RAILWAY_RUN_UID=0`. To keep Charie's data in an existing Railway Postgres instead, add `DATABASE_URL` as a reference to it; Charie sets up its own login and tables there.
 
-Stop with `docker compose down`. Add `-v` to also delete Charie's local data and start fresh.
+### Build it from this repository
 
-## Run Charie locally
+```bash
+git clone https://github.com/50ur48h/Charie.git
+cd Charie
+cp .env.example .env
+```
+
+Set `META_API_KEY=` in `.env` (never commit `.env`), then:
+
+```bash
+docker compose up --build
+```
+
+Open http://localhost:3000. Stop with `docker compose down`; add `-v` to delete Charie's data and start fresh.
+
+**A first question to try:**
+
+> Draw a line chart of monthly sales in 2025, with one line for each of the top 3 restaurants by sales.
+
+Open **Thinking** while it runs to watch each Meta model call.
+
+## Develop Charie locally
 
 You will start the app, connect your PostgreSQL server with a read-only login, and ask your first question. No demo database or seeding is needed.
 
@@ -235,31 +253,6 @@ Run `make down` to stop the app and keep your saved data. Run `make up` to start
 Register your PostgreSQL or Microsoft SQL Server database through the same screen, using a dedicated read-only login. It needs to be reachable from the API container. Then test the connection, refresh the catalog, and profile the columns.
 
 Add your team's definitions under **Settings → Definitions** and business documents under **Knowledge**. This helps Charie understand the meaning behind your numbers.
-
-## Deploy on Railway
-
-Charie ships as one image, `ghcr.io/50ur48h/charie:latest`, published by the **publish-images** workflow (Actions → publish-images → Run workflow). Each run also tags the commit, for example `charie:029dd2e`.
-
-The image runs the web app on `$PORT` and the API inside the same container. The browser reaches the API at `/api` on the same address, so there is no separate API URL to configure.
-
-1. **Database.** Add a PostgreSQL service with the `pgvector` extension available.
-2. **Service.** Create a service from the image. Remove any custom start command so the image's own start script runs. Set the health check path to `/api/healthz`.
-3. **Variables.** Set these on the service:
-   - `APP_DATABASE_URL`: `postgresql+asyncpg://charie_app:<app password>@<host>:<port>/<db>`
-   - `LOCAL_SECRETS_KEY`: a key from `make secrets.key`
-   - `META_API_KEY` and the `LLM_*` settings from `.env.example`
-4. **Volume.** Mount a volume at `/app/ops` so saved connections (`/app/ops/.secrets`) and query results (`/app/ops/artifacts`) survive redeploys.
-5. **First deploy only.** Open a shell on the service and run, with the owner connection:
-
-   ```bash
-   DATABASE_URL=postgresql+asyncpg://<owner>:<password>@<host>:<port>/<db> \
-   APP_DB_PASSWORD=<app password> \
-   sh -c 'alembic upgrade head && python -m charie.db.grant_app_login'
-   ```
-
-   Run `alembic upgrade head` again after upgrading to an image with new migrations.
-
-**Sign-in.** The image uses development sign-in: anyone who can open the URL can sign in by typing a name. Keep the URL private until real sign-in is added.
 
 ## For developers
 
