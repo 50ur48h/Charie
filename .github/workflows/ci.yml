@@ -446,15 +446,12 @@ jobs:
         if: env.RUN != 'true'
         run: echo "No changes under infra/ — skipping."
 
-  # Proves both images still build. Pushing them arrives with Phase 12.
+  # Proves the single image still builds; publish-images.yml pushes it.
   docker:
     needs: [api, web]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Build the API image
-        run: docker build --target prod --build-arg GIT_SHA=${{ github.sha }} -t api:ci apps/api
-      # A placeholder, and it must be one that can never resolve (B-132).
-      - name: Build the web image
-        run: docker build --target prod --build-arg NEXT_PUBLIC_API_URL=https://api.ci.invalid -t web:ci apps/web
+      - name: Build the image
+        run: docker build --build-arg GIT_SHA=${{ github.sha }} -t charie:ci .

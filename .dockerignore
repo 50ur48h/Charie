@@ -1,0 +1,17 @@
+# Allowlist for the root Dockerfile: only what the image needs enters the build context.
+*
+!apps/api/pyproject.toml
+!apps/api/uv.lock
+!apps/api/README.md
+!apps/api/alembic.ini
+!apps/api/src
+!apps/api/docker
+!apps/web
+!ops/docker/start.sh
+apps/web/node_modules
+apps/web/.next
+apps/web/playwright-report
+apps/web/test-results
+apps/web/.env*
+**/__pycache__
+**/.DS_Store
