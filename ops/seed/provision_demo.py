@@ -8,8 +8,8 @@
 correct for the eval harness, because that harness runs in-process on the host
 and on a CI runner where the fixture is published on ``localhost``. It is wrong
 for everything a person actually sees: the API answers questions **inside the
-api container**, where ``localhost`` is the API itself and the seed databases
-answer to ``seed-pizza-pg`` and ``seed-fnb-pg``.
+api container**, where ``localhost`` is the API itself and the seed database
+answers to ``seed-pizza-pg``.
 
 The failure was not subtle once looked at, and completely invisible before. On a
 machine whose Docker volumes had been lost, ``make evals.setup`` produced an
@@ -39,9 +39,8 @@ Idempotent. A rerun reuses the organization and each source rather than making a
 second of either, so it is safe after a partial failure and safe to put in a
 workflow that reruns.
 
-A source whose database is not up is **skipped and named**, not fatal: the F&B
-sample only exists if ``make seed.fnb`` has been run, and a machine that only
-wants the pizza demo should still get a working organization out of this.
+A source whose database is not up is **skipped and named**, not fatal, so a
+missing sample database is reported rather than aborting the run.
 """
 
 from __future__ import annotations
@@ -77,15 +76,6 @@ SOURCES: tuple[dict[str, object], ...] = (
         "username": "pizza_readonly",
         "password_env": "SEED_PIZZA_READONLY_PASSWORD",
         "made_by": "make seed",
-    },
-    {
-        "name": "F&B sample",
-        "host": "seed-fnb-pg",
-        "port": 5432,
-        "database": "fnb",
-        "username": "fnb_readonly",
-        "password_env": "SEED_FNB_READONLY_PASSWORD",
-        "made_by": "make seed.fnb SQLITE=...",
     },
 )
 

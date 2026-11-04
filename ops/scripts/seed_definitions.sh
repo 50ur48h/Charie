@@ -2,7 +2,7 @@
 #
 # Load a file of metric definitions into a registered data source.
 #
-#     make seed.definitions FILE=ops/seed/miseq_definitions.json SOURCE="MiseQ v6.4"
+#     make seed.definitions FILE=path/to/definitions.json SOURCE="<data source name>"
 #
 # Inside the api container, for the reason demo_setup.sh gives: writing a
 # definition validates its filters against the catalog, so whoever writes one
@@ -14,7 +14,7 @@ set -eu
 
 CONTAINER="${DEMO_CONTAINER:-charie-api-1}"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-FILE="${FILE:-ops/seed/miseq_definitions.json}"
+FILE="${FILE:?Set FILE to a definitions JSON file: make seed.definitions FILE=... SOURCE=...}"
 
 if [ ! -f "$ROOT/$FILE" ] && [ ! -f "$FILE" ]; then
   echo "No such file: $FILE" >&2

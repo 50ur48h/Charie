@@ -3,7 +3,7 @@
     export CHARIE_TOKEN='...'                    # from the browser, see below
     uv run ops/seed/push_definitions.py --api https://<api host> --list
     uv run ops/seed/push_definitions.py --api https://<api host> \
-        --source-name "MiseQ v6.7" --file ops/seed/miseq_v67_definitions.json
+        --source-name "<data source name>" --file path/to/definitions.json
 
 `provision_definitions.py` is the local twin and is the better tool where it
 works: it uses the service layer directly and needs no credential. It cannot be
@@ -146,8 +146,8 @@ def main() -> int:
     parser.add_argument("--api", required=True, help="Base URL, e.g. https://api.example.net")
     parser.add_argument("--org", help="Organization id. Resolved when you belong to only one.")
     parser.add_argument("--source", help="Data source id.")
-    parser.add_argument("--source-name", help='Data source name, e.g. "MiseQ v6.7".')
-    parser.add_argument("--file", default="ops/seed/miseq_definitions.json")
+    parser.add_argument("--source-name", help="Data source name, as shown in the app.")
+    parser.add_argument("--file", required=True, help="Definitions JSON file.")
     parser.add_argument(
         "--list", action="store_true", help="Print the organizations and sources, and stop."
     )

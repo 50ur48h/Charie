@@ -83,8 +83,8 @@ blob-report/
 *.parquet
 *.dump
 
-# Customer data supplied for local testing: the SQLite file and the data
-# dictionary that came with it. `make seed.fnb` loads it into seed-fnb-pg.
+# Customer data supplied for local testing, such as a SQLite file and the data
+# dictionary that came with it.
 # The whole directory, not just the database — a dictionary names real tables,
 # outlets and suppliers, and this repository is public.
 #
@@ -131,6 +131,9 @@ apps/web/test-results/
 # Local only: private docs, scratch files and per-machine settings
 # ---------------------------------------------------------------------------
 /docs/
+# Leftovers from the old layout, before the move to apps/api and apps/web.
+/backend/
+/frontend/
 /.temp/
 *.local.json
 # Sandbox shell cache artifact (created by headless tool runs in the repo)

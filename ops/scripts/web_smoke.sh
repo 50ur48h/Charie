@@ -52,7 +52,6 @@ SMOKE_WEB_PORT=${SMOKE_WEB_PORT:-3200}
 SMOKE_API_PORT=${SMOKE_API_PORT:-8200}
 SMOKE_PG_PORT=${SMOKE_PG_PORT:-5532}
 SMOKE_PIZZA_PORT=${SMOKE_PIZZA_PORT:-6643}
-SMOKE_FNB_PORT=${SMOKE_FNB_PORT:-6644}
 
 PLATFORM_DB_USER=$(env_value PLATFORM_DB_USER)
 PLATFORM_DB_NAME=$(env_value PLATFORM_DB_NAME)
@@ -82,7 +81,7 @@ fi
 # ---------------------------------------------------------------------------
 export LOCAL_SECRETS_KEY
 export SECRETS_BACKEND=local
-export TLS_LOCAL_HOSTS=seed-pizza-pg,seed-fnb-pg
+export TLS_LOCAL_HOSTS=seed-pizza-pg
 
 #: A stub in the ordinary image, selected by environment and refused at boot in
 #: production twice over (config.assert_llm_providers_are_production_safe, and
@@ -130,7 +129,6 @@ export WEB_PORT=$SMOKE_WEB_PORT
 export API_PORT=$SMOKE_API_PORT
 export PLATFORM_DB_PORT=$SMOKE_PG_PORT
 export SEED_PIZZA_PORT=$SMOKE_PIZZA_PORT
-export SEED_FNB_PORT=$SMOKE_FNB_PORT
 
 # The smoke overlay replaces the two host bind mounts with named volumes; see
 # ops/docker-compose.smoke.yml for what that is worth and what it cost to learn.

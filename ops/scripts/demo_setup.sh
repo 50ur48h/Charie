@@ -36,12 +36,11 @@ if ! docker inspect "$CONTAINER" >/dev/null 2>&1; then
   exit 1
 fi
 
-# **Read the two values; do not source the file** (**B-102**). The reasoning
+# **Read the value; do not source the file** (**B-102**). The reasoning
 # lives in env_file.sh, shared with db_setup.sh and web_smoke.sh.
 . "$(dirname "$0")/env_file.sh"
 
 SEED_PIZZA_READONLY_PASSWORD=$(env_value SEED_PIZZA_READONLY_PASSWORD)
-SEED_FNB_READONLY_PASSWORD=$(env_value SEED_FNB_READONLY_PASSWORD)
 
 : "${SEED_PIZZA_READONLY_PASSWORD:?SEED_PIZZA_READONLY_PASSWORD missing from .env}"
 
@@ -51,6 +50,5 @@ docker cp "$ROOT/ops/seed/provision_demo.py" "$CONTAINER:/tmp/provision_demo.py"
 # command string has to start with a word (see AGENTS.md).
 docker exec \
   -e SEED_PIZZA_READONLY_PASSWORD="$SEED_PIZZA_READONLY_PASSWORD" \
-  -e SEED_FNB_READONLY_PASSWORD="$SEED_FNB_READONLY_PASSWORD" \
   -e DEMO_ORG_NAME="${DEMO_ORG_NAME:-Demo}" \
   "$CONTAINER" sh -c "exec python /tmp/provision_demo.py"

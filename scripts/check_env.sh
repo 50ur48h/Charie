@@ -97,18 +97,11 @@ ENV | Compose sets `ENV: local` literally, because a stack of containers on some
 ARTIFACTS_PATH | The container writes to `/app/ops/ops/artifacts` only because a bind mount puts the host directory there. Passing a host path would move the setting and not the mount, and query results would land somewhere nothing is watching.
 LOCAL_SECRETS_PATH | Same shape: compose points the API at `/app/ops/.secrets/secrets.json`, which is the host file through a mount. The host value is a host path.
 SEED_PIZZA_HOST | `localhost` for tools run on the host. Inside the network the database is `seed-pizza-pg`, which the seed service already knows.
-SEED_FNB_HOST | The same for the F&B seed database.
 SEED_PIZZA_READONLY_USER | The read-only login `make seed` creates and a person types into the data-source form. No container reads it; the API receives it through the API, encrypted, like any customer credential.
 SEED_PIZZA_READONLY_PASSWORD | As above.
-SEED_FNB_READONLY_USER | As above, for the F&B seed.
-SEED_FNB_READONLY_PASSWORD | As above.
 MSSQL_DB | Read by `ops/scripts/seed_mssql.sh`, which runs on the host against the on-demand SQL Server container.
 MSSQL_PIZZA_READONLY_USER | Created by that seed script and typed into the data-source form, exactly like the Postgres read-only login.
 MSSQL_PIZZA_READONLY_PASSWORD | As above.
-FNB_DEMO_ADMIN_PASSWORD | The admin login on `pg-fnb-demo-sk`, the standalone customer-demo server that belongs to the owner rather than to this project. No container has any business holding it: it is used by hand, on the host, to run `ops/seed/load_sqlite.py` against that server and to revoke PUBLIC on the database afterwards (B-155).
-MISEQ_READONLY_PASSWORD | The read-only login for the `miseq` database on that server. Host-only for the same reason as SEED_*_READONLY_PASSWORD: it is typed into the data-source form and reaches the API encrypted, through the API, the way any customer credential does -- never as an environment variable on a container.
-MISEQ_V64_READONLY_PASSWORD | As above, for the `miseq_v64` database loaded beside it on 2026-08-27.
-MISEQ_V67_READONLY_PASSWORD | As above, for the `miseq_v67` database loaded beside those on 2026-08-29. v6.7 materialises all 15 views as tables, so it is the first drop whose derived relations the catalog sees as tables.
 DB_PASSWORD | Deployment-only (WP12.2). Locally the owner password is inside DATABASE_URL and nothing needs it separately; in Azure the template builds the DSN in the clear and takes only this from Key Vault, and only the migration job is given it. Passing it to a compose service would add a second source of truth for a password that is already in the URL beside it.
 '
 

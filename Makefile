@@ -67,8 +67,7 @@ test: test.api test.web                  ## Run all tests
 # ---------------------------------------------------------------------------
 # Local stack
 # ---------------------------------------------------------------------------
-.PHONY: up up.mssql down down.hard logs ps seed seed.mssql seed.fnb seed.definitions
-.PHONY: db.firewall.plan db.firewall.narrow
+.PHONY: up up.mssql down down.hard logs ps seed seed.mssql seed.definitions
 up: .env ## Start the app and platform database (no sample data)
 	$(COMPOSE) up -d --build
 	@printf '\n  web  http://localhost:3000\n  api  http://localhost:8000/healthz\n\n'
@@ -94,17 +93,8 @@ seed: .env ## (Re)build the pizza demo dataset in seed-pizza-pg
 seed.mssql: .env ## (Re)build the pizza demo dataset in the mssql container
 	$(SHELL) ops/scripts/seed_mssql.sh
 
-seed.fnb: .env ## Load a customer SQLite file into seed-fnb-pg: make seed.fnb SQLITE=path
-	uv run ops/seed/load_sqlite.py --sqlite "$(SQLITE)"
-
 seed.definitions: .env ## Load metric definitions: make seed.definitions FILE=... SOURCE="..."
 	$(SHELL) ops/scripts/seed_definitions.sh
-
-db.firewall.plan: ## Show what narrowing the demo DB firewall would change (touches nothing)
-	$(SHELL) ops/scripts/narrow_db_firewall.sh --dry-run
-
-db.firewall.narrow: ## Replace the demo DB allow-all rule with this machine's IP
-	$(SHELL) ops/scripts/narrow_db_firewall.sh
 
 .PHONY: db.setup migrate migrate.down migration
 db.setup: .env ## Migrate, then give charie_app its local login
@@ -323,4 +313,4 @@ demo.setup: .env ## The browser's org — COMPOSE addresses, built inside the ap
 
 .PHONY: test.fixtures.up
 test.fixtures.up: .env ## Start synthetic databases for tests only
-	$(COMPOSE) --profile test-fixtures up -d seed-pizza-pg seed-fnb-pg
+	$(COMPOSE) --profile test-fixtures up -d seed-pizza-pg
