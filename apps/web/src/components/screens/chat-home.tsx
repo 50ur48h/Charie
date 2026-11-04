@@ -13,6 +13,7 @@ import { TopBar } from "@/components/shell/top-bar";
 import { Pending } from "@/components/ui/pending";
 import { ApiError, createApi, type ActiveDataSource, type DataSource } from "@/lib/api-client";
 import { useSession } from "@/lib/auth/session";
+import { useModelChoice } from "@/lib/models";
 import { useOrgRole } from "@/lib/use-org-role";
 
 /** Starting points. They fill the composer rather than send. */
@@ -27,6 +28,8 @@ export function ChatHome({ orgId }: { orgId: string }) {
   const session = useSession();
   const router = useRouter();
   const api = useMemo(() => createApi(session.getToken), [session.getToken]);
+  const modelChoice = useModelChoice(api, orgId);
+  const chosenModel = modelChoice.model;
   const { role } = useOrgRole(orgId);
 
   const [question, setQuestion] = useState("");
@@ -74,7 +77,7 @@ export function ChatHome({ orgId }: { orgId: string }) {
     try {
       const conversationId = pending.current ?? (await api.createConversation(orgId, {})).id;
       pending.current = conversationId;
-      await api.ask(orgId, conversationId, content, idempotencyKey.current);
+      await api.ask(orgId, conversationId, content, idempotencyKey.current, chosenModel ?? undefined);
       // Only past this point is the question definitely on its way.
       idempotencyKey.current = crypto.randomUUID();
       pending.current = null;
@@ -83,7 +86,7 @@ export function ChatHome({ orgId }: { orgId: string }) {
       setError(cause instanceof ApiError ? cause.message : "That question could not be sent.");
       setSending(false);
     }
-  }, [api, orgId, question, router]);
+  }, [api, orgId, question, router, chosenModel]);
 
   /** The database a question asked right now would actually reach, or null. */
   const answersFrom =
@@ -154,6 +157,7 @@ export function ChatHome({ orgId }: { orgId: string }) {
             disabled={!ready}
             sending={sending}
             inputRef={box}
+            model={modelChoice}
             placeholder="Ask Charie anything about your business…"
             onAttach={() =>
               toast("Documents live in Knowledge, where Charie reads them before it queries.", {

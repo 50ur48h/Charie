@@ -67,7 +67,7 @@ param deployJobs bool = true
 
 // Named here rather than inline, so the set of secrets the platform expects is one readable list.
 var secretNames = {
-  openAiApiKey: 'openai-api-key'
+  metaApiKey: 'meta-api-key'
   appDatabasePassword: 'app-database-password'
   databasePassword: 'database-password'
 }
@@ -143,8 +143,8 @@ resource api 'Microsoft.App/containerApps@2024-03-01' = if (deployApps) {
       registries: registryConfig
       secrets: [
         {
-          name: secretNames.openAiApiKey
-          keyVaultUrl: '${keyVaultUri}secrets/${secretNames.openAiApiKey}'
+          name: secretNames.metaApiKey
+          keyVaultUrl: '${keyVaultUri}secrets/${secretNames.metaApiKey}'
           identity: identityId
         }
         {
@@ -174,18 +174,17 @@ resource api 'Microsoft.App/containerApps@2024-03-01' = if (deployApps) {
               secretRef: secretNames.appDatabasePassword
             }
             {
-              name: 'OPENAI_API_KEY'
-              secretRef: secretNames.openAiApiKey
+              name: 'META_API_KEY'
+              secretRef: secretNames.metaApiKey
             }
             {
               // The model configuration, which this template did not have and the product...
               name: 'LLM_PROVIDERS'
-              value: 'openai'
+              value: 'meta'
             }
             {
-              // No `mid`, because no role asks for one (B-154).
               name: 'LLM_MODELS'
-              value: '{"openai":{"small":"gpt-5.6-luna","strong":"gpt-5.6-sol"}}'
+              value: '{"meta":{"small":"muse-spark-1.3","mid":"muse-spark-1.3","strong":"muse-spark-1.3"}}'
             }
             {
               // Composing is the long generation and the cheapest place to save.
@@ -195,26 +194,12 @@ resource api 'Microsoft.App/containerApps@2024-03-01' = if (deployApps) {
             {
               // A model absent from this map is recorded with a NULL cost, which means unpriced.
               name: 'LLM_PRICES'
-              value: '{"gpt-5.6-luna":{"input":0.20,"output":1.20},"gpt-5.6-sol":{"input":5.00,"output":30.00},"text-embedding-3-small":{"input":0.02,"output":0.00}}'
+              value: '{"muse-spark-1.3":{"input":1.25,"output":4.25},"muse-wonder-1.0":{"input":4.00,"output":20.00}}'
             }
             {
               // Half of what a developer's `.env` sets, on purpose.
               name: 'LLM_RUN_COST_LIMIT_USD'
               value: '1.00'
-            }
-            {
-              // Not the cause of B-126 and fixed with it.
-              name: 'EMBEDDINGS_PROVIDER'
-              value: 'openai'
-            }
-            {
-              name: 'EMBEDDINGS_MODEL'
-              value: 'text-embedding-3-small'
-            }
-            {
-              // Must equal the width of the `vector(...)` column revision 0016 created.
-              name: 'EMBEDDINGS_DIMENSIONS'
-              value: '1536'
             }
             {
               // Key Vault is the secrets backend in Azure.

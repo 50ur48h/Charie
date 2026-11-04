@@ -7,6 +7,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { createApi, type RunEvent } from "@/lib/api-client";
 import { useSession } from "@/lib/auth/session";
+import { modelName } from "@/lib/models";
 import { cn } from "@/lib/utils";
 
 /** What each step did, and where it matters, why. */
@@ -49,6 +50,17 @@ function nested(payload: Payload, key: string): Payload | null {
 function plural(count: number, one: string, many: string): string {
   return `${count.toLocaleString()} ${count === 1 ? one : many}`;
 }
+
+/** What each model role did, for the live model-call rows. */
+const ROLE_DOING: Record<string, string> = {
+  intake: "read the question",
+  observe: "read the results",
+  plan: "planned the checks",
+  sql: "wrote the query",
+  critic: "reviewed the answer",
+  compose: "wrote the answer",
+  embed: "embedded the text",
+};
 
 function joinNames(names: string[], limit = 3): string {
   const shown = names.slice(0, limit).join(", ");
@@ -319,6 +331,31 @@ export const STEP_SENTENCES: Record<string, (payload: Payload) => Step> = {
     };
   },
 
+  model_called: (payload) => {
+    const model = str(payload, "model") ?? "a Meta model";
+    const name = modelName(model);
+    const role = str(payload, "role");
+    const latency = num(payload, "latency_ms");
+    const tokensIn = num(payload, "input_tokens");
+    const tokensOut = num(payload, "output_tokens");
+    if (payload.status === "error") {
+      const why = str(payload, "error");
+      return {
+        lead: `${name} call failed`,
+        rest: `Meta Model API (${model})${why ? ` — ${why}` : "."}`,
+      };
+    }
+    const parts = [`Live call to the Meta Model API (${model})`];
+    if (latency !== null) parts.push(`${(latency / 1000).toFixed(1)} s`);
+    if (tokensIn !== null && tokensOut !== null) {
+      parts.push(`${tokensIn.toLocaleString()} tokens in, ${tokensOut.toLocaleString()} out`);
+    }
+    return {
+      lead: `${name} ${(role && ROLE_DOING[role]) ?? "answered"}`,
+      rest: `${parts.join(" · ")}.`,
+    };
+  },
+
   error: (payload) => {
     const message = str(payload, "safe_message");
     return { lead: "Something went wrong", rest: message ? `— ${message}` : "" };
@@ -401,8 +438,10 @@ function tookFor(
 function metaOf(events: RunEvent[]): string[] {
   const queries = events.filter((event) => event.type === "query_executed").length;
   const documents = events.filter((event) => event.type === "knowledge_consulted").length;
+  const calls = events.filter((event) => event.type === "model_called").length;
   return [
     plural(events.length, "step", "steps"),
+    calls > 0 ? plural(calls, "Meta model call", "Meta model calls") : null,
     queries > 0 ? plural(queries, "query", "queries") : null,
     documents > 0 ? plural(documents, "document", "documents") : null,
   ].filter((part): part is string => part !== null);
@@ -509,6 +548,11 @@ export function Trace({
                   )}
                   <span className={cn("block text-[14px] font-medium text-text", TONE_CLASS[event.type])}>
                     {step.lead}
+                    {event.type === "model_called" && (
+                      <span className="ml-1.5 rounded-full bg-brand-soft px-1.5 py-px align-middle text-[11px] font-semibold text-brand">
+                        Meta
+                      </span>
+                    )}
                   </span>
                   {step.rest && (
                     <span className="block text-[13.5px] leading-relaxed text-muted-foreground">{step.rest}</span>

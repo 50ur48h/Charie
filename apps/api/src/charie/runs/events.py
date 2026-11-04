@@ -35,6 +35,8 @@ EventType = Literal[
     "tool_called",
     # The result of a `tool_called` for `search_knowledge`.
     "knowledge_consulted",
+    # One live model call: which model, for which role, how long, how many tokens.
+    "model_called",
     "sql_validated",
     "sql_rejected",
     "query_executed",

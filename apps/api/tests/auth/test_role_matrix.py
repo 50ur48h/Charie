@@ -98,6 +98,7 @@ PROBES: tuple[tuple[str, str, dict[str, Any] | None], ...] = (
     # Asking questions and reading your own traces is granted to every role (architecture 6.2).
     ("POST", "/v1/orgs/{org_id}/conversations", {"title": "Probe"}),
     ("GET", "/v1/orgs/{org_id}/conversations", None),
+    ("GET", "/v1/orgs/{org_id}/models", None),
     ("GET", "/v1/orgs/{org_id}/conversations/{conversation_id}", None),
     # Every role has its own conversations (arch 6.2).
     ("PATCH", "/v1/orgs/{org_id}/conversations/{conversation_id}", {"title": "Renamed"}),

@@ -6,12 +6,13 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Path, status
+from fastapi import APIRouter, Depends, HTTPException, Path, Request, status
 from pydantic import BaseModel, EmailStr, Field
 
 from charie.auth.context import RequestContext
 from charie.auth.guards import current_principal, require_admin, require_member
 from charie.auth.principal import Principal
+from charie.config import Settings, get_settings
 from charie.invitations.service import IssuedInvitation, create_invitation
 from charie.orgs import service
 from charie.orgs.recovery import GrantView, arm_grant, list_grants, revoke_grant
@@ -103,9 +104,15 @@ def _conflict(error: ConflictError) -> HTTPException:
 
 
 @router.get("/me", response_model=MeOut, summary="The caller and their organizations")
-async def me(principal: Annotated[Principal, Depends(current_principal)]) -> MeOut:
+async def me(
+    request: Request, principal: Annotated[Principal, Depends(current_principal)]
+) -> MeOut:
     """Works before the caller belongs to anything — that is how bootstrap starts."""
     user = await service.ensure_user(principal)
+    configured = getattr(request.app.state, "settings", None)
+    await service.join_demo_org(
+        user, configured if isinstance(configured, Settings) else get_settings()
+    )
     memberships = await service.memberships_for(user.id)
     return MeOut(
         subject=principal.subject,

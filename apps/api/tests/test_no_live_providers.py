@@ -2,16 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
-from typing import Any
-
 import pytest
-from pydantic import SecretStr
 
-from charie.knowledge import embeddings
 from charie.llm import registry
 from charie.llm.base import Completion, LLMRequest, ProviderCaps
-from llm_fixture import build_settings
 
 
 class _PretendLiveProvider:
@@ -69,53 +63,3 @@ def test_a_marked_test_may_use_a_live_provider(pretend_live: object) -> None:
     provider = registry.get_provider("pretend-live")
 
     assert provider.capabilities().is_stub is False
-
-
-# --- The second door: embeddings (B-073) ---
-
-
-def _configured(**overrides: Any) -> Any:
-    """Settings a real embedder can be built from. No call is ever made."""
-    return build_settings(
-        openai_api_key=SecretStr("test-key"),
-        embeddings_model="text-embedding-3-small",
-        **overrides,
-    )
-
-
-@pytest.fixture(autouse=True)
-def forget_built_embedders() -> Iterator[None]:
-    """The factory caches, and a cached live embedder would outlive the test that built it."""
-    embeddings.reset_embedder()
-    yield
-    embeddings.reset_embedder()
-
-
-def test_asking_for_a_live_embedder_is_refused(expected_live_provider_refusal: None) -> None:
-    """No pretend object here, deliberately."""
-    with pytest.raises(RuntimeError, match="live embedder"):
-        embeddings.get_embedder(_configured())
-
-
-def test_the_embedder_refusal_says_how_to_fix_it(expected_live_provider_refusal: None) -> None:
-    """Same advice as the provider door, in the same words."""
-    with pytest.raises(RuntimeError) as raised:
-        embeddings.get_embedder(_configured())
-
-    message = str(raised.value)
-    assert "build_settings()" in message
-    assert "live_provider" in message
-
-
-def test_no_embedder_configured_passes_straight_through() -> None:
-    """The guard must be invisible to the suite it protects."""
-    assert embeddings.get_embedder(build_settings()) is None
-
-
-@pytest.mark.live_provider
-def test_a_marked_test_may_build_a_live_embedder() -> None:
-    """The same opt-out, on the same terms."""
-    embedder = embeddings.get_embedder(_configured())
-
-    assert embedder is not None
-    assert embedder.is_stub is False

@@ -80,7 +80,7 @@ def test_missing_for_mode_names_what_is_missing(
         "key_vault_url": None,
         "artifacts_account_url": None,
         # Servable, so each case below isolates the one thing it varies.
-        "llm_models": {"openai": {"small": "s", "mid": "m", "strong": "l"}},
+        "llm_models": {"meta": {"small": "s", "mid": "m", "strong": "l"}},
     }
     settings = Settings(**(base | overrides))  # pyright: ignore[reportArgumentType]
 
@@ -97,7 +97,7 @@ def test_a_complete_configuration_is_not_degraded() -> None:
         key_vault_url="https://v.vault.azure.net/",
         artifacts_backend="blob",
         artifacts_account_url="https://s.blob.core.windows.net/",
-        llm_models={"openai": {"small": "s", "mid": "m", "strong": "l"}},
+        llm_models={"meta": {"small": "s", "mid": "m", "strong": "l"}},
     )
 
     assert settings.missing_for_mode() == []
@@ -142,17 +142,17 @@ def test_no_name_is_required_both_always_and_conditionally() -> None:
     ("overrides", "expected"),
     [
         # The configuration that shipped: a credential and no model map.
-        ({"llm_providers": ("openai",), "llm_models": {}}, ["LLM_MODELS"]),
+        ({"llm_providers": ("meta",), "llm_models": {}}, ["LLM_MODELS"]),
         # Set, non-empty, and about a provider nobody configured.
         (
-            {"llm_providers": ("openai",), "llm_models": {"anthropic": {"small": "s"}}},
+            {"llm_providers": ("meta",), "llm_models": {"meta-backup": {"small": "s"}}},
             ["LLM_MODELS"],
         ),
         # The fallback chain, which only matters during an incident.
         (
             {
-                "llm_providers": ("openai", "anthropic"),
-                "llm_models": {"openai": {"small": "s"}},
+                "llm_providers": ("meta", "meta-backup"),
+                "llm_models": {"meta": {"small": "s"}},
             },
             ["LLM_MODELS"],
         ),
@@ -161,8 +161,8 @@ def test_no_name_is_required_both_always_and_conditionally() -> None:
         # The control. Every provider named has models, so nothing is reported.
         (
             {
-                "llm_providers": ("openai",),
-                "llm_models": {"openai": {"small": "s", "mid": "m", "strong": "l"}},
+                "llm_providers": ("meta",),
+                "llm_models": {"meta": {"small": "s", "mid": "m", "strong": "l"}},
             },
             [],
         ),

@@ -109,6 +109,11 @@
     "contributor": "allow",
     "reader": "allow"
   },
+  "GET /v1/orgs/{org_id}/models": {
+    "admin": "allow",
+    "contributor": "allow",
+    "reader": "allow"
+  },
   "GET /v1/orgs/{org_id}/recovery-grants": {
     "admin": "allow",
     "contributor": "deny(403)",

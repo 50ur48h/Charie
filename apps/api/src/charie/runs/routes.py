@@ -14,6 +14,8 @@ from pydantic import BaseModel, Field
 from charie.agent.scheduler import schedule_run
 from charie.auth.context import RequestContext
 from charie.auth.guards import require_member
+from charie.config import Settings, get_settings
+from charie.llm import registry
 from charie.orgs import service as orgs_service
 from charie.runs import service
 from charie.runs.service import NotFoundError
@@ -104,6 +106,32 @@ class AskIn(BaseModel):
             "paying for — a second one."
         ),
     )
+    model: str | None = Field(
+        default=None,
+        max_length=200,
+        description="Optional. A model from GET /orgs/{org_id}/models; unset uses the default.",
+    )
+
+
+class ModelOptionOut(BaseModel):
+    id: str = Field(description="The Meta model id, e.g. muse-spark-1.3.")
+    name: str = Field(description="How the app names it, e.g. Muse Spark 1.3.")
+
+
+class ModelsOut(BaseModel):
+    default: str = Field(description="The model a question gets when none is picked.")
+    models: list[ModelOptionOut]
+
+
+def _settings(request: Request) -> Settings:
+    """The app's own settings, which a test builds explicitly."""
+    configured = getattr(request.app.state, "settings", None)
+    return configured if isinstance(configured, Settings) else get_settings()
+
+
+def _model_name(model: str) -> str:
+    """ "muse-spark-1.3" -> "Muse Spark 1.3"."""
+    return " ".join(part if part[:1].isdigit() else part.capitalize() for part in model.split("-"))
 
 
 class AskOut(BaseModel):
@@ -143,6 +171,9 @@ class RunOut(BaseModel):
     )
     question: str
     answer: str | None = None
+    model: str | None = Field(
+        default=None, description="The Meta model picked for this question; null is the default."
+    )
     findings: list[FindingOut] = Field(default_factory=list[FindingOut])
     started_at: datetime | None = None
     finished_at: datetime | None = None
@@ -452,6 +483,23 @@ async def list_messages(
         raise _not_found("conversation") from error
 
 
+@router.get(
+    "/orgs/{org_id}/models",
+    response_model=ModelsOut,
+    summary="The Meta models a question can be answered with",
+)
+async def list_models(
+    request: Request,
+    context: Annotated[RequestContext, Depends(require_member)],
+) -> ModelsOut:
+    del context
+    offered = registry.selectable_models(_settings(request))
+    return ModelsOut(
+        default=offered[0] if offered else "",
+        models=[ModelOptionOut(id=model, name=_model_name(model)) for model in offered],
+    )
+
+
 @router.post(
     "/orgs/{org_id}/conversations/{conversation_id}/messages",
     response_model=AskOut,
@@ -459,11 +507,17 @@ async def list_messages(
     summary="Ask a question; queues the run that will answer it",
 )
 async def post_message(
+    request: Request,
     body: AskIn,
     context: Annotated[RequestContext, Depends(require_member)],
     conversation_id: ConversationId,
 ) -> AskOut:
     """202, because the question is accepted rather than answered."""
+    if body.model is not None and body.model not in registry.selectable_models(_settings(request)):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"{body.model!r} is not one of the Meta models this deployment offers.",
+        )
     try:
         result = await service.post_message(
             org_id=context.org_id,
@@ -471,6 +525,7 @@ async def post_message(
             conversation_id=conversation_id,
             content=body.content,
             idempotency_key=body.idempotency_key,
+            model=body.model,
         )
     except NotFoundError as error:
         raise _not_found("conversation") from error
@@ -484,6 +539,7 @@ async def post_message(
             role=context.role,
             # The conversation's own choice (D-022).
             data_source_id=result.data_source_id,
+            model=body.model,
         )
     return AskOut(
         run_id=result.run_id,
@@ -516,6 +572,7 @@ def run_out(view: service.RunView, *, show_cost: bool = True) -> RunOut:
         status=view.status,
         question=view.question,
         answer=view.answer,
+        model=view.model,
         findings=[
             FindingOut(
                 id=finding.id,
@@ -644,7 +701,8 @@ async def get_run_events(
             media_type="text/event-stream",
             headers={
                 # Proxies buffer by default, which turns a live trace into one burst at the end.
-                "Cache-Control": "no-cache",
+                # `no-transform` keeps the web app's /api proxy from gzipping, and so holding, it.
+                "Cache-Control": "no-cache, no-transform",
                 "X-Accel-Buffering": "no",
             },
         )

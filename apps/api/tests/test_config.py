@@ -61,13 +61,11 @@ def test_a_variable_set_to_nothing_falls_back_to_the_default(
 ) -> None:
     """B-090. ``DAL_MAX_ROWS: ${DAL_MAX_ROWS."""
     monkeypatch.setenv("DAL_MAX_ROWS", "")
-    monkeypatch.setenv("EMBEDDINGS_DIMENSIONS", "")
     monkeypatch.setenv("ARTIFACT_RETENTION_DAYS", "  ")
 
     settings = Settings(_env_file=None)  # pyright: ignore[reportCallIssue]
 
     assert settings.dal_max_rows == Settings.model_fields["dal_max_rows"].default
-    assert settings.embeddings_dimensions == 1536
     assert settings.artifact_retention_days == 30
 
 
@@ -75,12 +73,12 @@ def test_a_variable_set_to_nothing_is_not_the_empty_value(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Empty means unset, never "the empty string"."""
-    monkeypatch.setenv("OPENAI_API_KEY", "")
+    monkeypatch.setenv("META_API_KEY", "")
     monkeypatch.setenv("OIDC_ISSUER", "")
 
     settings = Settings(_env_file=None)  # pyright: ignore[reportCallIssue]
 
-    assert settings.openai_api_key is None
+    assert settings.meta_api_key is None
     assert settings.oidc_issuer is None
 
 

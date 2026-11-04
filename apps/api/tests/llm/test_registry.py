@@ -85,7 +85,7 @@ def test_an_unregistered_provider_says_what_is_registered(llm_settings: Settings
     assert "mistral" in message
     assert "LLM_PROVIDERS" in message
     # And it names what is available, so the fix is visible from the error.
-    assert "openai" in message
+    assert "meta" in message
 
 
 def test_a_provider_is_built_once_and_reused(llm_settings: Settings, fake_llm: FakeLLM) -> None:

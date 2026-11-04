@@ -107,7 +107,7 @@ class ProviderCaps:
     name: str
     #: Whether the API can be made to return JSON matching a schema.
     supports_response_schema: bool
-    #: Anthropic takes the system prompt as a separate top-level parameter rather than as a message.
+    #: Some protocols take the system prompt as a separate top-level parameter.
     supports_system_message: bool = True
     max_output_tokens: int = 4096
     #: True for anything that answers without a model behind it.

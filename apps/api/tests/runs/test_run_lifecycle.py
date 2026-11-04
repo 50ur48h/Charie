@@ -454,7 +454,7 @@ async def _charge(
         run_id=run_id,
         role=role,  # type: ignore[arg-type]
         tier="strong",
-        provider="openai",
+        provider="meta",
         model=model,
         usage=Usage(
             input_tokens=input_tokens,

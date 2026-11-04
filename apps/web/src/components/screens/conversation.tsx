@@ -25,6 +25,7 @@ import {
   type Run,
 } from "@/lib/api-client";
 import { useSession } from "@/lib/auth/session";
+import { useModelChoice } from "@/lib/models";
 import { cn } from "@/lib/utils";
 
 /** How often a live run is asked how it is getting on. */
@@ -273,6 +274,8 @@ export function ConversationThread({
   const reconciled = useRef<string | null>(null);
 
   const api = useMemo(() => createApi(session.getToken), [session.getToken]);
+  const modelChoice = useModelChoice(api, orgId);
+  const chosenModel = modelChoice.model;
 
   const loadThread = useCallback(async () => {
     try {
@@ -350,7 +353,7 @@ export function ConversationThread({
       setPendingQuestion(question);
       setError(null);
       try {
-        const accepted = await api.ask(orgId, conversationId, question, key);
+        const accepted = await api.ask(orgId, conversationId, question, key, chosenModel ?? undefined);
         await loadThread();
         // The thread now holds the question itself, so the faint copy goes.
         setPendingQuestion(null);
@@ -364,7 +367,7 @@ export function ConversationThread({
         setPendingQuestion(null);
       }
     },
-    [api, orgId, conversationId, loadThread],
+    [api, orgId, conversationId, loadThread, chosenModel],
   );
 
   const send = useCallback(async () => {
@@ -517,6 +520,7 @@ export function ConversationThread({
             onSend={() => void send()}
             sending={sending}
             inputRef={composer}
+            model={modelChoice}
             onAttach={() =>
               toast("Documents live in Knowledge, where Charie reads them before it queries.", {
                 action: { label: "Open Knowledge", onClick: () => router.push(`/orgs/${orgId}/documents`) },

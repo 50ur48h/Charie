@@ -2,7 +2,7 @@
 
 ### Your data and business analyst. A clearer plan for what to do next.
 
-[What you can do](#what-you-can-do) · [How it works](#how-charie-works) · [Run it locally](#run-charie-locally)
+[What you can do](#what-you-can-do) · [How it works](#how-charie-works) · [Meta models](#how-meta-models-are-used) · [Try it in one command](#try-charie-in-one-command) · [Run it locally](#run-charie-locally)
 
 It's Monday morning. You need to order stock, choose this week's promotion, and work out why sales slowed down. You have the records, but you still don't know where to start.
 
@@ -70,27 +70,62 @@ These checks help catch mistakes; they do not guarantee that every query or busi
 
 ## How Meta models are used
 
-Charie supports Meta models through the Meta Model API. The setup below uses Muse Spark for every step, matching the working Railway configuration:
+Every model Charie calls at runtime is a Meta model, through the [Meta Model API](https://dev.meta.ai/). The code has no other model provider and no embedding model: tables and documents are searched by their wording.
 
-- **Muse Spark (`muse-spark-1.3`)** handles the full investigation: understanding your question, planning checks, preparing queries, reviewing results, and explaining the findings.
-- **Muse Wonder (`muse-wonder-1.0`)** is an optional model for investigation tasks when your Meta account has access. Confirm that access before changing the model and its price settings.
+| Model | API id | Where it is used |
+| --- | --- | --- |
+| **Muse Spark 1.3** | `muse-spark-1.3` | The default for every step of every question. |
+| **Muse Wonder 1.0** | `muse-wonder-1.0` | Optional, picked per question in the box where you type. Meta lists it as a preview, priced at about four times Muse Spark. |
 
-The work is split into focused steps:
+Each question is investigated in separate model calls, one job each:
 
-| Step | What the model helps with |
-| --- | --- |
-| **Understand** | Work out the question, the time period, and the business measures involved. |
-| **Plan** | Decide which checks would help answer it. |
-| **Query** | Prepare queries using the tables and business rules supplied by Charie. |
-| **Reflect** | Read the results and decide what needs checking next. |
-| **Review** | Look for gaps, conflicting findings, and conclusions that go beyond the evidence. |
-| **Explain** | Turn the findings into a clear answer with useful visuals. |
+| Step | Role | What the model does |
+| --- | --- | --- |
+| **Understand** | `intake` | Work out the question, the time period, and the business measures involved. |
+| **Plan** | `plan` | Decide which checks would help answer it. |
+| **Query** | `sql` | Write the SQL, using the tables and business rules Charie supplies. |
+| **Reflect** | `observe` | Read the results and decide what needs checking next. |
+| **Review** | `critic` | Look for gaps, conflicting findings, and conclusions that go beyond the evidence. |
+| **Explain** | `compose` | Turn the findings into a clear answer with visuals. |
 
-These are separate calls with different jobs. Charie assigns them to the configured model, so understanding a question, investigating it, and reviewing the answer each get their own instructions and context.
+**Seeing the calls happen.** Open **Thinking** above an answer while it runs. Every Meta model call appears as its own step, marked **Meta**, as soon as it returns, for example:
 
-Charie controls the database connection, permissions, query checks, and run limits. It gives the model relevant business context and returned results, and records the work behind the answer.
+> **Muse Spark planned the checks** `Meta`
+> Live call to the Meta Model API (muse-spark-1.3) · 2.4 s · 3,120 tokens in, 410 out.
 
-The app runs on your machine; model requests go to the Meta Model API. Relevant schema details, document excerpts, and query results may be included in those requests.
+The finished answer counts its Meta model calls, the text under the question box names the model that will answer, and every call is also written to the usage ledger with its model, tokens, cost and time.
+
+The calls run from Charie's API container to `https://api.meta.ai/v1` with your `META_API_KEY`. Charie controls the database connection, permissions, query checks, and run limits. Relevant schema details, document excerpts, and query results may be included in the requests.
+
+## Try Charie in one command
+
+Everything needed for the demo is in this repository. You need [Docker Desktop](https://docs.docker.com/get-started/get-docker/) and a [Meta Model API key](https://dev.meta.ai/) with API billing enabled. No other key or password is needed.
+
+1. Get the project and add your key:
+
+   ```bash
+   git clone https://github.com/50ur48h/Charie.git
+   cd Charie
+   cp .env.example .env
+   ```
+
+   Open `.env` and set `META_API_KEY=` to your key. Never commit `.env`.
+
+2. Start it:
+
+   ```bash
+   docker compose up --build
+   ```
+
+   The first start builds the image, sets up Charie's own database and connects the demo database, which takes a few minutes. It is ready when the log shows `Ready`.
+
+3. Open http://localhost:3000 and sign in with any name (**demo** is filled in). Everyone lands in the "Charie demo" organization with the demo database already connected. Ask a question, for example:
+
+   > Which restaurants grew fastest in 2025, and what drove it?
+
+**The demo data** is a hosted PostgreSQL database on Neon with synthetic food-delivery data: restaurants, menus, orders, deliveries and suppliers. `docker-compose.yml` connects to it with a read-only login that is published on purpose; Charie checks that it cannot write before using it.
+
+Stop with `docker compose down`. Add `-v` to also delete Charie's local data and start fresh.
 
 ## Run Charie locally
 
@@ -129,13 +164,13 @@ Open `.env` in a text editor. Replace the matching settings with the block below
 META_API_KEY=paste_your_meta_key_here
 LLM_PROVIDERS=meta
 LLM_MODELS={"meta":{"small":"muse-spark-1.3","mid":"muse-spark-1.3","strong":"muse-spark-1.3"}}
-LLM_PRICES={"muse-spark-1.3":{"input":1.25,"output":4.25}}
+LLM_SELECTABLE_MODELS=muse-spark-1.3,muse-wonder-1.0
+LLM_PRICES={"muse-spark-1.3":{"input":1.25,"output":4.25},"muse-wonder-1.0":{"input":4.00,"output":20.00}}
 META_REASONING_EFFORT=minimal
-LLM_RUN_COST_LIMIT_USD=2.00
-EMBEDDINGS_MODEL=
+LLM_RUN_COST_LIMIT_USD=5.00
 ```
 
-This uses Muse Spark for every analysis step, sets a per-question spending limit, and uses wording-based search to find relevant tables and documents. The price entries are USD per million tokens; check [Meta's pricing](https://dev.meta.ai/docs/pricing-rate-limits) if you change the model.
+This uses Muse Spark for every analysis step, lets you switch a question to Muse Wonder, sets a per-question spending limit, and uses wording-based search to find relevant tables and documents. The price entries are USD per million tokens; check [Meta's pricing](https://dev.meta.ai/docs/pricing-rate-limits) if you change the model.
 
 Leave the other settings as they are for this first setup. Keep `.env` private.
 

@@ -6,7 +6,7 @@ import httpx
 
 from charie.config import Settings, get_settings
 from charie.llm.base import LLMError
-from charie.llm.openai import OpenAIProvider
+from charie.llm.responses import ResponsesProvider
 
 __all__ = ["BASE_URL", "MetaProvider"]
 
@@ -14,7 +14,7 @@ __all__ = ["BASE_URL", "MetaProvider"]
 BASE_URL = "https://api.meta.ai/v1"
 
 
-class MetaProvider(OpenAIProvider):
+class MetaProvider(ResponsesProvider):
     """The Responses client, aimed at the Meta Model API."""
 
     def __init__(
@@ -30,7 +30,6 @@ class MetaProvider(OpenAIProvider):
             api_key=api_key if api_key is not None else _key_from(resolved),
             base_url=base_url,
             client=client,
-            settings=resolved,
             name="meta",
             reasoning_effort=resolved.meta_reasoning_effort,
         )

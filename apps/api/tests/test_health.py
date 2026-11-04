@@ -32,7 +32,7 @@ async def test_healthz_is_degraded_when_the_mode_cannot_be_served() -> None:
             oidc_authority=None,
             secrets_backend="local",
             local_secrets_key=SecretStr("x"),
-            llm_models={"openai": {"small": "s", "mid": "m", "strong": "l"}},
+            llm_models={"meta": {"small": "s", "mid": "m", "strong": "l"}},
         )
     )
 
@@ -83,7 +83,7 @@ async def test_a_degraded_probe_names_variables_and_never_values() -> None:
             artifacts_backend="blob",
             artifacts_account_url=None,
             git_sha="testsha",
-            llm_models={"openai": {"small": "s", "mid": "m", "strong": "l"}},
+            llm_models={"meta": {"small": "s", "mid": "m", "strong": "l"}},
         )
     )
 
@@ -110,7 +110,7 @@ async def test_healthz_is_degraded_when_no_model_can_serve_a_run() -> None:
             oidc_authority="https://x.ciamlogin.com/t/v2.0",
             secrets_backend="local",
             local_secrets_key=SecretStr("x"),
-            llm_providers=("openai",),
+            llm_providers=("meta",),
             llm_models={},
         )
     )
@@ -134,8 +134,8 @@ async def test_healthz_is_degraded_when_one_provider_of_several_has_no_models() 
             oidc_authority="https://x.ciamlogin.com/t/v2.0",
             secrets_backend="local",
             local_secrets_key=SecretStr("x"),
-            llm_providers=("openai", "anthropic"),
-            llm_models={"openai": {"small": "s", "mid": "m", "strong": "l"}},
+            llm_providers=("meta", "meta-backup"),
+            llm_models={"meta": {"small": "s", "mid": "m", "strong": "l"}},
         )
     )
 
@@ -157,8 +157,8 @@ def _settings(**overrides: object) -> Settings:
         "auth_mode": "dev",
         "secrets_backend": "local",
         "local_secrets_key": SecretStr("x"),
-        "llm_providers": ("openai",),
-        "llm_models": {"openai": {"small": "s", "strong": "l"}},
+        "llm_providers": ("meta",),
+        "llm_models": {"meta": {"small": "s", "strong": "l"}},
     }
     base.update(overrides)
     return Settings(**base)  # pyright: ignore[reportArgumentType, reportCallIssue]

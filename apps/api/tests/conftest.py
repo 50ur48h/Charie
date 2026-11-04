@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import os
 import uuid
-from collections.abc import AsyncIterator, Callable, Generator, Iterator
+from collections.abc import AsyncIterator, Generator, Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -39,10 +39,7 @@ MAINTENANCE_DATABASE = "postgres"
 
 
 # --- No test may call a real model (B-040) ---
-# This is not hypothetical. A WP7.2c test called OpenAI for real and billed for two completions.
-
-#: The real factory, captured before the session fixture replaces it.
-_real_get_embedder = embeddings.get_embedder
+# This is not hypothetical. A WP7.2c test called a live provider and billed for two completions.
 
 #: Provider or embedder names a test used that were not stubs. Cleared per test.
 _live_provider_uses: list[str] = []
@@ -89,12 +86,6 @@ def forbid_live_providers() -> Iterator[None]:
 
 
 @pytest.fixture
-def embedder_factory() -> Callable[..., object]:
-    """``knowledge.embeddings.get_embedder`` as the product sees it, unguarded."""
-    return _real_get_embedder
-
-
-@pytest.fixture
 def expected_live_provider_refusal() -> Iterator[None]:
     """For the guard's own tests: this one meant to trip it."""
     yield
@@ -134,7 +125,7 @@ def settings() -> Settings:
         oidc_authority="https://tests.ciamlogin.com/tenant/v2.0",
         local_secrets_key=SecretStr(Fernet.generate_key().decode()),
         # The third thing that fixture was missing, for the same reason (B-126).
-        llm_models={"openai": {"small": "test-s", "mid": "test-m", "strong": "test-l"}},
+        llm_models={"meta": {"small": "test-s", "mid": "test-m", "strong": "test-l"}},
     )
 
 

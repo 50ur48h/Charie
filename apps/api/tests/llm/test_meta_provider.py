@@ -75,12 +75,6 @@ def test_no_key_fails_with_the_fix_in_the_message() -> None:
     assert not raised.value.retryable
 
 
-def test_an_openai_key_is_never_borrowed_for_meta() -> None:
-    """Two vendors' keys in one .env is the ordinary case once both exist."""
-    with pytest.raises(LLMError, match="META_API_KEY"):
-        MetaProvider(settings=build_settings(openai_api_key=SecretStr("sk-openai-test")))
-
-
 def test_the_provider_names_itself_meta_and_keeps_native_schemas() -> None:
     caps = MetaProvider(settings=meta_settings()).capabilities()
 
@@ -209,7 +203,7 @@ async def test_llm_providers_meta_reaches_meta_and_the_ledger_names_it(
 ) -> None:
     """``LLM_PROVIDERS=meta`` → registry → Meta's endpoint → a ledger row."""
     org_id = await _org(migrated_database)
-    settings = meta_settings(openai_api_key=SecretStr("sk-openai-test"))
+    settings = meta_settings()
     # The registry's factory builds the provider from process settings.
     monkeypatch.setattr(meta_module, "get_settings", lambda: settings)
 
@@ -226,7 +220,6 @@ async def test_llm_providers_meta_reaches_meta_and_the_ledger_names_it(
     sent = meta_wire[0]
     assert str(sent.url) == "https://api.meta.ai/v1/responses"
     assert sent.headers["authorization"] == "Bearer meta-test-key"
-    assert "sk-openai-test" not in str(sent.headers)
     body = json.loads(sent.content)
     assert body["model"] == WONDER
     assert body["instructions"].startswith("platform rules")

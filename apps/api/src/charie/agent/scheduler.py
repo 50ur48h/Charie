@@ -12,6 +12,7 @@ from sqlalchemy import text
 from charie.agent.runner import execute_run
 from charie.config import Settings
 from charie.datasources import service as datasources
+from charie.llm import registry
 from charie.orgs import service as orgs_service
 from charie.runs import service as runs
 from charie.tenancy.session import app_session
@@ -82,6 +83,7 @@ async def schedule_run(
     role: str = "reader",
     data_source_id: uuid.UUID | None = None,
     settings: Settings | None = None,
+    model: str | None = None,
 ) -> asyncio.Task[None]:
     """Start a queued run in the background and return immediately."""
     task = asyncio.create_task(
@@ -92,6 +94,7 @@ async def schedule_run(
             role=role,
             data_source_id=data_source_id,
             settings=settings,
+            model=model,
         )
     )
     _running.add(task)
@@ -112,6 +115,7 @@ async def _guarded(
     role: str,
     data_source_id: uuid.UUID | None,
     settings: Settings | None,
+    model: str | None = None,
 ) -> None:
     """Resolve the source, wait for a slot, run — and never raise into the loop."""
     try:
@@ -130,14 +134,15 @@ async def _guarded(
 
     async with _semaphore_for(org_id):
         try:
-            await execute_run(
-                org_id=org_id,
-                run_id=run_id,
-                data_source_id=resolved,
-                actor_user_id=actor_user_id,
-                role=role,
-                settings=settings,
-            )
+            with registry.use_model(model):
+                await execute_run(
+                    org_id=org_id,
+                    run_id=run_id,
+                    data_source_id=resolved,
+                    actor_user_id=actor_user_id,
+                    role=role,
+                    settings=settings,
+                )
         except Exception:
             # `execute_run` already ends the run on every path it knows about.
             logger.exception("run %s ended abnormally", run_id)

@@ -15,9 +15,12 @@ import { useSession } from "@/lib/auth/session";
 
 const card = "mx-auto w-full max-w-[400px] shadow-[0_10px_32px_rgba(var(--shadow-rgb),.08)]";
 
+/** The name dev sign-in suggests; the one-command demo bakes in its prepared user. */
+const SUGGESTED_SUBJECT = process.env.NEXT_PUBLIC_DEV_SUBJECT || "alice";
+
 export function SignIn() {
   const session = useSession();
-  const [subject, setSubject] = useState("alice");
+  const [subject, setSubject] = useState(SUGGESTED_SUBJECT);
 
   if (session.problems.length > 0) {
     return (
@@ -82,7 +85,7 @@ export function SignIn() {
           label="Who are you"
           value={subject}
           onChange={(event) => setSubject(event.target.value)}
-          placeholder="alice"
+          placeholder={SUGGESTED_SUBJECT}
           autoComplete="off"
           spellCheck={false}
         />
