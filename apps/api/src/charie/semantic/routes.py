@@ -193,9 +193,8 @@ class ImportIn(BaseModel):
     caveat_column: str | None = Field(
         default=None,
         description=(
-            "A column saying what an answer using this metric must disclose. "
-            "MiseQ's `meta_data_quality.recommended_framing` is one: *never "
-            "label SUM(value_myr) as total restaurant waste cost*. Left "
+            "A column saying what an answer using this metric must disclose, "
+            "for example: never label this sum as the total cost. Left "
             "unmapped, imported definitions carry no caveat."
         ),
     )

@@ -77,7 +77,7 @@ async def api(
 
 
 async def _metric_table(customer: CustomerDatabase) -> None:
-    """The customer's own metric book, standing in for the F&B `meta_metric`."""
+    """The customer's own metric book, standing in for a customer `meta_metric` table."""
     engine = create_async_engine(customer.url)
     try:
         async with engine.begin() as connection:

@@ -334,7 +334,7 @@ def _with_inferred(*, read: list[str], offered: list[str]) -> ResearchState:
 
 
 def test_an_answer_built_on_a_measured_join_says_the_join_was_measured() -> None:
-    """`miseq` declares no foreign keys, so every join it offers was inferred."""
+    """A source with no declared foreign keys offers only inferred joins."""
     notes = limitations_for(
         _with_inferred(
             read=["public.fact_sale", "public.dim_outlet"],

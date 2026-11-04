@@ -179,7 +179,7 @@ describe("badgeLabel", () => {
   });
 
   it("does not claim enforcement a hollow filter is not delivering (B-171)", () => {
-    // `edible_waste` badged `enforced` over `edible_flag = 1` after MiseQ v6.7 made that column...
+    // A filter can be badged `enforced` while excluding nothing, once its column holds one value.
     const hollow = { ...BINDING, excluding_nothing: ["orders.status"] };
 
     expect(badgeLabel(hollow)).toBe("enforced, but currently excluding nothing");
