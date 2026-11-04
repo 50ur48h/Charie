@@ -119,7 +119,7 @@ Everything needed for the demo is in this repository. You need [Docker Desktop](
 
    The first start builds the image, sets up Charie's own database and connects the demo database, which takes a few minutes. It is ready when the log shows `Ready`.
 
-3. Open http://localhost:3000, sign in as **demo** (already filled in) and ask a question, for example:
+3. Open http://localhost:3000 and sign in with any name (**demo** is filled in). Everyone lands in the "Charie demo" organization with the demo database already connected. Ask a question, for example:
 
    > Which restaurants grew fastest in 2025, and what drove it?
 

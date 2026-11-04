@@ -30,6 +30,8 @@ services:
     environment:
       # Migrate, create the encryption key, and connect the demo database on first start.
       CHARIE_BOOTSTRAP: "1"
+      # Whoever signs in, under any name, joins this organization and its demo database.
+      DEMO_ORG: Charie demo
       DATABASE_URL: postgresql+asyncpg://charie:charie_demo_local_only@db:5432/charie
       APP_DB_PASSWORD: charie_app_demo_local_only
       APP_DATABASE_URL: postgresql+asyncpg://charie_app:charie_app_demo_local_only@db:5432/charie

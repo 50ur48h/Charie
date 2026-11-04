@@ -271,6 +271,13 @@ class Settings(BaseSettings):
             "models in LLM_MODELS and a key in its own variable. Charie ships `meta`."
         ),
     )
+    demo_org: str | None = Field(
+        default=None,
+        description=(
+            "One-command demo only: everyone who signs in joins this organization as an "
+            "Admin. Ignored in a production build or environment."
+        ),
+    )
     llm_selectable_models: Annotated[tuple[str, ...], NoDecode] = Field(
         default=(),
         description=(

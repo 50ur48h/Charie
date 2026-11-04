@@ -9,9 +9,10 @@ import sys
 import uuid
 
 from charie.db import grant_app_login
+from charie.orgs.service import demo_org_id
 
-#: The organization and the user the demo signs in as; dev sign-in suggests this name.
-ORG_NAME = os.environ.get("DEMO_ORG_NAME", "Charie demo")
+#: The organization everyone joins on sign-in (DEMO_ORG), and the user sign-in suggests.
+ORG_NAME = os.environ.get("DEMO_ORG") or "Charie demo"
 DEMO_SUBJECT = os.environ.get("DEMO_USER", "demo")
 
 
@@ -29,17 +30,11 @@ async def _ensure_org_and_user() -> tuple[uuid.UUID, uuid.UUID]:
     engine = build_engine()
     try:
         async with engine.begin() as connection:
-            org_id = (
-                await connection.execute(
-                    text("SELECT id FROM organizations WHERE name = :n"), {"n": ORG_NAME}
-                )
-            ).scalar_one_or_none()
-            if org_id is None:
-                org_id = uuid.uuid4()
-                await connection.execute(
-                    text("INSERT INTO organizations (id, name) VALUES (:i, :n)"),
-                    {"i": org_id, "n": ORG_NAME},
-                )
+            org_id = demo_org_id(ORG_NAME)
+            await connection.execute(
+                text("INSERT INTO organizations (id, name) VALUES (:i, :n) ON CONFLICT DO NOTHING"),
+                {"i": org_id, "n": ORG_NAME},
+            )
             user_id = (
                 await connection.execute(
                     text("SELECT id FROM users WHERE external_subject = :s"), {"s": DEMO_SUBJECT}

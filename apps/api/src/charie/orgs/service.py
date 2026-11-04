@@ -9,6 +9,7 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from charie.auth.principal import Principal
+from charie.config import Settings
 from charie.db.models import AuditLog, DataSource, Organization, OrgMembership, User
 from charie.tenancy.session import app_session, org_session
 
@@ -85,6 +86,33 @@ async def ensure_user(principal: Principal) -> User:
         await session.commit()
         await session.refresh(user)
         return user
+
+
+def demo_org_id(name: str) -> uuid.UUID:
+    """The demo organization's id, derived from its name so the bootstrap and the API agree."""
+    return uuid.uuid5(uuid.NAMESPACE_URL, f"https://charie.demo/org/{name}")
+
+
+async def join_demo_org(user: User, settings: Settings) -> None:
+    """In the one-command demo, whoever signs in joins the demo organization."""
+    if not settings.demo_org or settings.is_production:
+        return
+    org_id = demo_org_id(settings.demo_org)
+    async with org_session(org_id) as session:
+        org = (
+            await session.execute(select(Organization.id).where(Organization.id == org_id))
+        ).scalar_one_or_none()
+        if org is None:
+            return
+        member = (
+            await session.execute(
+                select(OrgMembership.user_id).where(
+                    OrgMembership.org_id == org_id, OrgMembership.user_id == user.id
+                )
+            )
+        ).scalar_one_or_none()
+        if member is None:
+            session.add(OrgMembership(org_id=org_id, user_id=user.id, role=ROLE_ADMIN))
 
 
 async def memberships_for(user_id: uuid.UUID) -> list[Membership]:
