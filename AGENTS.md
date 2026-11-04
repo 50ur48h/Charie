@@ -60,8 +60,8 @@ MERGE_POLICY: ASK
 - The GitHub repository is public: https://github.com/50ur48h/Charie.
 - Never commit secrets. Real credentials stay in local .env or a secret store;
   .env.example contains placeholders and documents runtime configuration.
-- Exception: docker-compose.yml publishes the read-only login to the synthetic demo
-  database on purpose, so judges can run the demo with only a Meta API key.
+- Exception: apps/api/src/charie/ops/bootstrap.py publishes the read-only login to the
+  synthetic demo database on purpose, so the image runs with only a Meta API key.
 - Customer databases, dictionaries, derived findings and diagnostic artifacts
   belong under gitignored .SampleData/. Never publish identifying information.
 - Check quoted literals in SQL/view definitions and fixtures as well as data rows.

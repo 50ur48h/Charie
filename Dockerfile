@@ -48,15 +48,41 @@ ENV GIT_SHA=${GIT_SHA} \
     ENV=dev \
     AUTH_MODE=dev \
     DEV_ISSUER_URL=http://127.0.0.1:8000/dev \
-    LOCAL_SECRETS_PATH=/app/ops/.secrets/secrets.json \
-    ARTIFACTS_PATH=/app/ops/artifacts \
     NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \
     PORT=3000 \
     HOSTNAME=0.0.0.0 \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PATH="/app/.venv/bin:${PATH}"
+    PATH="/app/.venv/bin:/usr/lib/postgresql/16/bin:${PATH}"
+
+# Everything but META_API_KEY is built in: set up on start, Meta models only, the demo joined.
+ENV CHARIE_BOOTSTRAP=1 \
+    DEMO_ORG="Charie demo" \
+    LLM_PROVIDERS=meta \
+    LLM_SELECTABLE_MODELS=muse-spark-1.3,muse-wonder-1.0 \
+    LLM_RUN_COST_LIMIT_USD=5.00 \
+    META_REASONING_EFFORT=minimal
+ENV LLM_MODELS='{"meta":{"small":"muse-spark-1.3","mid":"muse-spark-1.3","strong":"muse-spark-1.3"}}'
+ENV LLM_ROLE_MAP='{"compose":"small"}'
+ENV LLM_PRICES='{"muse-spark-1.3":{"input":1.25,"output":4.25},"muse-wonder-1.0":{"input":4.00,"output":20.00}}'
+
+# Charie's own database, used when no DATABASE_URL is given; JIT (LLVM) is left out.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates curl gnupg \
+    && install -d /usr/share/postgresql-common/pgdg /etc/postgresql-common \
+    && curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+        -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+    && echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt bookworm-pgdg main" \
+        > /etc/apt/sources.list.d/pgdg.list \
+    && echo "create_main_cluster = false" > /etc/postgresql-common/createcluster.conf \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends postgresql-16 postgresql-16-pgvector \
+    && rm -rf /usr/lib/postgresql/16/lib/bitcode /usr/lib/postgresql/16/lib/llvmjit* \
+        /usr/lib/*/libLLVM* /usr/lib/*/libz3.so* \
+    && apt-get purge -y curl gnupg \
+    && apt-get autoremove -y \
+    && rm -rf /var/lib/apt/lists/*
 
 # The SQL Server driver, for customers on SQL Server.
 COPY apps/api/docker/install-odbc.sh /tmp/install-odbc.sh

@@ -1,4 +1,4 @@
-"""First start of the one-command demo: migrate, grant the app login, connect the demo source."""
+"""Set Charie up on start: migrate, grant the app login, and connect the built-in demo database."""
 
 from __future__ import annotations
 
@@ -66,35 +66,70 @@ async def _ensure_org_and_user() -> tuple[uuid.UUID, uuid.UUID]:
     return uuid.UUID(str(org_id)), uuid.UUID(str(user_id))
 
 
+#: The hosted sample database every Charie starts connected to: synthetic data, read-only login.
+DEMO_SOURCE = {
+    "name": "Food delivery demo",
+    "host": "ep-proud-boat-za4d26yl-pooler.c-2.eu-west-2.aws.neon.tech",
+    "port": "5432",
+    "database": "datamind-db",
+    "username": "datamind-db_readonly",
+    "password": "TT284Cy_lwnKvLjPUukGWXGXQvN5q31C",
+}
+
+
+def _demo(key: str) -> str:
+    """The demo source's setting, unless DEMO_SOURCE_<KEY> overrides it."""
+    return _env(f"DEMO_SOURCE_{key.upper()}") or DEMO_SOURCE[key]
+
+
+async def _has_catalog(org_id: uuid.UUID, data_source_id: uuid.UUID) -> bool:
+    from charie.catalog import browse
+
+    try:
+        await browse.active_catalog(org_id, data_source_id)
+    except browse.NoCatalogError:
+        return False
+    return True
+
+
 async def _connect_demo_source(org_id: uuid.UUID, user_id: uuid.UUID) -> bool:
-    """Register the demo database once, prove it read-only, and build its catalog."""
+    """Connect the demo database, prove it read-only, and read its structure once."""
     from charie.catalog import discovery, profiler
     from charie.datasources import service as datasources
     from charie.orgs import service as orgs
 
-    host = _env("DEMO_SOURCE_HOST")
-    password = _env("DEMO_SOURCE_PASSWORD")
-    if host is None or password is None:
-        print("bootstrap: no demo source configured; connect one from the app")
+    if _env("CHARIE_DEMO_SOURCE") == "0":
+        print("bootstrap: demo source turned off; connect a database from Settings")
         return True
-    name = _env("DEMO_SOURCE_NAME") or "Demo data"
+    name = _demo("name")
+    host, port, database = _demo("host"), int(_demo("port")), _demo("database")
+    username, password = _demo("username"), _demo("password")
 
     existing = {source.name: source for source in await datasources.list_data_sources(org_id)}
     if name in existing:
-        print(f"bootstrap: demo source {name!r} already connected")
-        return True
-
-    view = await datasources.create_data_source(
-        org_id=org_id,
-        actor_user_id=user_id,
-        name=name,
-        engine="pg",
-        host=host,
-        port=int(_env("DEMO_SOURCE_PORT") or "5432"),
-        database=_env("DEMO_SOURCE_DATABASE") or "postgres",
-        username=_env("DEMO_SOURCE_USER") or "postgres",
-        password=password,
-    )
+        # Saved again each start, so a new encryption key or address never strands the demo.
+        view = await datasources.update_data_source(
+            org_id=org_id,
+            actor_user_id=user_id,
+            data_source_id=existing[name].id,
+            host=host,
+            port=port,
+            database=database,
+            username=username,
+            password=password,
+        )
+    else:
+        view = await datasources.create_data_source(
+            org_id=org_id,
+            actor_user_id=user_id,
+            name=name,
+            engine="pg",
+            host=host,
+            port=port,
+            database=database,
+            username=username,
+            password=password,
+        )
     health = await datasources.test_data_source(
         org_id=org_id, actor_user_id=user_id, data_source_id=view.id
     )
@@ -102,33 +137,57 @@ async def _connect_demo_source(org_id: uuid.UUID, user_id: uuid.UUID) -> bool:
     if not health.readonly_verified:
         print(f"bootstrap: demo source refused: {health.detail}", file=sys.stderr)
         return False
-    found = await discovery.discover(
-        org_id=org_id, actor_user_id=user_id, data_source_id=view.id, embedder=None
-    )
-    print(f"bootstrap: discovery: {found.detail}")
-    profiled = await profiler.profile(
-        org_id=org_id, actor_user_id=user_id, data_source_id=view.id, embedder=None
-    )
-    print(f"bootstrap: profiling: {profiled.detail}")
-    # New chats in the demo are about this database without anyone choosing it.
-    await orgs.set_active_data_source(org_id=org_id, actor_user_id=user_id, data_source_id=view.id)
+    if await _has_catalog(org_id, view.id):
+        print(f"bootstrap: {name!r} is ready")
+    else:
+        found = await discovery.discover(
+            org_id=org_id, actor_user_id=user_id, data_source_id=view.id, embedder=None
+        )
+        print(f"bootstrap: discovery: {found.detail}")
+        profiled = await profiler.profile(
+            org_id=org_id, actor_user_id=user_id, data_source_id=view.id, embedder=None
+        )
+        print(f"bootstrap: profiling: {profiled.detail}")
+    active = await orgs.active_data_source(org_id)
+    if active.data_source_id is None:
+        # New chats are about this database without anyone choosing it.
+        await orgs.set_active_data_source(
+            org_id=org_id, actor_user_id=user_id, data_source_id=view.id
+        )
+    print(f"bootstrap: {name!r} ready to answer questions")
     return True
 
 
-async def _provision() -> bool:
-    org_id, user_id = await _ensure_org_and_user()
-    print(f"bootstrap: organization {ORG_NAME!r}, sign in as {DEMO_SUBJECT!r}")
-    return await _connect_demo_source(org_id, user_id)
-
-
-def main() -> int:
+def prepare() -> int:
+    """Before the app serves: the schema, charie_app's login, and the demo organization."""
     migrated = subprocess.run(["alembic", "upgrade", "head"], check=False)  # noqa: S607
     if migrated.returncode != 0:
         return migrated.returncode
     if asyncio.run(grant_app_login.grant()) != 0:
         return 1
-    return 0 if asyncio.run(_provision()) else 1
+    asyncio.run(_ensure_org_and_user())
+    print(f"bootstrap: organization {ORG_NAME!r} ready; anyone who signs in joins it")
+    return 0
+
+
+async def _demo_source() -> bool:
+    org_id, user_id = await _ensure_org_and_user()
+    return await _connect_demo_source(org_id, user_id)
+
+
+def demo() -> int:
+    """While the app serves: connect the demo database. Minutes the first time, seconds after."""
+    return 0 if asyncio.run(_demo_source()) else 1
+
+
+def main(argv: list[str]) -> int:
+    step = argv[1] if len(argv) > 1 else "all"
+    if step == "prepare":
+        return prepare()
+    if step == "demo":
+        return demo()
+    return prepare() or demo()
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(main(sys.argv))
