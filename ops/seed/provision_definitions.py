@@ -1,6 +1,6 @@
 """Load a file of metric definitions into a registered data source.
 
-    make seed.definitions FILE=ops/seed/miseq_definitions.json SOURCE="MiseQ v6.4"
+    make seed.definitions FILE=path/to/definitions.json SOURCE="<data source name>"
 
 Runs **inside the api container**, for `provision_demo.py`'s reason: writing a
 definition validates its `required_filters` against the catalog, which means

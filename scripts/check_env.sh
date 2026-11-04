@@ -97,11 +97,8 @@ ENV | Compose sets `ENV: local` literally, because a stack of containers on some
 ARTIFACTS_PATH | The container writes to `/app/ops/ops/artifacts` only because a bind mount puts the host directory there. Passing a host path would move the setting and not the mount, and query results would land somewhere nothing is watching.
 LOCAL_SECRETS_PATH | Same shape: compose points the API at `/app/ops/.secrets/secrets.json`, which is the host file through a mount. The host value is a host path.
 SEED_PIZZA_HOST | `localhost` for tools run on the host. Inside the network the database is `seed-pizza-pg`, which the seed service already knows.
-SEED_FNB_HOST | The same for the F&B seed database.
 SEED_PIZZA_READONLY_USER | The read-only login `make seed` creates and a person types into the data-source form. No container reads it; the API receives it through the API, encrypted, like any customer credential.
 SEED_PIZZA_READONLY_PASSWORD | As above.
-SEED_FNB_READONLY_USER | As above, for the F&B seed.
-SEED_FNB_READONLY_PASSWORD | As above.
 MSSQL_DB | Read by `ops/scripts/seed_mssql.sh`, which runs on the host against the on-demand SQL Server container.
 MSSQL_PIZZA_READONLY_USER | Created by that seed script and typed into the data-source form, exactly like the Postgres read-only login.
 MSSQL_PIZZA_READONLY_PASSWORD | As above.

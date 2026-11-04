@@ -49,30 +49,6 @@ services:
       retries: 20
       start_period: 10s
 
-  # A second stand-in customer database, and a deliberately *unlike* one: the
-  # pizza fixture is a schema this project designed, so it flatters every part of
-  # the product that reads a schema. This one is a real F&B operator's warehouse
-  # loaded verbatim from the SQLite file they shipped — star schema, `v_*` views,
-  # bridge and map and meta tables, and eight tables that are empty because the
-  # business does not collect that yet. `make seed.fnb` fills it.
-  seed-fnb-pg:
-    profiles: ["test-fixtures"]
-    image: postgres:16
-    environment:
-      POSTGRES_DB: ${SEED_FNB_DB:-fnb}
-      POSTGRES_USER: ${SEED_FNB_USER:-fnb}
-      POSTGRES_PASSWORD: ${SEED_FNB_PASSWORD:-local_fixture_only}
-    ports:
-      - "${SEED_FNB_PORT:-6544}:5432"
-    volumes:
-      - seed-fnb-data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${SEED_FNB_USER:-fnb} -d ${SEED_FNB_DB:-fnb}"]
-      interval: 5s
-      timeout: 5s
-      retries: 20
-      start_period: 10s
-
   api:
     build:
       context: ../apps/api
@@ -272,5 +248,4 @@ services:
 volumes:
   platform-pg-data:
   seed-pizza-data:
-  seed-fnb-data:
   mssql-data:

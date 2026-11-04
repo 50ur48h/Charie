@@ -9,6 +9,9 @@ under "Unreleased", only for changes a user would notice.
 
 ## [Unreleased]
 
+- Removed the F&B/MiseQ sample database and its tooling (`make seed.fnb`,
+  `make db.firewall.*`) and their settings; the pizza sample remains for tests.
+
 - Simplified public documentation to the README and architecture; removed
   internal planning files and their document-preservation checks.
 
