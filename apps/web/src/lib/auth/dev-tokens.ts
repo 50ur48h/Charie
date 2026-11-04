@@ -13,7 +13,8 @@ export interface DevIdentity {
 export class DevTokenRefused extends Error {}
 
 export async function mintDevToken(subject: string): Promise<DevIdentity> {
-  const url = new URL(`${apiBaseUrl()}/dev/token`);
+  // A relative API address (the single image's /api) resolves against this page.
+  const url = new URL(`${apiBaseUrl()}/dev/token`, window.location.origin);
   url.searchParams.set("sub", subject);
   url.searchParams.set("email", `${subject}@example.com`);
 

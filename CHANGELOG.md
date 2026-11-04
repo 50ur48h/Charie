@@ -9,6 +9,9 @@ under "Unreleased", only for changes a user would notice.
 
 ## [Unreleased]
 
+- Charie now ships as one image, `ghcr.io/50ur48h/charie`, with the web app and API
+  together; the browser reaches the API at `/api`. README covers deploying it on Railway.
+
 - Removed the customer sample database and its tooling (`make seed.fnb`,
   `make db.firewall.*`) and their settings; the pizza sample remains for tests.
 

@@ -201,6 +201,31 @@ Register your PostgreSQL or Microsoft SQL Server database through the same scree
 
 Add your team's definitions under **Settings → Definitions** and business documents under **Knowledge**. This helps Charie understand the meaning behind your numbers.
 
+## Deploy on Railway
+
+Charie ships as one image, `ghcr.io/50ur48h/charie:latest`, published by the **publish-images** workflow (Actions → publish-images → Run workflow). Each run also tags the commit, for example `charie:029dd2e`.
+
+The image runs the web app on `$PORT` and the API inside the same container. The browser reaches the API at `/api` on the same address, so there is no separate API URL to configure.
+
+1. **Database.** Add a PostgreSQL service with the `pgvector` extension available.
+2. **Service.** Create a service from the image. Remove any custom start command so the image's own start script runs. Set the health check path to `/api/healthz`.
+3. **Variables.** Set these on the service:
+   - `APP_DATABASE_URL`: `postgresql+asyncpg://charie_app:<app password>@<host>:<port>/<db>`
+   - `LOCAL_SECRETS_KEY`: a key from `make secrets.key`
+   - `META_API_KEY` and the `LLM_*` settings from `.env.example`
+4. **Volume.** Mount a volume at `/app/ops` so saved connections (`/app/ops/.secrets`) and query results (`/app/ops/artifacts`) survive redeploys.
+5. **First deploy only.** Open a shell on the service and run, with the owner connection:
+
+   ```bash
+   DATABASE_URL=postgresql+asyncpg://<owner>:<password>@<host>:<port>/<db> \
+   APP_DB_PASSWORD=<app password> \
+   sh -c 'alembic upgrade head && python -m charie.db.grant_app_login'
+   ```
+
+   Run `alembic upgrade head` again after upgrading to an image with new migrations.
+
+**Sign-in.** The image uses development sign-in: anyone who can open the URL can sign in by typing a name. Keep the URL private until real sign-in is added.
+
 ## For developers
 
 - [Architecture](docs/architecture.md) — system design and data boundaries.
