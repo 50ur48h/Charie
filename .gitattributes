@@ -1,7 +1,4 @@
-# Normalize to LF in the repository, and check out LF for anything that is read
-# by a Linux container or a POSIX shell. The build happens on Windows hosts
-# (core.autocrlf=true), so without this a CRLF `scripts/*.sh` fails inside the
-# api image with "bad interpreter: /usr/bin/env bash^M".
+# Normalize to LF in the repository.
 * text=auto eol=lf
 
 *.sh            text eol=lf

@@ -1,13 +1,4 @@
-"""The live tail of a trace, and what it guarantees (architecture 10.3).
-
-The properties here are all about *delivery*, because the content is settled
-elsewhere: `agent_events` is the source of truth and `read_events` is the reader,
-so a streaming test that asserted on payloads would be re-testing WP7.1.
-
-What is worth holding is that a client can leave and come back without losing
-anything, that a stream ends when its run does, and that "who may read this" is
-answered before a byte is sent.
-"""
+"""The live tail of a trace, and what it guarantees (architecture 10.3)."""
 
 from __future__ import annotations
 
@@ -57,15 +48,11 @@ def _payloads(frames: list[str]) -> list[dict[str, object]]:
     return found
 
 
-# ---------------------------------------------------------------------------
-# The frame
-# ---------------------------------------------------------------------------
+# --- The frame ---
 
 
 async def test_a_frame_carries_the_sequence_number_as_its_id(tenant: Tenant) -> None:
-    """`id:` is what makes reconnection work at all — the browser sends it back
-    as `Last-Event-ID`, and a frame without one is a frame a client cannot resume
-    from."""
+    """`id:` is what makes reconnection work at all."""
     run_id = await _conversation_and_run(tenant)
     writer = EventWriter(org_id=tenant.org_id, run_id=run_id)
     await writer.emit("plan_created", {"purpose": "count"})
@@ -78,14 +65,11 @@ async def test_a_frame_carries_the_sequence_number_as_its_id(tenant: Tenant) -> 
     assert frame.endswith("\n\n"), "an SSE frame is terminated by a blank line"
 
 
-# ---------------------------------------------------------------------------
-# Leaving and coming back
-# ---------------------------------------------------------------------------
+# --- Leaving and coming back ---
 
 
 async def test_a_stream_replays_everything_before_it_follows(tenant: Tenant) -> None:
-    """Replay is the default, not a recovery path: connect and reconnect are the
-    same operation, so there is no window in which an event can be missed."""
+    """Replay is the default, not a recovery path: connect and reconnect are the same operation."""
     run_id = await _conversation_and_run(tenant)
     writer = EventWriter(org_id=tenant.org_id, run_id=run_id)
     await writer.emit("run_started", {"question": "How many orders?"})
@@ -128,8 +112,7 @@ async def test_a_reconnect_resumes_from_where_it_left_off(tenant: Tenant) -> Non
 
 
 async def test_the_browsers_own_bookmark_is_honoured(tenant: Tenant) -> None:
-    """`EventSource` reconnects on its own and sends `Last-Event-ID`. Answering it
-    is what makes a dropped connection recover without the page doing anything."""
+    """`EventSource` reconnects on its own and sends `Last-Event-ID`."""
     run_id = await _conversation_and_run(tenant)
     writer = EventWriter(org_id=tenant.org_id, run_id=run_id)
     await writer.emit("run_started", {"question": "q"})
@@ -153,8 +136,7 @@ async def test_the_browsers_own_bookmark_is_honoured(tenant: Tenant) -> None:
 
 
 async def test_a_malformed_bookmark_replays_rather_than_refusing(tenant: Tenant) -> None:
-    """It arrives from a reconnecting browser. The worst outcome of ignoring it is
-    a replay the client already has; refusing would break reconnection entirely."""
+    """It arrives from a reconnecting browser."""
     run_id = await _conversation_and_run(tenant)
     writer = EventWriter(org_id=tenant.org_id, run_id=run_id)
     await writer.emit("run_started", {"question": "q"})
@@ -174,17 +156,11 @@ async def test_a_malformed_bookmark_replays_rather_than_refusing(tenant: Tenant)
     assert "run_started" in [payload["type"] for payload in _payloads(frames)]
 
 
-# ---------------------------------------------------------------------------
-# Ending
-# ---------------------------------------------------------------------------
+# --- Ending ---
 
 
 async def test_the_stream_ends_when_the_run_does(tenant: Tenant) -> None:
-    """Otherwise a client holds a socket open on a run that finished an hour ago.
-
-    Asserted by the generator *completing* rather than by counting frames: a
-    stream that ends is the property, and a timeout here would mean it does not.
-    """
+    """Otherwise a client holds a socket open on a run that finished an hour ago."""
     run_id = await _conversation_and_run(tenant)
     await service.transition(org_id=tenant.org_id, run_id=run_id, status="running")
     await service.transition(org_id=tenant.org_id, run_id=run_id, status="completed")
@@ -206,12 +182,7 @@ async def test_the_stream_ends_when_the_run_does(tenant: Tenant) -> None:
 
 
 async def test_an_event_written_as_the_run_ends_is_still_delivered(tenant: Tenant) -> None:
-    """The ordering trap, pinned.
-
-    The status is read *before* the final read of the table. Reading it after
-    would drop any event written between the two — in practice `run_finished`
-    itself, which is the one event a client is waiting for.
-    """
+    """The ordering trap, pinned."""
     run_id = await _conversation_and_run(tenant)
     await service.transition(org_id=tenant.org_id, run_id=run_id, status="running")
 
@@ -257,15 +228,11 @@ async def test_a_stream_that_outlives_its_limit_stops_itself(tenant: Tenant) -> 
     assert frames[-1].startswith(": "), "it says why it stopped, as an SSE comment"
 
 
-# ---------------------------------------------------------------------------
-# Who may read it
-# ---------------------------------------------------------------------------
+# --- Who may read it ---
 
 
 async def test_a_colleague_cannot_stream_your_run(tenant: Tenant) -> None:
-    """The same ownership rule the poll enforces, and enforced *before* the first
-    frame — a 404 delivered as an empty 200 stream is not a refusal anyone can
-    see."""
+    """The same ownership rule the poll enforces, and enforced before the first frame."""
     run_id = await _conversation_and_run(tenant)
 
     with pytest.raises(service.NotFoundError):
@@ -279,17 +246,11 @@ async def test_a_colleague_cannot_stream_your_run(tenant: Tenant) -> None:
         )
 
 
-# ---------------------------------------------------------------------------
-# One URL, two deliveries
-# ---------------------------------------------------------------------------
+# --- One URL, two deliveries ---
 
 
 async def test_the_same_route_answers_json_or_a_stream(tenant: Tenant) -> None:
-    """10.2 lists one events route, and it is one route: `Accept` chooses.
-
-    Two URLs would be two contracts that could drift, and the chat UI polls this
-    one today — so the poll must keep working exactly as it did.
-    """
+    """10.2 lists one events route, and it is one route: `Accept` chooses."""
     from httpx import ASGITransport, AsyncClient
 
     from charie.auth.jwt_validator import TokenValidator

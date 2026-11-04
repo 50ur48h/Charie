@@ -5,12 +5,7 @@ import type { ReactNode } from "react";
 import { Hint } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
-/**
- * A titled card for one picture or table in an answer (design: `.a-figure`).
- *
- * The actions are quiet until the figure is hovered or focused — always shown on
- * touch screens, where there is no hover.
- */
+/** A titled card for one picture or table in an answer (design: `.a-figure`). */
 export function Figure({
   title,
   subtitle,

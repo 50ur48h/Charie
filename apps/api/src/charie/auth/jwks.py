@@ -1,16 +1,4 @@
-"""JWKS retrieval and caching.
-
-Public keys are fetched from the issuer's OIDC discovery document and cached for
-a TTL. Two behaviours are deliberate:
-
-* **An unknown ``kid`` triggers exactly one refresh**, then fails. Identity
-  providers rotate keys without warning, so refusing to refresh would cause an
-  outage; refreshing on every unknown kid would let anyone with a made-up kid
-  drive unbounded outbound requests.
-* **Fetch failures do not evict a usable cache.** If the provider is briefly
-  unreachable, continuing to accept tokens signed by keys we already hold is
-  safer than rejecting every request.
-"""
+"""JWKS retrieval and caching."""
 
 from __future__ import annotations
 
@@ -42,11 +30,6 @@ class JwksCache:
     timeout_seconds: float = 5.0
     _keys: dict[str, PyJWK] = field(default_factory=_no_keys, init=False)
     #: The issuer the provider says it is, read from its discovery document.
-    #: Trusted over anything configured by hand: for a Microsoft Entra
-    #: external tenant the discovery host and the issuer host differ
-    #: (<tenant>.ciamlogin.com vs <tenant-id>.ciamlogin.com), and the same tenant
-    #: also answers on login.microsoftonline.com with a *different* issuer.
-    #: A hand-written guess fails every token with bad_issuer.
     discovered_issuer: str | None = field(default=None, init=False)
     _fetched_at: float = field(default=0.0, init=False)
     _last_attempt_at: float = field(default=0.0, init=False)

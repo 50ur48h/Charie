@@ -1,29 +1,4 @@
 # The adversarial corpus (plan §6 WP5.3, Appendix C; architecture Part 7.5).
-#
-# APPEND-ONLY. A case is never edited to make it pass and never deleted because
-# it became inconvenient: each one is a statement that must not reach a
-# customer's database, and the file is the standing record of what has been
-# thought of. If a case starts failing, the validator changed and the question
-# is whether that change was intended — not whether the case is still wanted.
-#
-# Every entry states the ViolationCode it must produce. "Refused somehow" is not
-# the assertion: an attack caught by the wrong rule is a rule that happens to
-# overlap today and may not tomorrow, and the code is what WP5.3's runner, the
-# audit trail and any future eval all key on.
-#
-# The runner sends each case through the executor with a recording connector, so
-# every case proves two things at once: it was refused, and **nothing was sent**.
-#
-# Fields:
-#   id       stable, kebab-case, never reused
-#   sql      the statement, exactly as an attacker would submit it
-#   expect   the ViolationCode (dal/errors.py)
-#   dialects optional; defaults to both. Only for genuinely engine-specific SQL
-#   note     why this case exists, when that is not obvious from the SQL
-#
-# The fixture catalog is in catalog_fixture.py: public.{orders, customers,
-# menu_items, staff}, archive.{orders_2025, staff}. `customers.tax_id` is
-# **deny**, `customers.email` and the `full_name` columns are **mask**.
 
 cases:
   # -- more than one statement ----------------------------------------------
@@ -44,13 +19,6 @@ cases:
     note: Appendix C's tx-control case; counted before it is typed
 
   # -- writes, however they are dressed -------------------------------------
-  #
-  # Two codes appear here and the split is the rule order, not an accident: a
-  # write at the *top level* is refused by the statement-type gate
-  # (statement_not_read_only) because that runs first, and a write *nested
-  # inside a read* is refused by the node walk (write_operation) because that is
-  # the only thing that can see it. The second is the interesting one — it is
-  # the case a validator that checks only the statement type approves.
   - id: bare-delete
     sql: "DELETE FROM orders"
     expect: statement_not_read_only

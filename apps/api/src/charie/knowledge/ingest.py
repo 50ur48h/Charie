@@ -1,33 +1,4 @@
-"""Upload to searchable, and honest about where it stopped (architecture 5.5).
-
-Five steps — store, extract, chunk, write, embed — and the interesting design is
-entirely in what happens when one of them fails.
-
-**A document is `indexed` only when it is searchable.** Extraction and embedding
-both reach outside the process, so both fail, and a document that silently holds
-no chunks looks exactly like one nobody uploaded. `status` and `failure_reason`
-are paired by a CHECK constraint (revision 0016) so a failure without a reason
-cannot be stored, and the reason is written for the person who uploaded the file
-rather than for whoever reads the log.
-
-**The chunks are written before the vectors, and that ordering is the design.**
-`embedding` is nullable precisely so this is possible: the text lands and is
-immediately searchable *lexically*, and the vectors arrive after a network round
-trip that may fail. A run that stores the text and then cannot embed leaves a
-document that is half-searchable and says so, which is strictly better than one
-that lost its text because a rate limit was in force.
-
-**Re-indexing is delete-and-rewrite, never append.** `seq` is gap-free and
-unique per document, so re-chunking a changed document by appending would either
-collide or leave orphans from the previous version — text that no longer exists
-in the source but still answers questions. The old chunks go first, in the same
-transaction that writes the new ones.
-
-**Nothing here decides anything about the content.** It stores what was written
-and hands it back framed as reference material; 7.4's threat model assumes a
-customer's document may be hostile, and every protection against that lives at
-the point of use rather than here.
-"""
+"""Upload to searchable, and honest about where it stopped (architecture 5.5)."""
 
 from __future__ import annotations
 
@@ -60,8 +31,7 @@ STATUS_PENDING = "pending"
 STATUS_INDEXED = "indexed"
 STATUS_FAILED = "failed"
 
-#: How much of a failure's detail reaches the column, which is rendered to a
-#: person. Long enough to name a cause, short enough not to be a stack trace.
+#: How much of a failure's detail reaches the column, which is rendered to a person.
 REASON_LIMIT = 500
 
 
@@ -77,10 +47,7 @@ class DocumentView:
     failure_reason: str | None
     created_at: datetime
     indexed_at: datetime | None
-    #: How many of this document's chunks have a vector. Below `chunk_count`
-    #: means the text is searchable lexically and not yet semantically — a real
-    #: and temporary state, not an error, and one a documents page should say
-    #: out loud rather than round up to "indexed".
+    #: How many of this document's chunks have a vector.
     embedded_count: int = 0
 
 
@@ -96,13 +63,7 @@ async def ingest_document(
     actor_user_id: uuid.UUID | None = None,
     settings: Settings | None = None,
 ) -> DocumentView:
-    """Take an upload all the way to searchable, or record why it stopped.
-
-    ``embedder`` is optional and None is a supported mode, not a degraded one:
-    the chunks are written and left unembedded, which is exactly the state the
-    backfill exists to finish. It is also how a deployment with no embedding key
-    still gets lexical search over its documents.
-    """
+    """Take an upload all the way to searchable, or record why it stopped."""
     resolved = settings if settings is not None else get_settings()
 
     document_id = uuid.uuid4()
@@ -125,8 +86,7 @@ async def ingest_document(
     try:
         text = extract_text(payload, mime=mime, filename=filename)
     except ExtractionError as error:
-        # The one failure that is the *file's* fault rather than the platform's,
-        # and the message is already written for whoever uploaded it.
+        # The one failure that is the file's fault rather than the platform's.
         return await _fail(org_id, document_id, str(error))
 
     return await _index(
@@ -148,12 +108,7 @@ async def reindex_document(
     actor_user_id: uuid.UUID | None = None,
     settings: Settings | None = None,
 ) -> DocumentView:
-    """Chunk and embed a stored document again, from its original bytes.
-
-    From the **original**, not from the existing chunks: re-embedding what was
-    already chunked would carry forward every decision the old chunker made, and
-    the reason to re-index is usually that one of those decisions changed.
-    """
+    """Chunk and embed a stored document again, from its original bytes."""
     resolved = settings if settings is not None else get_settings()
 
     async with org_session(org_id) as session:
@@ -199,9 +154,7 @@ async def _index(
     if not chunks:
         return await _fail(org_id, document_id, "This file produced no text to index.")
 
-    # **Delete then write, in one transaction.** `seq` is unique per document, so
-    # appending to a re-index would collide; and leaving the old rows would keep
-    # answering questions from text the source no longer contains.
+    # Delete then write, in one transaction.
     async with org_session(org_id) as session:
         await session.execute(
             delete(KnowledgeChunk).where(KnowledgeChunk.document_id == document_id)
@@ -229,9 +182,7 @@ async def _index(
                 settings=settings,
             )
         except LLMError as error:
-            # The text is already stored and already lexically searchable, so
-            # this is a partial success and is recorded as a failure *with the
-            # chunks intact* — the backfill's work list is exactly these rows.
+            # The text is already stored and already lexically searchable.
             return await _fail(
                 org_id, document_id, f"The text was stored but not embedded: {error}"
             )
@@ -248,10 +199,7 @@ async def _index(
                 .scalars()
                 .all()
             )
-            # Paired by position, which is safe only because `embed_texts`
-            # guarantees one vector per input in input order and both sides are
-            # ordered by `seq`. That guarantee is asserted there, not assumed
-            # here.
+            # Paired by position, which is safe only because `embed_texts` guarantees one vector...
             for row, vector in zip(rows, vectors, strict=True):
                 row.embedding = list(vector)
 
@@ -272,13 +220,7 @@ async def _finish(org_id: uuid.UUID, document_id: uuid.UUID, chunk_count: int) -
 
 
 async def _fail(org_id: uuid.UUID, document_id: uuid.UUID, reason: str) -> DocumentView:
-    """Record the stop, with a reason the CHECK constraint insists on.
-
-    The chunks are **not** removed. A document that extracted and chunked but
-    could not embed is lexically searchable right now, and throwing that away to
-    make the status tidy would be losing working behaviour to a bookkeeping
-    preference.
-    """
+    """Record the stop, with a reason the CHECK constraint insists on."""
     async with org_session(org_id) as session:
         document = await session.get(KnowledgeDocument, document_id)
         if document is None:  # pragma: no cover - it was written moments ago

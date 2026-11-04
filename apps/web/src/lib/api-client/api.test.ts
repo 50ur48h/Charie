@@ -23,8 +23,7 @@ describe("createApi", () => {
   });
 
   it("attaches the bearer token from the session, per call", async () => {
-    // A fresh Response per call: a body can only be read once, and reusing
-    // one object would fail for reasons that have nothing to do with the code.
+    // A fresh Response per call: a body can only be read once.
     const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(json(ME)));
     vi.stubGlobal("fetch", fetchMock);
     let issued = 0;

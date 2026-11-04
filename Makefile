@@ -1,29 +1,8 @@
 # Charie — developer entry points.
-#
-# Targets grow with the phases; nothing here refers to a component that does not
-# exist yet (plan §4). Run `make` or `make help` for the current list.
-#
-# Requires GNU make. On Windows run it from Git Bash.
-#
-# Every recipe here is a SINGLE line, deliberately. GNU make hands a recipe to
-# the shell with its backslash-newline continuations intact, and on Windows it
-# falls back to cmd.exe whenever sh.exe is not on PATH — cmd.exe does not
-# understand `\` continuation, so a multi-line recipe silently runs truncated
-# (`docker build --target prod \` alone, which fails with an unhelpful
-# "requires 1 argument"). Anything too long for one line belongs in
-# ops/scripts/*.sh, invoked as `bash ops/scripts/thing.sh`.
-#
-# SHELL is set below when a POSIX shell can be found, so pipelines and quoting
-# behave the same on every machine.
 
 .DEFAULT_GOAL := help
 
-# These recipes need a POSIX shell. On Windows, make falls back to cmd.exe
-# whenever sh.exe is not on PATH -- the normal state when make is run from
-# PowerShell, because Git puts cmd\ on PATH but not usr\bin\. Under cmd.exe
-# `printf` does not exist, and a bare `bash` resolves to WSL's bash, which
-# cannot reach the Docker CLI or this drive the same way. Both fail late and
-# confusingly, so probe once and stop with an instruction instead.
+# These recipes need a POSIX shell.
 SHELL_PROBE := $(shell sh -c "echo yes" 2>&1)
 ifneq ($(SHELL_PROBE),yes)
 $(error No POSIX shell found, so these recipes cannot run. Use Git Bash, or add Git's usr\bin to PATH first: $$env:PATH = 'C:\Program Files\Git\usr\bin;' + $$env:PATH)
@@ -40,9 +19,7 @@ PNPM_WEB := pnpm --dir $(WEB_DIR)
 
 COMPOSE := docker compose --env-file .env -f ops/docker-compose.yml
 
-# ---------------------------------------------------------------------------
-# Meta
-# ---------------------------------------------------------------------------
+# --- Meta ---
 .PHONY: help
 help: ## Show available targets
 	@grep -hE '^[a-zA-Z0-9_.-]+:.*?## ' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-16s %s\n", $$1, $$2}'
@@ -54,9 +31,7 @@ env: .env ## Create .env from .env.example if it does not exist
 	@cp .env.example .env
 	@printf 'Created .env from .env.example. Local-only values; review before use.\n'
 
-# ---------------------------------------------------------------------------
-# Umbrella targets
-# ---------------------------------------------------------------------------
+# --- Umbrella targets ---
 .PHONY: install lint fmt typecheck test
 install: install.api install.web         ## Install all dependencies
 lint: lint.api lint.web lint.seed        ## Lint everything
@@ -64,9 +39,7 @@ fmt: fmt.api                             ## Format everything in place
 typecheck: typecheck.api typecheck.web   ## Type-check everything
 test: test.api test.web                  ## Run all tests
 
-# ---------------------------------------------------------------------------
-# Local stack
-# ---------------------------------------------------------------------------
+# --- Local stack ---
 .PHONY: up up.mssql down down.hard logs ps seed seed.mssql seed.definitions
 up: .env ## Start the app and platform database (no sample data)
 	$(COMPOSE) up -d --build
@@ -113,35 +86,7 @@ migration: .env ## Autogenerate a revision: make migration m="add widgets"
 secrets.key: ## Print a fresh LOCAL_SECRETS_KEY line to paste into .env
 	@$(UV_API) python -c "from cryptography.fernet import Fernet; print('LOCAL_SECRETS_KEY=' + Fernet.generate_key().decode())"
 
-# **This target has now overstated itself twice, so it was audited rather than
-# patched a third time.** Every job and every step in `.github/workflows/ci.yml`
-# was walked against what this runs.
-#
-# The history is the argument. `test.web.e2e` was missing, and a WP11.2b change
-# that passed every other check failed in CI on the one suite a developer had no
-# reason to run. `compile.web` was missing, and WP13.16 did exactly the same
-# thing one step further down the same job. Both times the target said
-# "everything CI will run" and printed "safe to push". The audit found **six
-# more**, and two of them are guards rather than conveniences:
-#
-#   test.dal      — the DAL suite carries a 90% coverage gate (plan §4.4) that
-#                   `test` does not apply: `test.api` runs those tests without
-#                   the floor, so a regression on the security boundary's
-#                   coverage reached CI unseen.
-#   test.rls      — `pytest -m rls_proof` exists to fail when it collects
-#                   *nothing*. `test.api` runs the proofs as part of the suite
-#                   and would stay green if the marker vanished.
-#   build.infra   — `check.infra` greps templates for secrets; it does not
-#                   compile them. A Bicep syntax error passed preflight.
-#   lint.workflows— B-128's whole point was that a `run:` block was first
-#                   exercised by the deployment it gated. Leaving actionlint to
-#                   CI repeats the argument that filed it.
 #   check.todos   — `TODO(B-###)` or CI fails.
-#   check.roles   — the allowlist half of B-130's role check.
-#
-# What is **deliberately** not here is now stated in the output rather than
-# implied, because a developer reading "safe to push" is entitled to know what
-# that sentence does not cover.
 .PHONY: preflight
 preflight: lint typecheck check.env check.todos check.roles check.truths check.preflight lint.workflows test test.rls test.dal test.web.e2e compile.web check.infra build.infra ## Every CI step that needs no stack or cloud session
 	@echo ""
@@ -167,9 +112,7 @@ check.todos: ## Fail if a TODO carries no backlog id
 check.roles: ## Fail if a role id and the secret-scanner allowlist disagree (B-130)
 	sh ops/scripts/check_role_definitions.sh --allowlist-only
 
-# `MSYS_NO_PATHCONV=1` because Git Bash rewrites `-w /repo` into
-# `C:/Program Files/Git/repo` and docker rejects it — the quirk AGENTS.md
-# records for `docker exec`, in its `docker run` form. Ignored off Windows.
+# `MSYS_NO_PATHCONV=1` because Git Bash rewrites `-w /repo` into `C:/Program Files/Git/repo` and...
 lint.workflows: ## actionlint over every workflow, with shellcheck on each `run:` block
 	MSYS_NO_PATHCONV=1 docker run --rm -v "$(CURDIR):/repo" -w /repo \
 	  rhysd/actionlint:latest@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 \
@@ -196,15 +139,8 @@ truths: ## Regenerate ops/seed/truths.json without touching the database
 check.truths: ## Fail if truths.json and the seed generator disagree
 	uv run ops/seed/seed_pizza.py --check
 
-# ---------------------------------------------------------------------------
-# apps/api
-# ---------------------------------------------------------------------------
-# `--no-cache` on every lint recipe, deliberately. A warm ruff cache has twice
-# reported a clean tree that CI then failed on — the cache keys on content ruff
-# has already seen, and a file edited between runs can slip through. The rule
-# that follows is the only one that works: the target a developer runs must be
-# the same command CI runs, with nothing between them that could differ. Costs a
-# few seconds; has cost two red builds so far.
+# --- apps/api ---
+# `--no-cache` on every lint recipe, deliberately.
 .PHONY: install.api lint.api fmt.api typecheck.api test.api test.rls test.dal test.llm api.dev build.api llm.smoke agent.smoke
 install.api: ## Sync the API virtualenv from uv.lock
 	uv sync --directory $(API_DIR)
@@ -244,18 +180,13 @@ api.dev: ## uvicorn with reload on :8000
 build.api: ## Build the production API image
 	docker build --target prod --build-arg GIT_SHA=$(GIT_SHA) -t charie-api:local $(API_DIR)
 
-# ---------------------------------------------------------------------------
-# ops/seed — a standalone uv script, so it has its own dependencies and is not
-# part of the API's pyright run. It still obeys the same ruff rules.
-# ---------------------------------------------------------------------------
+# --- ops/seed — a standalone uv script, so it has its own dependencies and is not ---
 .PHONY: lint.seed
 lint.seed: ## ruff check the seed scripts
 	$(UV_API) ruff check --no-cache --config pyproject.toml ../../ops
 	$(UV_API) ruff format --check --no-cache --config pyproject.toml ../../ops
 
-# ---------------------------------------------------------------------------
-# apps/web
-# ---------------------------------------------------------------------------
+# --- apps/web ---
 .PHONY: install.web lint.web typecheck.web test.web test.web.e2e test.web.smoke web.dev build.web compile.web
 install.web: ## Install web dependencies from the lockfile
 	$(PNPM_WEB) install --frozen-lockfile
@@ -298,15 +229,7 @@ evals.docker: .env ## Same, but inside the api container — for the compose sta
 evals.setup: .env ## The eval harness's org — HOST addresses, not usable in the browser (B-115)
 	$(UV_API) python ../../ops/evals/provision.py
 
-# **Two provisioners, and the difference is the network you are on** (**B-115**).
-# `evals.setup` registers the fixture at the address in `.env` — `localhost:6543`
-# — because the harness runs in-process on the host and on a CI runner with no
-# container at all. `demo.setup` registers the compose names, because the API
-# answers questions inside the container, where `localhost` is the API itself.
-# The old help text for `evals.setup` said "create the org, register the seed
-# source, build its catalog", which is true of both and told nobody which they
-# were getting; a fresh machine ran it and got an organization every browser
-# question failed against.
+# Two provisioners, and the difference is the network you are on (B-115).
 .PHONY: demo.setup
 demo.setup: .env ## The browser's org — COMPOSE addresses, built inside the api container
 	$(SHELL) ops/scripts/demo_setup.sh

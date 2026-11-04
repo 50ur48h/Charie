@@ -1,16 +1,4 @@
-"""A way back into an organization whose Admins can no longer sign in (**B-017**).
-
-Over real HTTP against a real database, like the flow suite next door, because
-the claim crosses the one seam that a fake would hide: it is looked up through
-the *system* session, since the claimant is not an Admin and may not be a member
-at all, and everything after the lookup happens org-scoped where RLS applies.
-
-The test that carries the work package is
-`test_a_locked_out_organization_gets_itself_back`. It does not assert that a
-route returns 200 — it reproduces the state B-017 was filed from. Every Admin is
-demoted, so nobody who can sign in can invite, promote or register anything, and
-the only thing left is the grant that was armed while somebody still could.
-"""
+"""A way back into an organization whose Admins can no longer sign in (B-017)."""
 
 from __future__ import annotations
 
@@ -54,14 +42,7 @@ async def _join(api: Api, org_id: uuid.UUID, *, who: str, role: str) -> None:
 
 
 async def _demote_every_admin(url: URL, org_id: uuid.UUID) -> None:
-    """Reproduce B-017 exactly: the memberships are still there, the people
-    behind them cannot sign in.
-
-    Done in the database on purpose. The product refuses to remove the last
-    Admin — correctly — so the state this work package exists for is not
-    reachable through the API, which is precisely why it needed a way out that
-    is also not an ordinary API call.
-    """
+    """Reproduce B-017 exactly: the memberships are still there."""
     engine = create_async_engine(url)
     try:
         async with engine.begin() as connection:
@@ -79,9 +60,7 @@ async def _demote_every_admin(url: URL, org_id: uuid.UUID) -> None:
         await engine.dispose()
 
 
-# ---------------------------------------------------------------------------
-# Arming
-# ---------------------------------------------------------------------------
+# --- Arming ---
 
 
 async def test_the_token_is_shown_once_and_never_again(api: Api) -> None:
@@ -98,8 +77,7 @@ async def test_the_token_is_shown_once_and_never_again(api: Api) -> None:
 
 
 async def test_only_an_admin_can_arm_one(api: Api) -> None:
-    """It mints a credential that makes its holder an Admin, so anyone who could
-    arm one could promote themselves."""
+    """It mints a credential that makes its holder an Admin."""
     org_id = await _org_with_admin(api)
     await _join(api, org_id, who="bob", role="contributor")
 
@@ -109,8 +87,7 @@ async def test_only_an_admin_can_arm_one(api: Api) -> None:
 
 
 async def test_arming_and_claiming_are_both_in_the_audit_log(api: Api, app_database: URL) -> None:
-    """An organization whose Admin changed by this route has to be able to show
-    when, by whom, and against which grant."""
+    """An organization whose Admin changed by this route has to be able to show when, by whom."""
     org_id = await _org_with_admin(api)
     armed = await _arm(api, org_id, label="Break glass")
     await _join(api, org_id, who="bob", role="reader")
@@ -121,22 +98,11 @@ async def test_arming_and_claiming_are_both_in_the_audit_log(api: Api, app_datab
     assert "org.recovery_claimed" in actions
 
 
-# ---------------------------------------------------------------------------
-# Claiming
-# ---------------------------------------------------------------------------
+# --- Claiming ---
 
 
 async def test_a_locked_out_organization_gets_itself_back(api: Api, app_database: URL) -> None:
-    """**B-017, reproduced and then recovered.**
-
-    Alice arms a grant while she is still Admin. Her identity then stops working
-    — modelled here by demoting every Admin, which leaves the memberships intact
-    and nobody able to use them. Bob, a Reader who *can* sign in, is now in the
-    state the entry describes: he cannot invite, cannot promote, cannot register
-    anything, and no Admin exists to ask.
-
-    The grant is the only way out, and it is the whole point of the work package.
-    """
+    """B-017, reproduced and then recovered."""
     org_id = await _org_with_admin(api)
     armed = await _arm(api, org_id, label="Break glass")
     await _join(api, org_id, who="bob", role="reader")
@@ -169,10 +135,7 @@ async def test_a_locked_out_organization_gets_itself_back(api: Api, app_database
 
 
 async def test_a_claim_raises_an_existing_membership(api: Api) -> None:
-    """**The reason this is not an invitation.** `accept_invitation` adds a
-    membership only where there is not one already, so a Reader redeeming an
-    Admin invitation stays a Reader — and the locked-out person is usually
-    already a member. This is the case that would silently fail."""
+    """The reason this is not an invitation."""
     org_id = await _org_with_admin(api)
     armed = await _arm(api, org_id)
     await _join(api, org_id, who="bob", role="reader")
@@ -200,8 +163,7 @@ async def test_a_claim_admits_someone_who_was_never_a_member(api: Api) -> None:
 
 
 async def test_a_grant_cannot_be_claimed_twice(api: Api) -> None:
-    """Single use. A grant that stayed live after a recovery would be a permanent
-    admin key sitting in somebody's notes."""
+    """Single use."""
     org_id = await _org_with_admin(api)
     armed = await _arm(api, org_id)
     await api.call("POST", "/v1/recovery-grants/claim", who="bob", body={"token": armed["token"]})
@@ -230,8 +192,7 @@ async def test_a_revoked_grant_cannot_be_claimed(api: Api) -> None:
 
 
 async def test_every_bad_token_fails_with_the_same_words(api: Api) -> None:
-    """Unknown, spent and revoked are deliberately indistinguishable, or this is
-    an oracle for guessing tokens — the rule `accept_invitation` already follows."""
+    """Unknown, spent and revoked are deliberately indistinguishable."""
     org_id = await _org_with_admin(api)
     armed = await _arm(api, org_id)
     await api.call("POST", "/v1/recovery-grants/claim", who="bob", body={"token": armed["token"]})
@@ -247,9 +208,7 @@ async def test_every_bad_token_fails_with_the_same_words(api: Api) -> None:
 
 
 async def test_a_grant_belongs_to_one_organization_only(api: Api) -> None:
-    """A grant makes its holder an Admin of the organization that armed it, and
-    of nothing else. The worst possible leak in this schema is the one where a
-    token reaches across the tenant boundary."""
+    """A grant makes its holder an Admin of the organization that armed it, and of nothing else."""
     acme = await _org_with_admin(api, who="alice")
     status, other = await api.call("POST", "/v1/orgs", who="dave", body={"name": "Globex"})
     assert status == 201

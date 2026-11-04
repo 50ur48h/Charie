@@ -114,8 +114,7 @@ describe("<CatalogBrowser />", () => {
     expect(screen.getByText("suspected")).toBeInTheDocument();
     expect(screen.getAllByText("mask").length).toBeGreaterThan(0);
     expect(screen.getAllByText(/from 300 sampled rows/).length).toBe(2);
-    // A masked column is listed like any other: somebody asking "can I group by
-    // this" needs an answer even when they may not see the values.
+    // A masked column is listed like any other.
     expect(screen.getAllByText(/a\*\*\*@e\*\*\*\.com/).length).toBeGreaterThan(0);
   });
 

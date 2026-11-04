@@ -1,40 +1,4 @@
-"""How a run says it is done (architecture Part 4.6's ``finalize``).
-
-A tool rather than "whatever the model wrote last", because finishing is a
-decision with a shape: an answer, the executions that back it, and — when the
-data could not answer the question — the reason, stated plainly.
-
-Two fields carry the weight.
-
-``supported_by`` is the citation, and it is checked. A model may only name
-execution ids that this run really produced; the runner rejects anything else
-rather than passing it on, because architecture 4.2 makes findings-cite-real-rows
-the spine of trust and an unverifiable citation is worse than none — it looks
-like evidence.
-
-``chart`` is WP11.1's, and it rides here rather than on ``Plan`` for two
-reasons. It is asked **once per run instead of once per step**, which is the
-whole of the schema cost this adds (B-033 keeps the shape closed, so a field
-exists on every call whether or not it is used). And this is the moment the model
-knows what it answered and which execution backs it — a chart belongs to an
-answer, which is also why B-048 puts it inside the answer card rather than beside
-it.
-
-**The model chooses the chart; it does not get to draw an impossible one.**
-`charts.decide` can refuse a chart the data cannot support, but it cannot know
-*which* chart answers the question — the same numbers are a comparison or a trend
-depending on what was asked, and picking one from the data alone would be exactly
-the silent choice B-060 was filed for.
-
-``answered`` is how a refusal stays honest. A run that could not answer sets it
-false and says why in ``answer``; nothing downstream has to infer refusal from
-the shape of a sentence, and the composer in Phase 9 gets a fact rather than a
-guess.
-
-The handler is deliberately inert: it validates and echoes. Writing the answer,
-the findings and the run's ending is the runner's job, because those are
-transitions and only one thing may own them.
-"""
+"""How a run says it is done (architecture Part 4.6's ``finalize``)."""
 
 from __future__ import annotations
 
@@ -132,20 +96,7 @@ class FinalizeIn(BaseModel):
 
     @property
     def claims_an_answer(self) -> bool:
-        """Whether this draft asserts something a reviewer should check.
-
-        **Replaces the removed `answered` boolean at the one place it was still
-        doing work** (**D-044**). Four critic rules used `draft.answered` to mean
-        *"is this a draft making a positive claim"* — not *"how much of the
-        question did it cover"* — and that question has an observable answer, so
-        it no longer needs to be asked of a model.
-
-        A draft is not a claim when it cites nothing **and** names what it could
-        not answer: that is a refusal, and the rules skip it exactly as they did
-        before. Everything else is checked, which now includes a **partial**
-        answer with citations — the case B-134 is about, and one the old boolean
-        skipped precisely when its cited half deserved review.
-        """
+        """Whether this draft asserts something a reviewer should check."""
         return bool(self.supported_by) or not self.unanswered
 
 

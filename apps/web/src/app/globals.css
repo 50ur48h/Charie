@@ -1,14 +1,4 @@
-/*
- * Charie design tokens — "Calm" (docs/design.md).
- *
- * One source of truth for colour, type and motion. Seven soft palettes share
- * one set of token names; Sage is the default and the others are chosen in
- * Settings → Appearance (`data-palette` on <html>). Dark mode is
- * `data-theme="dark"`, set before first paint by the script in `layout.tsx`.
- *
- * Tailwind utilities, shadcn/ui components and the remaining CSS Modules all
- * read these variables, so a palette change repaints everything at once.
- */
+/* Charie design tokens — "Calm" (docs/design.md). */
 @import "tailwindcss";
 @import "tw-animate-css";
 

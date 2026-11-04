@@ -1,19 +1,6 @@
 "use client";
 
-/**
- * Chats that were put away, and the way to bring them back (WP13.1b).
- *
- * **This screen is what makes the sidebar's promise true.** Archiving says the
- * thread can be restored, and before this existed there was nowhere to restore
- * it from — the old conversations list held the "Show archived" toggle and this
- * work package replaced that list with a sidebar. Shipping the sidebar without
- * this would have left a sentence in the product that the product could not
- * honour, which is precisely the defect class the archive-not-delete wording was
- * chosen to avoid.
- *
- * Every role may be here: these are your own threads, and a colleague's is a 404
- * even to an Admin (B-037).
- */
+/** Chats that were put away, and the way to bring them back (WP13.1b). */
 
 import { Archive, CircleAlert, MessagesSquare, RotateCcw } from "lucide-react";
 import { AnimatePresence, MotionConfig, motion } from "motion/react";

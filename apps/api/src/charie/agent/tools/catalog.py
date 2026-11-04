@@ -1,16 +1,4 @@
-"""Finding a table, and looking at one (architecture Part 4.6).
-
-Both tools read the **catalog**, never a customer's database. That is the whole
-reason they exist: architecture 7.5 refuses `information_schema` and `pg_catalog`
-in the DAL, so an agent that wants to know what columns a table has must ask this
-service rather than write a query about it. Metadata questions therefore never
-open a socket to a customer database, and a model cannot go fishing through the
-schema by writing SQL.
-
-What comes back is masked by construction. Cards are prose built from catalog
-rows whose samples were masked on the way in (D-013), and a column's ``policy``
-is reported so the model can avoid writing SQL the DAL will refuse.
-"""
+"""Finding a table, and looking at one (architecture Part 4.6)."""
 
 from __future__ import annotations
 
@@ -82,12 +70,7 @@ class DescribeTableOut(BaseModel):
 
 
 def _require_source(context: ToolContext) -> uuid.UUID:
-    """The selected source, or a refusal that says why there is nothing to read.
-
-    Returns the id rather than checking and leaving the caller to re-read the
-    attribute, which is what previously needed an ``assert`` to convince the type
-    checker of something the code had already established.
-    """
+    """The selected source, or a refusal that says why there is nothing to read."""
     if context.data_source_id is None:
         raise ToolError(
             "No data source is selected for this run, so there is nothing to read.",
@@ -105,9 +88,7 @@ async def _search_tables(context: ToolContext, params: BaseModel) -> BaseModel:
         TableMatch(schema_name=hit.schema_name, table_name=hit.table_name, card=hit.card_text or "")
         for hit in hits
     ]
-    # An empty result is an answer, and saying so beats an empty list the model
-    # reads as a transport failure and retries. Search is lexical until B-018,
-    # so "no match" often means "different words", and the note says that.
+    # An empty result is an answer, and saying so beats an empty list the model reads as a...
     note = (
         ""
         if matches
@@ -137,9 +118,7 @@ async def _describe_table(context: ToolContext, params: BaseModel) -> BaseModel:
         None,
     )
     if table is None:
-        # Repairable, and the message lists what does exist: this is the single
-        # commonest model mistake, and a bare "not found" makes the next attempt
-        # a guess rather than a correction.
+        # Repairable, and the message lists what does exist.
         known = ", ".join(
             f"{candidate.schema_name}.{candidate.table_name}" for candidate in catalog.tables[:20]
         )

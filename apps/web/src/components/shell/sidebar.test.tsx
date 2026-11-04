@@ -111,13 +111,7 @@ describe("<Sidebar />", () => {
   });
 
   it("says archive, does archive, and says it can be undone", async () => {
-    /**
-     * **The word has to match the action** (D-039, and the owner's instruction).
-     * A trash icon that quietly archived would be the same class of lie as a
-     * badge reading *answered* on a refusal (B-133). So: the control is a word,
-     * it is the true word, and the confirmation says the reverse exists — which
-     * `<ArchivedChats />` in Settings is what makes true.
-     */
+    /** The word has to match the action (D-039, and the owner's instruction). */
     const calls = stubFetch();
 
     render(<Sidebar orgId="o1" orgName="Demo" person={person} />);
@@ -166,9 +160,7 @@ describe("<Sidebar />", () => {
   });
 
   it("does not report an empty list before it has loaded one", async () => {
-    // The same mistake the conversations screen once made: an empty state
-    // standing in for a loading one reads as "you have no chats" rather than
-    // "wait".
+    // The same mistake the conversations screen once made.
     let release: ((value: Response) => void) | undefined;
     vi.stubGlobal(
       "fetch",
@@ -182,12 +174,9 @@ describe("<Sidebar />", () => {
 
     render(<Sidebar orgId="o1" orgName="Demo" person={person} />);
 
-    // Awaited, not asserted synchronously: resolving the token is itself async,
-    // so `fetch` — and therefore `release` — does not exist yet on the first
-    // tick, and a bare `expect` here would pass while leaving nothing to release.
+    // Awaited, not asserted synchronously: resolving the token is itself async, so `fetch`.
     await waitFor(() => expect(release).toBeDefined());
-    // The skeleton's single announced label, not the word "Loading…": a screen
-    // reader should hear this once rather than four anonymous boxes (D-049).
+    // The skeleton's single announced label, not the word "Loading…".
     expect(screen.getByText("Loading your chats")).toBeInTheDocument();
     expect(screen.queryByText(/No chats yet/)).not.toBeInTheDocument();
 

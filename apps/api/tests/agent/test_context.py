@@ -1,18 +1,4 @@
-"""The layered prompt, and what it drops when it must.
-
-No database: assembly is a pure function of a bundle, and the tests that need a
-real catalog live in ``test_context_selection.py``. Two properties carry the
-weight here.
-
-**The safety layer and the question are never dropped.** Truncation exists so a
-prompt fits; a prompt that fits because it lost its rules is not a smaller prompt,
-it is a different and more dangerous one.
-
-**Reference data is framed and is below the rules.** Architecture 7.4 assumes a
-table description may be hostile — a customer's column comment can say "ignore
-your instructions" — so the frame and the ordering are asserted rather than
-trusted to whoever next edits the assembler.
-"""
+"""The layered prompt, and what it drops when it must."""
 
 from __future__ import annotations
 
@@ -49,12 +35,7 @@ def _card(name: str, *, rank: float = 1.0, body: str | None = None) -> TableCard
 
 
 def _floor(question: str = "q") -> int:
-    """Tokens the undroppable layers need: L0 (rules + date anchor) and L5.
-
-    Written as a function rather than a constant because L0 grows — the date
-    anchor (D-027) added ~130 tokens to it — and a hand-tuned budget elsewhere in
-    this file would then be testing arithmetic instead of truncation order.
-    """
+    """Tokens the undroppable layers need: L0 (rules + date anchor) and L5."""
     return (
         estimate_tokens(PLATFORM_RULES)
         + estimate_tokens(TODAY_RULE.format(as_of="2026-07-15"))
@@ -66,9 +47,7 @@ def _system(bundle: ContextBundle) -> str:
     return render(bundle)[0].content
 
 
-# ---------------------------------------------------------------------------
-# The layers
-# ---------------------------------------------------------------------------
+# --- The layers ---
 
 
 def test_the_question_is_the_user_turn_and_everything_else_is_the_system_turn() -> None:
@@ -80,8 +59,7 @@ def test_the_question_is_the_user_turn_and_everything_else_is_the_system_turn() 
 
 
 def test_the_platform_rules_come_first_and_reference_data_comes_after() -> None:
-    """Precedence is soft (arch 4.8), but the ordering is still the thing that
-    makes it soft rather than absent."""
+    """Precedence is soft (arch 4.8), but the ordering is still the thing that makes it soft..."""
     system = _system(ContextBundle(question="q", cards=(_card("orders"),)))
 
     assert system.index("[L0]") < system.index("[L4]")
@@ -103,8 +81,7 @@ def test_a_card_is_introduced_as_data_rather_than_merged_into_the_rules() -> Non
 
 
 def test_the_empty_layers_render_as_nothing_at_all() -> None:
-    """L1, L2 and L3 have no store yet (B-038). An empty heading in every prompt
-    would be tokens spent on saying nothing."""
+    """L1, L2 and L3 have no store yet (B-038)."""
     system = _system(ContextBundle(question="q"))
 
     for tag in ("[L1]", "[L2]", "[L3]"):
@@ -122,8 +99,7 @@ def test_the_layers_appear_once_each_when_they_are_filled() -> None:
 
     system = _system(bundle)
 
-    # L0 is more than one titled block — platform rules, the date anchor, and
-    # the schema limits when there are any — so presence is what it asserts.
+    # L0 is more than one titled block — platform rules, the date anchor.
     assert "[L0]" in system
     for tag in ("[L1]", "[L2]", "[L3]", "[L4]"):
         assert system.count(tag) == 1
@@ -145,23 +121,15 @@ def test_column_policy_is_summarised_so_the_model_can_avoid_a_refusal() -> None:
 
     assert "public.customers.ssn" in system
     assert "public.customers.email" in system
-    # The distinction is what saves the round trip: one may be aggregated, the
-    # other may not appear at all.
+    # The distinction is what saves the round trip: one may be aggregated.
     assert system.index("Denied") < system.index("Masked")
 
 
-# ---------------------------------------------------------------------------
-# Truncation
-# ---------------------------------------------------------------------------
+# --- Truncation ---
 
 
 def test_cards_shrink_to_headlines_before_any_of_them_is_dropped() -> None:
-    """The first squeeze, and the decision the order encodes.
-
-    Three tables in outline beat one in full: a model that cannot see a table
-    will not ask about it, and the commonest failure a thin catalog produces is
-    a join the model never considered.
-    """
+    """The first squeeze, and the decision the order encodes."""
     long_body = "the fact table. " + ("detail " * 300)
     cards = (
         _card("orders", rank=0.9, body=long_body),
@@ -178,23 +146,7 @@ def test_cards_shrink_to_headlines_before_any_of_them_is_dropped() -> None:
 
 
 def test_the_best_cards_keep_their_detail_while_the_rest_go_to_outline() -> None:
-    """**B-159**, and the rung this ladder did not have.
-
-    It went from every card in full straight to every card as a headline, which
-    is a false economy whenever the budget has room for a mixture — and at the
-    sizes this runs at, it does. Measured on the 41-table `miseq_v64` catalog: a
-    full card is a median 195 tokens and a headline 68, so five full plus twenty
-    headlines is about 2,900 against a budget of 6,000 while twenty-five in full
-    is 5,822 and does not fit.
-
-    Why it matters beyond tidiness: without this rung, raising the card limit
-    would have *taken detail away* from the SQL role in exchange for breadth. The
-    tables it could not see before are added beside the detail it already had,
-    rather than instead of it.
-
-    Each body carries a distinct tail, so "rendered in full" is a fact about that
-    card rather than about the prompt's length.
-    """
+    """B-159, and the rung this ladder did not have."""
     filler = "detail " * 100
     cards = tuple(
         _card(
@@ -215,9 +167,7 @@ def test_the_best_cards_keep_their_detail_while_the_rest_go_to_outline() -> None
 
 
 def test_a_budget_that_fits_everything_shortens_nothing() -> None:
-    """The middle rung is a fallback, not a policy. With room for every card in
-    full, the first rung still wins and no card is shortened — otherwise adding
-    the rung would have quietly capped detail on every small catalog."""
+    """The middle rung is a fallback, not a policy."""
     filler = "detail " * 20
     cards = tuple(
         _card(f"t{index}", body=f"t{index} is a table. {filler} TAIL{index}") for index in range(8)
@@ -273,23 +223,13 @@ def test_a_headline_keeps_enough_to_recognise_the_table() -> None:
 
 
 def test_the_bundle_can_name_what_it_selected_for_the_trace() -> None:
-    """`context_selected` carries the table list (arch 10.3), so the bundle has
-    to be able to say what it chose without re-parsing the prompt."""
+    """`context_selected` carries the table list (arch 10.3)."""
     bundle = ContextBundle(question="q", cards=(_card("orders"), _card("stores")))
 
     assert bundle.table_names == ("public.orders", "public.stores")
 
 
-# ---------------------------------------------------------------------------
-# What "today" is (B-005, D-027)
-#
-# Before this, nothing in the prompt said what the current date was, so the
-# model chose an anchor per question and chose differently: one live run
-# resolved "last full month" with `CURRENT_DATE` and another resolved "recently"
-# with `MAX(order_date)`. The first drifts with the wall clock, the second with
-# the data, and on the day it was measured both happened to be right — which is
-# the worst version of the defect, because nothing looks wrong.
-# ---------------------------------------------------------------------------
+# --- What "today" is (B-005, D-027) ---
 
 
 def test_the_prompt_states_the_date_relative_periods_resolve_against() -> None:
@@ -301,12 +241,7 @@ def test_the_prompt_states_the_date_relative_periods_resolve_against() -> None:
 
 
 def test_the_anchor_is_an_undroppable_rule_not_reference_data() -> None:
-    """L0, so a tight budget cannot remove it.
-
-    An anchor the model did not see is an anchor that does not exist, and the
-    failure is silent: it falls back to the clock and answers a question other
-    than the one the trace records.
-    """
+    """L0, so a tight budget cannot remove it."""
     card = _card("orders", body="x" * 4000)
     bundle = ContextBundle(
         question="revenue last month",
@@ -322,8 +257,7 @@ def test_the_anchor_is_an_undroppable_rule_not_reference_data() -> None:
 
 
 def test_the_model_is_told_not_to_ask_the_database_what_day_it_is() -> None:
-    """Both escapes named, because both were observed in live runs and each
-    produces an answer that cannot be reproduced tomorrow."""
+    """Both escapes named, because both were observed in live runs and each produces an..."""
     system = render(ContextBundle(question="q", as_of=date(2026, 7, 15)))[0].content
 
     assert "CURRENT_DATE" in system
@@ -331,8 +265,7 @@ def test_the_model_is_told_not_to_ask_the_database_what_day_it_is() -> None:
 
 
 def test_two_bundles_with_the_same_anchor_render_the_same_prompt() -> None:
-    """The property the eval harness needs: pin the date and the prompt is a
-    pure function of the question and the catalog."""
+    """The property the eval harness needs."""
     first = ContextBundle(question="revenue last month", as_of=date(2026, 7, 15))
     second = ContextBundle(question="revenue last month", as_of=date(2026, 7, 15))
 
@@ -340,6 +273,5 @@ def test_two_bundles_with_the_same_anchor_render_the_same_prompt() -> None:
 
 
 def test_a_bundle_left_alone_anchors_on_today() -> None:
-    """The default is the wall clock, because that is what a person asking a
-    question in a browser means. Only the harness pins it."""
+    """The default is the wall clock, because that is what a person asking a question in a..."""
     assert ContextBundle(question="q").as_of == datetime.now(UTC).date()

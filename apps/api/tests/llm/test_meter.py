@@ -1,14 +1,4 @@
-"""What every model call costs, written down (architecture Part 4.9, 8.3).
-
-Against a real platform database, because the properties worth testing are the
-ones a database enforces: the check constraint that a failure must say what
-failed, the roles and tiers the schema will accept, and row-level security on a
-new tenant table.
-
-The cost tests are about one distinction that the whole quota mechanism depends
-on: **unpriced is not free**. A model with no configured price records a NULL,
-and a NULL is what a later quota check must treat as unknown.
-"""
+"""What every model call costs, written down (architecture Part 4.9, 8.3)."""
 
 from __future__ import annotations
 
@@ -83,17 +73,11 @@ async def _ledger(url: URL, org_id: uuid.UUID) -> list[dict[str, object]]:
         await engine.dispose()
 
 
-# ---------------------------------------------------------------------------
-# Cost, and the difference between unpriced and free
-# ---------------------------------------------------------------------------
+# --- Cost, and the difference between unpriced and free ---
 
 
 def test_an_unpriced_model_costs_nothing_known_rather_than_nothing() -> None:
-    """The distinction the quota mechanism rests on.
-
-    Zero would be a lie that looks like a measurement, and it would be summed
-    into a monthly total that somebody enforces a limit from.
-    """
+    """The distinction the quota mechanism rests on."""
     assert meter.estimate_cost("fake-strong", Usage(1000, 1000), build_settings()) is None
 
 
@@ -107,8 +91,7 @@ def test_a_priced_model_is_costed_per_million_tokens() -> None:
 
 
 def test_small_calls_do_not_round_away_to_zero() -> None:
-    """Six decimal places, because a cheap call costs a fraction of a cent and a
-    million of them must not total nothing."""
+    """Six decimal places, because a cheap call costs a fraction of a cent and a million of..."""
     settings = build_settings(llm_prices=PRICES)
 
     cost = meter.estimate_cost("fake-strong", Usage(1, 1), settings)
@@ -118,15 +101,7 @@ def test_small_calls_do_not_round_away_to_zero() -> None:
 
 
 def test_recording_the_cached_share_does_not_change_what_a_call_costs() -> None:
-    """**The point of revision 0034, stated as a test.**
-
-    The owner's instruction was to record the cached share *before* touching
-    pricing, so the size of the overstatement is an observation rather than an
-    argument. Two calls identical but for how much of the input was cached must
-    therefore still cost the same — this is deliberately the *current, known to
-    overstate* behaviour, and it is asserted so that modelling the discount is a
-    change somebody makes on purpose and this test is what tells them they did.
-    """
+    """The point of revision 0034, stated as a test."""
     settings = build_settings(llm_prices=PRICES)
 
     none_cached = meter.estimate_cost("fake-strong", Usage(1000, 500), settings)
@@ -144,20 +119,13 @@ def test_a_malformed_price_is_treated_as_no_price() -> None:
     assert meter.estimate_cost("fake-strong", Usage(1000, 1000), settings) is None
 
 
-# ---------------------------------------------------------------------------
-# The row itself
-# ---------------------------------------------------------------------------
+# --- The row itself ---
 
 
 async def test_a_successful_call_records_role_tier_model_and_tokens(
     platform: URL, migrated_database: URL
 ) -> None:
-    """Role and tier are on the row, not derived from the model.
-
-    They have to be: the map between them is configuration and it changes, and
-    "what did moving observe to the small tier actually save" is the question
-    architecture 8.3's central claim rests on.
-    """
+    """Role and tier are on the row, not derived from the model."""
     org_id, user_id = await _org(migrated_database)
     run_id = await seed_run(migrated_database, org_id)
 
@@ -210,8 +178,7 @@ async def test_a_priced_call_stores_its_cost(platform: URL, migrated_database: U
 
 
 async def test_a_failed_call_is_metered_and_says_why(platform: URL, migrated_database: URL) -> None:
-    """A provider that fails has still been called, and with WP6.2's chain the
-    error row beside an ok row is what shows a fallback happened."""
+    """A provider that fails has still been called."""
     org_id, _ = await _org(migrated_database)
 
     await meter.record(
@@ -235,8 +202,7 @@ async def test_a_failed_call_is_metered_and_says_why(platform: URL, migrated_dat
 async def test_a_failure_without_a_reason_cannot_be_stored(
     platform: URL, migrated_database: URL
 ) -> None:
-    """The constraint revision 0010 applies to refusals, applied here to errors:
-    a row claiming failure without saying what failed records nothing."""
+    """The constraint revision 0010 applies to refusals, applied here to errors."""
     org_id, _ = await _org(migrated_database)
     engine = create_async_engine(platform)
     try:
@@ -260,11 +226,7 @@ async def test_a_failure_without_a_reason_cannot_be_stored(
 async def test_a_role_the_product_does_not_have_cannot_be_stored(
     platform: URL, migrated_database: URL
 ) -> None:
-    """The schema's CHECK is the backstop for the two copies of the role list.
-
-    ``llm/base.py`` holds the live one and the database holds its own; this is
-    what makes a drift between them fail loudly instead of writing nonsense.
-    """
+    """The schema's CHECK is the backstop for the two copies of the role list."""
     org_id, _ = await _org(migrated_database)
     engine = create_async_engine(platform)
     try:
@@ -288,8 +250,7 @@ async def test_a_role_the_product_does_not_have_cannot_be_stored(
 async def test_one_organization_cannot_see_another_s_spend(
     platform: URL, migrated_database: URL
 ) -> None:
-    """Usage is commercially sensitive on its own: how much a competitor spends,
-    and how often they ask, is inferable from these rows alone."""
+    """Usage is commercially sensitive on its own: how much a competitor spends."""
     first, _ = await _org(migrated_database)
     second, _ = await _org(migrated_database)
 

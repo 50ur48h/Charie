@@ -73,11 +73,7 @@ describe("<Members />", () => {
 });
 
 describe("asking before anything changes", () => {
-  /**
-   * Removing someone and changing a role both take effect at once, and the
-   * select fires on a single keystroke — so each asks first, and nothing is
-   * sent until the Admin says yes.
-   */
+  /** Removing someone and changing a role both take effect at once. */
   function routeFetch() {
     const calls: { url: string; init: RequestInit }[] = [];
     vi.stubGlobal(
@@ -189,9 +185,7 @@ describe("a way back in (B-017)", () => {
   });
 
   it("tells an Admin plainly when there is no way back", async () => {
-    // The failure this feature exists to stop is silent: an organization is
-    // fine right up until nobody can sign in. So "nothing armed" is stated,
-    // not left as an empty panel.
+    // The failure this feature exists to stop is silent.
     routeFetch([]);
 
     render(<Members orgId="org1" role="admin" />);
@@ -200,8 +194,7 @@ describe("a way back in (B-017)", () => {
   });
 
   it("does not show the panel to a Reader, who could not use it", async () => {
-    // B-008: showing a control that can only earn a 403 teaches people the
-    // product is broken rather than that they lack permission.
+    // B-008: showing a control that can only earn a 403 teaches people the product is broken...
     routeFetch([]);
 
     render(<Members orgId="org1" role="reader" />);
@@ -211,8 +204,7 @@ describe("a way back in (B-017)", () => {
   });
 
   it("lists an armed grant with the date it runs out", async () => {
-    // The expiry is on screen because a grant that lapses quietly recreates
-    // B-017 exactly — the way back missing at the moment it is needed.
+    // The expiry is on screen because a grant that lapses quietly recreates B-017 exactly.
     routeFetch([
       {
         id: "g1",

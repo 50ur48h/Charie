@@ -1,12 +1,6 @@
 "use client";
 
-/**
- * Number cards (design: `.a-kpis`), for a table that is really a short list of
- * figures — "Metric | Value" — rather than rows of things to compare.
- *
- * The value counts up once when it appears; the text it settles on is exactly
- * the text the answer gave.
- */
+/** Number cards (design: `.a-kpis`), for a table that is really a short list of figures. */
 
 import { CircleAlert, Minus, TrendingDown, TrendingUp } from "lucide-react";
 import { useEffect, useState } from "react";

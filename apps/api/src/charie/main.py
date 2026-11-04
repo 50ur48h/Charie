@@ -1,9 +1,4 @@
-"""FastAPI application factory.
-
-Kept deliberately thin: it wires configuration, middleware and routers, and
-nothing else. Everything with behaviour lives in a package that can be tested
-without an HTTP server.
-"""
+"""FastAPI application factory."""
 
 from __future__ import annotations
 
@@ -29,18 +24,7 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
-    """Reconcile runs a restart stopped, then serve.
-
-    Runs are in-process async tasks (architecture 0.2.4), so a redeploy kills
-    whatever was in flight and leaves rows claiming to be `running` with nothing
-    running them. 0.2.4 names this as the honest weakness of the model and asks
-    for exactly this mitigation.
-
-    **A failure here must not stop the process booting.** ``/healthz`` has to
-    answer on a bare checkout with no database — that is what WP0.2 promised and
-    what CI relies on — so an unreachable database is logged and the app serves.
-    The cost of skipping the sweep is stale statuses, not a broken deployment.
-    """
+    """Reconcile runs a restart stopped, then serve."""
     from charie.agent.scheduler import sweep_orphaned_runs
 
     try:
@@ -51,19 +35,13 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
-    """Build the application.
-
-    Accepting settings makes the factory testable without touching the process
-    environment; production callers pass nothing and get the cached settings.
-    """
+    """Build the application."""
     resolved = settings if settings is not None else get_settings()
 
-    # Before anything is mounted: a process that boots and then fails open is
-    # indistinguishable from one that works until somebody looks.
+    # Before anything is mounted: a process that boots and then fails open is indistinguishable...
     resolved.assert_auth_is_production_safe()
     resolved.assert_secrets_backend_is_production_safe()
-    # **WP11.2b.** The third of these, and the same shape as the first two: a
-    # weaker-mode-for-convenience switch that must not survive into production.
+    # WP11.2b. The third of these, and the same shape as the first two.
     resolved.assert_llm_providers_are_production_safe()
 
     app = FastAPI(
@@ -73,8 +51,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
 
     if settings is not None:
-        # Routes read settings through the dependency, so overriding it here is
-        # what makes an injected Settings object reach them.
+        # Routes read settings through the dependency.
         app.dependency_overrides[get_settings] = lambda: resolved
 
     # The web app is the only first-party client (arch 7.2 — no APIM in V1).
@@ -86,12 +63,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_headers=["*"],
     )
 
-    # Settings, not a validator. Building one here would mean an application
-    # with no identity provider configured could not boot at all — and
-    # /healthz must answer on a bare checkout, which is what WP0.2 promised
-    # and what CI relies on. The validator is built on first use instead, so a
-    # misconfigured deployment fails closed on protected routes rather than
-    # taking down the liveness probe with it.
+    # Settings, not a validator.
     app.state.settings = resolved
     app.state.token_validator = None
 
@@ -105,9 +77,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(semantic_routes.router)
 
     if resolved.auth_mode == "dev":
-        # Imported here, not at module scope: the prod image does not contain
-        # this module at all, so a top-level import would break that image even
-        # though the branch could never be taken.
+        # Imported here, not at module scope: the prod image does not contain this module at all.
         from charie.auth import dev_issuer
 
         app.state.dev_issuer = dev_issuer.build_dev_issuer(resolved)

@@ -1,34 +1,4 @@
-"""The one door every trace event goes through (architecture Part 10.3).
-
-``agent_events`` is the single source of truth for what a run did; SSE in Phase 8
-is only its live tail, and the trace UI, the replay after a refresh and the eval
-harness all read the same rows. So there is one writer, from day one, and
-everything the user will ever be shown passes through it — the same shape
-``dal.run`` holds for customer data and ``llm.complete`` for model calls.
-
-Three rules it enforces, none of which a caller can opt out of.
-
-**The type is from a closed list.** Architecture 10.3 names twenty event types and
-a trace UI has to render each one, so an unrecognised type is a bug rather than an
-extension point. ``EventType`` is a ``Literal`` over exactly those names, the
-database has the same list as a CHECK constraint, and a test asserts the two
-copies agree.
-
-**``seq`` is gap-free within a run.** ``?after=seq`` means "everything I have not
-seen"; a gap would make a reconnecting client wait forever for a number that will
-never arrive, and a duplicate would make it skip a step. The next value is taken
-under ``SELECT … FOR UPDATE`` on the run's own row, so two writers on one run
-serialise on the run rather than racing for a position — and the unique
-constraint underneath turns any mistake here into an error instead of a silently
-mangled trace.
-
-**The payload is JSON and is checked here.** A payload that cannot be serialised
-fails at flush time otherwise, deep inside a driver, with a message about a
-parameter rather than about an event. What this module cannot check is the rule
-10.3 actually cares about — that payloads are *built for eyes*, short public
-strings out of structured tool output and never raw model reasoning. That stays a
-review question, and it is why the payload types live beside the emitting code.
-"""
+"""The one door every trace event goes through (architecture Part 10.3)."""
 
 from __future__ import annotations
 
@@ -54,9 +24,7 @@ __all__ = [
     "write_event",
 ]
 
-#: Architecture 10.3's vocabulary, as a type. ``charie.db.models.EVENT_TYPES``
-#: is the copy the schema is built from; ``test_event_types_match_the_schema``
-#: asserts they are the same list in the same order.
+#: Architecture 10.3's vocabulary, as a type.
 EventType = Literal[
     "run_started",
     "intent_classified",
@@ -65,12 +33,7 @@ EventType = Literal[
     "plan_created",
     "step_started",
     "tool_called",
-    # The result of a `tool_called` for `search_knowledge` — what the agent
-    # asked its documents and what they said (**B-075**, D-032). Twenty-first
-    # in a list architecture 10.3 fixed at twenty, and it earns the place: the
-    # Phase 10 gate turns on a person being able to *see* a document being
-    # consulted mid-run, and `tool_called` records the asking without the
-    # answer.
+    # The result of a `tool_called` for `search_knowledge`.
     "knowledge_consulted",
     "sql_validated",
     "sql_rejected",
@@ -91,13 +54,7 @@ EVENT_TYPES: tuple[str, ...] = get_args(EventType)
 
 
 class UnknownRunError(Exception):
-    """No run with that id in this organization.
-
-    One error for "never existed" and "belongs to somebody else", because under
-    row-level security this code cannot tell them apart — and should not be able
-    to, since telling them apart is what would leak the existence of another
-    tenant's run.
-    """
+    """No run with that id in this organization."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -130,23 +87,14 @@ async def write_event(
     event_type: EventType,
     payload: Mapping[str, object] | None = None,
 ) -> RecordedEvent:
-    """Append one event on an already org-scoped session.
-
-    Takes the session rather than opening its own so an event can commit in the
-    same transaction as the thing it describes — a run that started without a
-    ``run_started``, or a ``run_started`` for a run that did not, are both worse
-    than either alone. It is the same reason ``orgs.service.audit`` is shaped
-    this way.
-    """
+    """Append one event on an already org-scoped session."""
     locked = (
         await session.execute(select(AgentRun.id).where(AgentRun.id == run_id).with_for_update())
     ).scalar_one_or_none()
     if locked is None:
         raise UnknownRunError(f"No run {run_id} in this organization")
 
-    # MAX + 1 rather than a sequence: a sequence is global and would leave gaps
-    # in every run's numbering as soon as two ran at once. The run row is locked
-    # above, so this read cannot race another writer on the same run.
+    # MAX + 1 rather than a sequence.
     highest = (
         await session.execute(
             select(func.coalesce(func.max(AgentEvent.seq), 0)).where(AgentEvent.run_id == run_id)
@@ -166,13 +114,7 @@ async def write_event(
 
 
 class EventWriter:
-    """A trace writer bound to one run.
-
-    What the agent is handed in Phase 7 and 8, so that emitting a step is one call
-    that cannot name the wrong run. Each ``emit`` is its own transaction, which is
-    what makes a trace visible *while* a run is going rather than only when it
-    commits — the whole point of a live trace.
-    """
+    """A trace writer bound to one run."""
 
     __slots__ = ("_org_id", "_run_id")
 
@@ -200,11 +142,7 @@ class EventWriter:
 async def read_events(
     *, org_id: uuid.UUID, run_id: uuid.UUID, after: int = 0, limit: int = 500
 ) -> list[RecordedEvent]:
-    """This run's events after ``seq``, oldest first — the poll and the replay.
-
-    Phase 8's SSE endpoint reads the same rows through the same filter; streaming
-    changes when they are delivered, not what they are.
-    """
+    """This run's events after ``seq``, oldest first — the poll and the replay."""
     async with org_session(org_id) as session:
         rows = (
             (

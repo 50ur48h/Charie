@@ -1,19 +1,4 @@
-"""Proof that tenant isolation is structural, not a convention.
-
-Every test here connects as ``charie_app`` — the role the API actually uses —
-and tries to do the thing the design forbids. They are marked ``rls_proof`` and
-may never be skipped or xfailed (plan §4.4); WP1.3 asserts in CI that the marker
-really ran.
-
-The load-bearing test is ``test_unfiltered_select_leaks_nothing_from_any_tenant_table``:
-it issues a deliberately unfiltered ``SELECT *`` against every tenant table, the
-exact bug a repository is most likely to contain, and shows the database
-refusing to leak.
-
-``test_no_tenant_table_can_be_added_without_protecting_it`` is what keeps this
-suite honest as the schema grows: it asks the database which tables carry
-``org_id`` and fails if any of them is undeclared or unprotected.
-"""
+"""Proof that tenant isolation is structural, not a convention."""
 
 from __future__ import annotations
 
@@ -61,9 +46,7 @@ class SeededOrgs:
     a: uuid.UUID
     b: uuid.UUID
     user_id: uuid.UUID
-    #: Org B's catalog chain, by id. The forged inserts need real parents: a
-    #: made-up snapshot id would be refused by the foreign key and the test
-    #: would pass while proving nothing about the policy.
+    #: Org B's catalog chain, by id. The forged inserts need real parents.
     b_data_source: uuid.UUID
     b_snapshot: uuid.UUID
     b_table: uuid.UUID
@@ -75,15 +58,7 @@ class SeededOrgs:
 
 
 async def _seed_two_orgs(owner_url: URL) -> SeededOrgs:
-    """Populate every tenant table for two organizations.
-
-    The *same* user belongs to both, which is the realistic case and a sharper
-    test: isolation has to come from the organization, not from the user.
-
-    Written as the owner, which FORCE RLS also subjects to the policies, so every
-    insert sets ``app.org_id`` first — proving the WITH CHECK clause is live on
-    the way in.
-    """
+    """Populate every tenant table for two organizations."""
     org_a, org_b, user_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
     catalog: dict[str, uuid.UUID] = {}
     engine = create_async_engine(owner_url)
@@ -139,10 +114,7 @@ async def _seed_two_orgs(owner_url: URL) -> SeededOrgs:
                     )
                 ).scalar_one()
 
-                # The catalog chain (WP4.1): a snapshot, one table in it, one
-                # column of that table, and one relationship. Each hangs off the
-                # one above by id, so this is also a small proof that the
-                # foreign keys and the policies agree about what a tenant owns.
+                # The catalog chain (WP4.1): a snapshot, one table in it, one column of that table.
                 snapshot_id = (
                     await connection.execute(
                         text(
@@ -182,8 +154,7 @@ async def _seed_two_orgs(owner_url: URL) -> SeededOrgs:
                     ),
                     {"org": org_id, "snap": snapshot_id},
                 )
-                # A decision about a column, which outlives snapshots and so is
-                # keyed by name rather than by a catalog row (WP4.2, D-013).
+                # A decision about a column, which outlives snapshots and so is keyed by name...
                 await connection.execute(
                     text(
                         "INSERT INTO column_policies "
@@ -192,10 +163,7 @@ async def _seed_two_orgs(owner_url: URL) -> SeededOrgs:
                     ),
                     {"org": org_id, "ds": data_source_id},
                 )
-                # What the DAL wrote down about a query (WP5.2b). Seeded here
-                # so the isolation proof covers the table that answers "who
-                # read what" — the one place an unprotected row would be a
-                # leak of another tenant's activity rather than of their data.
+                # What the DAL wrote down about a query (WP5.2b).
                 execution_id = (
                     await connection.execute(
                         text(
@@ -214,10 +182,7 @@ async def _seed_two_orgs(owner_url: URL) -> SeededOrgs:
                     ),
                     {"org": org_id, "execution": execution_id},
                 )
-                # What a model call cost (WP6.1). Seeded here because usage is
-                # commercially sensitive on its own: how much a tenant spends,
-                # and how often they ask, is inferable from these rows without
-                # reading a single answer.
+                # What a model call cost (WP6.1).
                 await connection.execute(
                     text(
                         "INSERT INTO usage_ledger "
@@ -227,13 +192,7 @@ async def _seed_two_orgs(owner_url: URL) -> SeededOrgs:
                     ),
                     {"org": org_id},
                 )
-                # The product's own record (WP7.1): a conversation, the run one
-                # question started, the message that asked it, one trace event
-                # and one finding. Seeded here because this chain is the most
-                # sensitive thing in the platform database — it holds what a
-                # customer asked and what the agent concluded, in their own
-                # words, which is worse to leak than the schema it was asked
-                # about.
+                # The product's own record (WP7.1): a conversation, the run one question started.
                 conversation_id = (
                     await connection.execute(
                         text(
@@ -286,11 +245,7 @@ async def _seed_two_orgs(owner_url: URL) -> SeededOrgs:
                     ),
                     {"org": org_id, "run": run_id, "statement": f"{name} took 41 orders"},
                 )
-                # WP10.1's two tables. The chunk is written with **no embedding**,
-                # which is its ordinary first state (revision 0016) and the one a
-                # backfill later fills in — so this proves isolation over the row
-                # shape that actually exists between ingest and embedding, rather
-                # than over an idealised finished one.
+                # WP10.1's two tables. The chunk is written with no embedding.
                 document_id = (
                     await connection.execute(
                         text(
@@ -363,11 +318,7 @@ async def _seed_two_orgs(owner_url: URL) -> SeededOrgs:
                         "question": f"how many orders has {name} taken?",
                     },
                 )
-                # **B-017.** A recovery grant makes its holder an Admin of one
-                # organization, so a leak across the boundary here would be the
-                # worst one in the schema: not a row of somebody's data, but the
-                # means to take their organization. `token_hash` is unique, so
-                # each org seeds its own.
+                # B-017. A recovery grant makes its holder an Admin of one organization.
                 await connection.execute(
                     text(
                         "INSERT INTO org_recovery_grants "
@@ -409,12 +360,7 @@ async def _seed_two_orgs(owner_url: URL) -> SeededOrgs:
 
 
 def _forged_insert(table: str, seeded: SeededOrgs) -> str:
-    """A row that belongs to somebody else, written as SQL for one table.
-
-    ``organizations`` is scoped by its own ``id``, so "somebody else's row" there
-    means any organization that is not the one this session is scoped to — which
-    is also why bootstrap must set ``app.org_id`` to the new id before inserting.
-    """
+    """A row that belongs to somebody else, written as SQL for one table."""
     other_org, user_id = seeded.b, seeded.user_id
     statements = {
         "organizations": f"INSERT INTO organizations (id, name) VALUES ('{other_org}', 'forged')",
@@ -433,9 +379,7 @@ def _forged_insert(table: str, seeded: SeededOrgs) -> str:
             f"('{other_org}', 'forged', 'pg', 'db.example:5432/pizza', "
             f"'ds/{other_org}/forged/credentials')"
         ),
-        # The catalog chain names real parents belonging to the other
-        # organization, so nothing here can be refused by a foreign key and pass
-        # for the wrong reason: the only thing standing in the way is the policy.
+        # The catalog chain names real parents belonging to the other organization.
         "catalog_snapshots": (
             "INSERT INTO catalog_snapshots (org_id, data_source_id, version, status) VALUES "
             f"('{other_org}', '{seeded.b_data_source}', 99, 'building')"
@@ -475,9 +419,7 @@ def _forged_insert(table: str, seeded: SeededOrgs) -> str:
             "(org_id, data_source_id, schema_name, table_name, column_name, policy) VALUES "
             f"('{other_org}', '{seeded.b_data_source}', 'public', 'forged', 'email', 'allow')"
         ),
-        # Same rule as the catalog chain: every parent named here is a real row
-        # belonging to the other organization, so a foreign key cannot refuse
-        # these for the wrong reason. Only the policy is in the way.
+        # Same rule as the catalog chain.
         "conversations": (
             "INSERT INTO conversations (org_id, user_id, title) VALUES "
             f"('{other_org}', '{user_id}', 'forged')"
@@ -490,9 +432,7 @@ def _forged_insert(table: str, seeded: SeededOrgs) -> str:
             "INSERT INTO messages (org_id, conversation_id, role, content, run_id) VALUES "
             f"('{other_org}', '{seeded.b_conversation}', 'user', 'forged', '{seeded.b_run}')"
         ),
-        # seq 2, because the seed already wrote seq 1 for this run: a forged row
-        # that collided on the unique constraint would be refused before the
-        # policy was ever consulted.
+        # seq 2, because the seed already wrote seq 1 for this run.
         "agent_events": (
             "INSERT INTO agent_events (org_id, run_id, seq, type) VALUES "
             f"('{other_org}', '{seeded.b_run}', 2, 'error')"
@@ -505,42 +445,30 @@ def _forged_insert(table: str, seeded: SeededOrgs) -> str:
             "INSERT INTO knowledge_documents (org_id, title, blob_path, mime) VALUES "
             f"('{other_org}', 'forged', '{other_org}/docs/forged.md', 'text/markdown')"
         ),
-        # seq 1, because the seed already wrote seq 0 for this document: a forged
-        # row colliding on the unique constraint would be refused before the
-        # policy was ever consulted, and the test would pass proving nothing.
+        # seq 1, because the seed already wrote seq 0 for this document.
         "knowledge_chunks": (
             "INSERT INTO knowledge_chunks (org_id, document_id, seq, text) VALUES "
             f"('{other_org}', '{seeded.b_document}', 1, 'forged')"
         ),
-        # A different name from the seeded one, because `(data_source_id, name)`
-        # is unique: a forged row colliding on that constraint would be refused
-        # before the policy was ever consulted, and the test would pass having
-        # proved nothing — the same trap the chunk above sidesteps with `seq`.
+        # A different name from the seeded one, because `(data_source_id, name)` is unique.
         "semantic_definitions": (
             "INSERT INTO semantic_definitions "
             "(org_id, data_source_id, name, description) VALUES "
             f"('{other_org}', '{seeded.b_data_source}', 'forged_metric', 'forged')"
         ),
-        # Version 2, because `(definition_id, version)` is unique: a forged row
-        # colliding on that constraint would be refused before the policy was
-        # consulted, and the test would pass having proved nothing.
+        # Version 2, because `(definition_id, version)` is unique.
         "semantic_definition_versions": (
             "INSERT INTO semantic_definition_versions "
             "(org_id, definition_id, version, name, kind, description, status, change) VALUES "
             f"('{other_org}', '{seeded.b_definition}', 2, 'net_revenue', 'metric', "
             "'forged', 'active', 'updated')"
         ),
-        # A different question from the seeded one, because
-        # `(data_source_id, question)` is unique — a forged row colliding on
-        # that constraint would be refused before the policy was consulted, and
-        # the test would pass having proved nothing.
+        # A different question from the seeded one, because `(data_source_id, question)` is unique.
         "verified_queries": (
             "INSERT INTO verified_queries (org_id, data_source_id, question, sql) VALUES "
             f"('{other_org}', '{seeded.b_data_source}', 'forged question?', 'SELECT 1')"
         ),
-        # A distinct hash, because `token_hash` is unique: a forged row colliding
-        # on that constraint would be refused before the policy was consulted,
-        # and the test would pass having proved nothing.
+        # A distinct hash, because `token_hash` is unique.
         "org_recovery_grants": (
             "INSERT INTO org_recovery_grants (id, org_id, token_hash, label, expires_at) VALUES "
             f"('{uuid.uuid4()}', '{other_org}', 'hash-of-a-forged-token', 'forged', "
@@ -553,12 +481,7 @@ def _forged_insert(table: str, seeded: SeededOrgs) -> str:
 async def _expect_failure(
     url: URL, statement: str, *, org_id: uuid.UUID | None = None, match: str | None = None
 ) -> None:
-    """Run one statement on its own connection and require it to be refused.
-
-    A fresh connection per attempt matters: the first refusal aborts the
-    transaction, and every later statement on it would fail with "current
-    transaction is aborted" — which looks like a pass while proving nothing.
-    """
+    """Run one statement on its own connection and require it to be refused."""
     connection = await _connect(url, org_id)
     try:
         with pytest.raises(DBAPIError, match=match):
@@ -588,23 +511,11 @@ async def _names(url: URL, statement: str) -> set[str]:
     return {row[0] for row in await _rows(url, statement)}
 
 
-# ---------------------------------------------------------------------------
-# What the role is
-# ---------------------------------------------------------------------------
+# --- What the role is ---
 
 
 async def test_no_tenant_table_can_be_added_without_protecting_it(app_database: URL) -> None:
-    """The guard that keeps this suite honest as the schema grows.
-
-    Plan §6 WP1.3 requires that every tenant table added in any later phase
-    extends this proof. Relying on someone remembering is not a control, so this
-    asks the database instead: any table carrying ``org_id`` must be declared in
-    ``TENANT_TABLES`` and must already have RLS enabled, forced, and a policy.
-
-    Phase 4 adds catalog tables, Phase 7 adds runs and events, Phase 10 adds
-    documents. Each of those will fail here until it is protected — which is the
-    point.
-    """
+    """The guard that keeps this suite honest as the schema grows."""
     carrying_org_id = await _names(app_database, _TABLES_WITH_ORG_ID)
     declared = {table for table, key in TENANT_TABLES.items() if key == "org_id"}
 
@@ -624,12 +535,7 @@ async def test_no_tenant_table_can_be_added_without_protecting_it(app_database: 
 async def test_the_guard_above_actually_detects_an_unprotected_table(
     app_database: URL, migrated_database: URL
 ) -> None:
-    """A guard that has never failed is a guard nobody has tested.
-
-    Create the exact mistake a later phase might make — a tenant table with an
-    ``org_id`` and no policy — and show that the query the guard uses reports it
-    as both undeclared and unprotected.
-    """
+    """A guard that has never failed is a guard nobody has tested."""
     engine = create_async_engine(migrated_database)
     try:
         async with engine.begin() as connection:
@@ -674,18 +580,7 @@ async def test_the_api_role_has_no_way_to_bypass_rls(app_database: URL) -> None:
 
 
 async def test_the_app_dsn_connects_as_the_application_role(app_database: URL) -> None:
-    """That the *DSN* connects as the app role. Necessary, and not the question.
-
-    **This test used to be called `test_the_api_connects_as_the_application_role`
-    and it did not test that** (**B-123**). It opens a connection with the app
-    DSN and asserts the app DSN connects as the app role — true by construction,
-    and silent for eleven phases while the API itself used the *owner* connection
-    on every authenticated request. A test whose name states the guarantee and
-    whose body proves something adjacent is worse than no test: it occupies the
-    space where the real one would have gone.
-
-    Renamed to what it checks. The guarantee it was named for is below.
-    """
+    """That the DSN connects as the app role."""
     rows = await _rows(app_database, "SELECT current_user, session_user")
 
     assert rows[0][0] == APP_ROLE
@@ -695,19 +590,7 @@ async def test_the_app_dsn_connects_as_the_application_role(app_database: URL) -
 async def test_the_api_never_needs_the_owner_connection(
     app_database: URL, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """**The guarantee itself: take the owner DSN away and the API still works.**
-
-    This reproduces the deployment that found the defect. `apps.bicep` set
-    `APP_DATABASE_URL` and not `DATABASE_URL`, and the API failed at startup and
-    on `/v1/me` with `RuntimeError: DATABASE_URL is not set` — because eight
-    request-path call sites reached for the owner connection that every
-    developer's `.env` had always quietly provided.
-
-    Asserting it this way rather than by grepping for `system_session` is
-    deliberate. A static check would pass the moment somebody wrote a wrapper
-    around it; this passes only if the request path genuinely never opens an
-    owner connection, whatever route it takes to try.
-    """
+    """The guarantee itself: take the owner DSN away and the API still works."""
     from sqlalchemy.ext.asyncio import async_sessionmaker
 
     import charie.db.engine as engine_module
@@ -716,16 +599,12 @@ async def test_the_api_never_needs_the_owner_connection(
     from charie.auth.principal import Principal
     from charie.orgs import service as orgs
 
-    # Point the application role's factory at the test database, the way every
-    # other suite here does. Nothing redirects the *owner* engine, because the
-    # point is that nothing should reach for it.
+    # Point the application role's factory at the test database.
     app_engine = create_async_engine(app_database)
     factory = async_sessionmaker(app_engine, expire_on_commit=False, autoflush=False)
     monkeypatch.setattr(session_module, "_session_factory", lambda: factory)
 
-    # The owner engine is not merely unset — it raises if anything reaches for
-    # it, so a caller that tries is a failure with a name rather than a silent
-    # fallback to a connection that happens to exist in this test process.
+    # The owner engine is not merely unset — it raises if anything reaches for it.
     def _refuse() -> object:
         raise AssertionError(
             "the request path opened the owner connection; AGENTS.md's rule is "
@@ -740,8 +619,7 @@ async def test_the_api_never_needs_the_owner_connection(
         name="Nobody",
     )
 
-    # The two paths every authenticated request takes: find the user, then find
-    # what they are a member of. Both used the owner connection until B-123.
+    # The two paths every authenticated request takes: find the user.
     user = await orgs.ensure_user(principal)
     assert user.external_subject == principal.subject
 
@@ -767,9 +645,7 @@ async def test_the_api_role_owns_no_tenant_table(app_database: URL) -> None:
 
 async def test_every_tenant_table_enables_and_forces_rls(app_database: URL) -> None:
     """FORCE is the half that people forget: without it the owner is exempt."""
-    # Built from TENANT_TABLES rather than written out: a hand-kept list here
-    # would go stale the first time a phase adds a table, and would do so
-    # silently — the loop below would simply not look at the new one.
+    # Built from TENANT_TABLES rather than written out.
     named = ", ".join(f"'{table}'" for table in TENANT_TABLES)
     rows = await _rows(
         app_database,
@@ -797,23 +673,13 @@ async def test_every_tenant_table_has_an_isolation_policy(app_database: URL) -> 
         assert with_check is not None, f"{table}'s policy has no WITH CHECK, so inserts are free"
 
 
-# ---------------------------------------------------------------------------
-# What the role can do with data
-# ---------------------------------------------------------------------------
+# --- What the role can do with data ---
 
 
 async def test_unfiltered_select_leaks_nothing_from_any_tenant_table(
     app_database: URL, migrated_database: URL
 ) -> None:
-    """The M1 acceptance test, across every tenant table.
-
-    Two organizations hold one row each in all four tables. The queries below
-    carry no filter of any kind — they are the bug a repository is most likely to
-    contain — and each still returns exactly its own organization's row.
-
-    Looping rather than parametrising keeps this to one migrated database instead
-    of four; the assertion messages name the table, so a failure is still precise.
-    """
+    """The M1 acceptance test, across every tenant table."""
     seeded = await _seed_two_orgs(migrated_database)
 
     for table in TENANT_TABLES:
@@ -871,20 +737,14 @@ async def test_insert_under_another_org_is_rejected_on_every_tenant_table(
 async def test_a_session_without_an_org_sees_nothing_and_says_so(
     app_database: URL, migrated_database: URL
 ) -> None:
-    """Fail closed and fail loudly.
-
-    The policy dereferences ``app.org_id``; with none set the query errors rather
-    than quietly returning an empty result that could be mistaken for "no data".
-    """
+    """Fail closed and fail loudly."""
     await _seed_two_orgs(migrated_database)
 
     with pytest.raises(DBAPIError, match=r"app\.org_id"):
         await _rows(app_database, "SELECT * FROM organizations")
 
 
-# ---------------------------------------------------------------------------
-# What the role cannot do to the controls themselves
-# ---------------------------------------------------------------------------
+# --- What the role cannot do to the controls themselves ---
 
 
 async def test_the_api_role_cannot_turn_rls_off(app_database: URL) -> None:
@@ -924,13 +784,7 @@ async def test_audit_log_is_append_only_for_the_api_role(
 async def test_agent_events_is_append_only_for_the_api_role(
     app_database: URL, migrated_database: URL
 ) -> None:
-    """A trace that could be edited afterwards would be a story, not a record.
-
-    ``agent_events`` is what the product shows a user as proof of how an answer
-    was reached (architecture 10.3), so it carries the same grant lock
-    ``audit_log`` has: the application role may append and may never rewrite.
-    Without this the honesty claim would rest on nobody having written an UPDATE.
-    """
+    """A trace that could be edited afterwards would be a story, not a record."""
     seeded = await _seed_two_orgs(migrated_database)
 
     connection = await _connect(app_database, seeded.a)
@@ -962,16 +816,7 @@ async def test_agent_events_is_append_only_for_the_api_role(
 async def test_definition_versions_are_append_only_for_the_api_role(
     app_database: URL, migrated_database: URL
 ) -> None:
-    """A history the application can rewrite is not a history (**B-088**).
-
-    ``semantic_definition_versions`` exists to answer *"what did this metric
-    require when that answer was written"*, and a definition binds — its filters
-    are enforced against the AST of generated SQL. So it carries the same grant
-    lock ``audit_log`` and ``agent_events`` do: the application role may append
-    and may never rewrite. Revision 0002's ALTER DEFAULT PRIVILEGES grants all
-    four verbs on later tables, so 0022 revokes rather than merely declining to
-    grant — and this is what proves the revoke landed.
-    """
+    """A history the application can rewrite is not a history (B-088)."""
     seeded = await _seed_two_orgs(migrated_database)
 
     connection = await _connect(app_database, seeded.a)

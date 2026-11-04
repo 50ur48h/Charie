@@ -1,19 +1,4 @@
-"""Catalog routes (architecture Part 10.2).
-
-Two verbs, and the split between them is the roles: **refreshing** a catalog
-reaches out to a customer's database and is Contributor-or-Admin work;
-**browsing** one reads rows this organization already owns, and any member may.
-
-Refreshing and profiling both run inline. The metadata pass is four catalog
-queries and takes a fifth of a second against the demo databases; profiling is
-bounded by a budget it enforces itself, so the longest either can take is a
-number this application chose. A job queue for work that stops on its own would
-be infrastructure with nothing to carry — and both answers are a snapshot, so
-the shape already allows for one when a nightly schedule needs it.
-
-Setting a column policy is Admin work and audited: it is the one route here that
-changes what people are allowed to see.
-"""
+"""Catalog routes (architecture Part 10.2)."""
 
 from __future__ import annotations
 
@@ -38,13 +23,7 @@ DataSourceId = Annotated[uuid.UUID, Path(description="Data source within this or
 
 
 def card_embedder() -> Embedder | None:
-    """The embedder these routes build and search cards with (**B-018**).
-
-    A function rather than a call at each site, for the reason
-    `knowledge.routes.document_embedder` is one: it is the seam a test replaces,
-    and there is exactly one of it. None means this deployment configured no
-    embedding model, which leaves the cards lexically searchable and `queued`.
-    """
+    """The embedder these routes build and search cards with (B-018)."""
     return embeddings.get_embedder()
 
 
@@ -177,18 +156,13 @@ async def refresh_catalog(
     context: Annotated[RequestContext, Depends(require_contributor)],
     data_source_id: DataSourceId,
 ) -> RefreshOut:
-    """Answers 200 for a refresh that found nothing to do, and for one that
-    failed: both are outcomes an admin needs the detail of, not request errors.
-    """
+    """Answers 200 for a refresh that found nothing to do, and for one that failed."""
     try:
         outcome = await discovery.discover(
             org_id=context.org_id,
             actor_user_id=context.user_id,
             data_source_id=data_source_id,
-            # So a new catalog is searchable by meaning as well as by wording
-            # from the moment it exists (**B-018**). None when the deployment
-            # has no embedding model, which costs the cards their vectors and
-            # nothing else.
+            # So a new catalog is searchable by meaning as well as by wording from the moment it...
             embedder=card_embedder(),
         )
     except NotFoundError as error:
@@ -311,18 +285,13 @@ async def profile_catalog(
     context: Annotated[RequestContext, Depends(require_contributor)],
     data_source_id: DataSourceId,
 ) -> ProfileOut:
-    """Reads rows, unlike a refresh — under a budget it enforces itself.
-
-    Answers 200 for a partial pass. A budget that stopped is not an error, and
-    an admin needs to know how far it got either way.
-    """
+    """Reads rows, unlike a refresh — under a budget it enforces itself."""
     try:
         outcome = await profiler.profile(
             org_id=context.org_id,
             actor_user_id=context.user_id,
             data_source_id=data_source_id,
-            # Profiling rewrites the cards, and a rewritten card's old vector
-            # describes words it no longer contains (**B-018**).
+            # Profiling rewrites the cards, and a rewritten card's old vector describes words it...
             embedder=card_embedder(),
         )
     except NotFoundError as error:
@@ -350,8 +319,7 @@ async def set_column_policy(
     data_source_id: DataSourceId,
     column_id: Annotated[uuid.UUID, Path(description="A column of the active catalog")],
 ) -> PolicyOut:
-    """Addressed by the catalog column an Admin was looking at; stored by name,
-    so the decision outlives the next refresh (DECISIONS D-013)."""
+    """Addressed by the catalog column an Admin was looking at; stored by name."""
     try:
         decided = await policies.set_policy(
             org_id=context.org_id,
@@ -365,9 +333,7 @@ async def set_column_policy(
     except policies.ColumnNotFoundError as error:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
 
-    # The DAL caches this data source's policies for a few seconds. An Admin who
-    # has just denied a column expects the next query to be refused, not the one
-    # after the TTL, so the decision drops the entry rather than waiting it out.
+    # The DAL caches this data source's policies for a few seconds.
     dal_policy.invalidate_source(context.org_id, data_source_id)
 
     return PolicyOut(
@@ -405,16 +371,13 @@ async def search_catalog(
     data_source_id: Annotated[uuid.UUID | None, Query()] = None,
     limit: Annotated[int, Query(ge=1, le=search.MAX_LIMIT)] = search.DEFAULT_LIMIT,
 ) -> list[CardHitOut]:
-    """Any member may search: a card describes structure, and its examples were
-    masked before they were stored."""
+    """Any member may search: a card describes structure."""
     hits = await search.search_cards(
         context.org_id,
         q,
         data_source_id=data_source_id,
         limit=limit,
-        # The same search the agent gets, so "what would it have found" is
-        # answerable by asking. No `run_id`: a person typing in a search box is
-        # not a run and has no ledger to accumulate against (D-031).
+        # The same search the agent gets, so "what would it have found" is answerable by asking.
         embedder=card_embedder(),
         actor_user_id=context.user_id,
     )

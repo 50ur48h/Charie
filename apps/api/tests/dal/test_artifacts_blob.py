@@ -1,20 +1,4 @@
-"""The Blob artifact backend (WP12.2).
-
-The local store's guarantees, asserted again against a different backend rather
-than assumed to travel with the interface. Two of them matter:
-
-* **A reference belonging to another organization is refused.** The local store
-  gets this partly for free — a path that climbs out of the root fails the
-  `is_relative_to` check. A blob name is not a path, so there is no filesystem to
-  stop a perfectly well-formed name reaching another tenant's prefix, and the
-  check has to be explicit. This file is why we know it is.
-* **A missing blob is `None`, not an error**, because an expired or swept result
-  is an ordinary outcome.
-
-The client is a fake holding bytes in a dict, for the reason
-`tests/secrets/test_keyvault.py` uses one: what is under test is this module's
-logic, not the SDK's surface.
-"""
+"""The Blob artifact backend (WP12.2)."""
 
 from __future__ import annotations
 
@@ -104,12 +88,7 @@ async def test_the_key_carries_the_tenant_prefix() -> None:
 
 @pytest.mark.asyncio
 async def test_another_organizations_reference_is_refused() -> None:
-    """The guard that a blob name cannot get for free.
-
-    `LocalArtifactStore` is protected twice — by the prefix check and by
-    `is_relative_to` on the resolved path. There is no second line here, so this
-    test is the whole of it.
-    """
+    """The guard that a blob name cannot get for free."""
     service = FakeBlobService()
     store = _store(service)
     reference = await store.put(org_id=OTHER_ORG, execution_id=EXECUTION, payload=b"secret")
@@ -152,9 +131,7 @@ def test_an_account_url_is_required() -> None:
         BlobArtifactStore(account_url="", container="artifacts")
 
 
-# --------------------------------------------------------------------------
-# Reachability: `artifact_store()` really selects it (AGENTS.md's rule).
-# --------------------------------------------------------------------------
+# --- Reachability: `artifact_store()` really selects it (AGENTS.md's rule) ---
 
 
 def test_the_factory_selects_blob_when_the_deployment_asks_for_it() -> None:

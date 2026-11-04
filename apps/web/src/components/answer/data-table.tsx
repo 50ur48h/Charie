@@ -1,14 +1,6 @@
 "use client";
 
-/**
- * A result table in the Calm style, on TanStack Table.
- *
- * Header cells are quiet and sortable; numbers line up on the right in tabular
- * figures; a column of changes ("+14.8%", "−2.4%") reads as green and red pills;
- * rows arrive with a small stagger. The cell text is exactly what was given —
- * nothing is reformatted, because a reader checking a number against its query
- * must see the same digits.
- */
+/** A result table in the Calm style, on TanStack Table. */
 
 import {
   createColumnHelper,

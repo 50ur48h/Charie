@@ -1,9 +1,6 @@
 "use client";
 
-/**
- * The sign-in card. It stands on its own, so the front door, the invitation
- * page and a signed-out organization URL can all show it unchanged.
- */
+/** The sign-in card. It stands on its own, so the front door. */
 
 import { ArrowRight } from "lucide-react";
 import { useState } from "react";

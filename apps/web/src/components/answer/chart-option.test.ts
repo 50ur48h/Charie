@@ -8,12 +8,7 @@ type Series = { type: string; lineStyle?: { color?: string }; itemStyle?: { colo
 
 describe("the chart translator", () => {
   it("gives each series of a split chart its own colour, from the palette (B-109)", () => {
-    /**
-     * Every chart used to be the primary colour and nothing else. A split by
-     * eight outlets must be eight distinct hues, in a fixed order — a palette
-     * that had quietly become eight copies of the accent would pass a length
-     * check and nothing else.
-     */
+    /** Every chart used to be the primary colour and nothing else. */
     const outlets = ["A", "B", "C", "D", "E", "F", "G", "H"];
     const values = outlets.flatMap((outlet, index) => [
       { month: "2026-05-01", revenue: 100 + index, outlet },

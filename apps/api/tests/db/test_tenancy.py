@@ -20,9 +20,7 @@ from charie.tenancy.context import (
 )
 from charie.tenancy.session import current_org_setting, org_session, tenant_session
 
-# ---------------------------------------------------------------------------
-# Context — no database needed
-# ---------------------------------------------------------------------------
+# --- Context — no database needed ---
 
 
 def test_current_context_raises_when_nothing_is_set() -> None:
@@ -46,9 +44,7 @@ async def test_tenant_session_refuses_without_a_context() -> None:
             pytest.fail("a session was handed out with no organization")
 
 
-# ---------------------------------------------------------------------------
-# Repository — the SQL-level half of defence in depth
-# ---------------------------------------------------------------------------
+# --- Repository — the SQL-level half of defence in depth ---
 
 
 def test_repository_narrows_every_select_by_org() -> None:
@@ -112,9 +108,7 @@ class _FakeSession:
         return None
 
 
-# ---------------------------------------------------------------------------
-# Session — against a real database, as the application role
-# ---------------------------------------------------------------------------
+# --- Session — against a real database, as the application role ---
 
 
 @pytest.fixture
@@ -138,11 +132,7 @@ async def test_org_session_sets_the_database_side_org(app_database: URL) -> None
 
 @pytest.mark.usefixtures("app_session_factory")
 async def test_the_org_setting_does_not_survive_the_transaction(app_database: URL) -> None:
-    """SET LOCAL is transaction-scoped, so a pooled connection carries nothing over.
-
-    Without this, a connection returned to the pool could hand the next borrower
-    someone else's organization — a cross-tenant leak with no bad code anywhere.
-    """
+    """SET LOCAL is transaction-scoped, so a pooled connection carries nothing over."""
     first = uuid.uuid4()
     async with org_session(first) as session:
         assert await current_org_setting(session) == str(first)

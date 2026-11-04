@@ -1,10 +1,4 @@
-"""Which connections are allowed to be unencrypted, and which are not (B-013).
-
-The setting exists because ``prefer`` fails open by design: it encrypts when the
-server offers TLS and sends the credential in the clear when it does not, without
-raising anything. So these tests are mostly about the refusals — a policy that
-only ever says yes is indistinguishable from no policy at all.
-"""
+"""Which connections are allowed to be unencrypted, and which are not (B-013)."""
 
 from __future__ import annotations
 
@@ -27,8 +21,7 @@ from charie.connectors.tls import (
     tls_detail,
 )
 
-#: Explicit rather than ambient: these tests must say the same thing on a machine
-#: whose .env has opinions about TLS.
+#: Explicit rather than ambient: these tests must say the same thing on a machine whose .env has...
 POLICY = Settings(env="ci", build_env="dev", tls_mode="require", tls_mode_local="prefer")
 COMPOSE_POLICY = Settings(
     env="local", build_env="dev", tls_mode="require", tls_local_hosts=("seed-pizza-pg",)
@@ -36,9 +29,7 @@ COMPOSE_POLICY = Settings(
 PRODUCTION = Settings(env="prod", build_env="prod", tls_mode="require", tls_mode_local="prefer")
 
 
-# ---------------------------------------------------------------------------
-# What counts as "on this machine"
-# ---------------------------------------------------------------------------
+# --- What counts as "on this machine" ---
 
 
 @pytest.mark.parametrize(
@@ -61,8 +52,7 @@ def test_loopback_is_local_however_it_is_spelled(host: str) -> None:
     ],
 )
 def test_everything_else_is_not(host: str) -> None:
-    """Private ranges included: 10.0.0.5 is somebody's network, and the point of
-    the policy is that we do not know whose."""
+    """Private ranges included: 10.0.0.5 is somebody's network."""
     assert is_local_host(host) is False
 
 
@@ -71,9 +61,7 @@ def test_a_container_name_is_local_only_because_someone_declared_it() -> None:
     assert is_local_host("seed-pizza-pg", also_local=("mssql",)) is False
 
 
-# ---------------------------------------------------------------------------
-# The policy
-# ---------------------------------------------------------------------------
+# --- The policy ---
 
 
 def test_a_local_database_may_be_unencrypted_by_default() -> None:
@@ -92,8 +80,7 @@ def test_a_remote_database_may_not_ask_for_an_optional_mode(mode: str) -> None:
 
 @pytest.mark.parametrize("mode", ENCRYPTED_TLS_MODES)
 def test_tightening_is_always_allowed(mode: str) -> None:
-    """Including for a local database: a developer with a certificate should be
-    able to test the strict path locally."""
+    """Including for a local database."""
     assert resolve_tls_mode(host="localhost", requested=mode, settings=POLICY) == mode
     assert resolve_tls_mode(host="db.example.com", requested=mode, settings=POLICY) == mode
 
@@ -105,8 +92,7 @@ def test_a_declared_container_host_may_be_unencrypted() -> None:
 
 
 def test_in_production_nothing_is_local() -> None:
-    """The failure this guards against is a TLS_LOCAL_HOSTS that follows a
-    configuration file from a laptop into a deployment."""
+    """The failure this guards against is a TLS_LOCAL_HOSTS that follows a configuration file..."""
     production_with_a_local_list = Settings(
         env="prod",
         build_env="prod",
@@ -132,25 +118,17 @@ def test_an_unknown_mode_is_refused_with_the_list_of_real_ones() -> None:
 
 
 def test_the_configuration_itself_cannot_turn_encryption_off_everywhere() -> None:
-    """TLS_MODE is typed as the encrypted subset, so this fails at startup rather
-    than at the first connection to a customer's database."""
+    """TLS_MODE is typed as the encrypted subset."""
     with pytest.raises(ValueError, match="tls_mode"):
         Settings(tls_mode="prefer")  # pyright: ignore[reportArgumentType]
 
 
-# ---------------------------------------------------------------------------
-# What the driver is handed
-# ---------------------------------------------------------------------------
+# --- What the driver is handed ---
 
 
 @pytest.fixture
 def certifi_bundle() -> Path:
-    """A real PEM file to point TLS_CA_FILE at.
-
-    certifi's, because OpenSSL refuses an empty or malformed bundle and the
-    platform's own path is ``None`` on Windows — this test asserts about the
-    context we build, not about which certificates are in it.
-    """
+    """A real PEM file to point TLS_CA_FILE at."""
     import certifi
 
     return Path(certifi.where())
@@ -164,10 +142,7 @@ def test_the_non_verifying_modes_are_passed_to_the_driver_by_name(mode: str) -> 
 
 @pytest.mark.parametrize("mode", sorted(VERIFYING_TLS_MODES))
 def test_the_verifying_modes_use_the_system_trust_store_by_default(mode: str) -> None:
-    """Not asyncpg's default, which is libpq's: a root certificate at
-    ``~/.postgresql/root.crt``. That file does not exist in this application's
-    container, so passing the string through would make the strictest setting in
-    the product fail against every managed database with a public CA."""
+    """Not asyncpg's default, which is libpq's: a root certificate at ``~/.postgresql/root.crt``."""
     context = ssl_parameter(mode)
 
     assert isinstance(context, ssl.SSLContext)
@@ -192,8 +167,7 @@ def test_a_ca_bundle_is_ignored_by_the_modes_that_do_not_verify(tmp_path: Path) 
 
 
 def test_an_unreadable_bundle_is_refused_without_naming_the_path(tmp_path: Path) -> None:
-    """The message can reach a tenant admin; where this deployment keeps its
-    certificates is not theirs to learn."""
+    """The message can reach a tenant admin."""
     missing = tmp_path / "nowhere" / "ca.pem"
 
     with pytest.raises(TlsPolicyError, match="TLS_CA_FILE") as raised:
@@ -207,9 +181,7 @@ def test_an_unknown_mode_never_reaches_the_driver() -> None:
         ssl_parameter("ssl-please")
 
 
-# ---------------------------------------------------------------------------
-# What it says afterwards
-# ---------------------------------------------------------------------------
+# --- What it says afterwards ---
 
 
 def test_an_unencrypted_connection_says_so_in_capitals() -> None:
@@ -220,8 +192,7 @@ def test_an_unencrypted_connection_says_so_in_capitals() -> None:
 
 
 def test_require_does_not_claim_the_server_was_verified() -> None:
-    """The distinction the wording exists for: 'require' is encryption without
-    authentication, and reading it as both is the natural mistake."""
+    """The distinction the wording exists for: 'require' is encryption without authentication."""
     detail = tls_detail(
         mode="require", encrypted=True, version="TLSv1.3", cipher="TLS_AES_256_GCM_SHA384"
     )

@@ -1,14 +1,5 @@
 #!/usr/bin/env sh
-#
 # Load a file of metric definitions into a registered data source.
-#
-#     make seed.definitions FILE=path/to/definitions.json SOURCE="<data source name>"
-#
-# Inside the api container, for the reason demo_setup.sh gives: writing a
-# definition validates its filters against the catalog, so whoever writes one
-# has to stand where the product stands.
-#
-# POSIX sh, not bash — see demo_setup.sh.
 
 set -eu
 
@@ -30,14 +21,7 @@ fi
 docker cp "$ROOT/ops/seed/provision_definitions.py" "$CONTAINER:/tmp/provision_definitions.py" >/dev/null
 docker cp "$FILE" "$CONTAINER:/tmp/definitions.json" >/dev/null
 
-# **Both halves of the Git Bash path rewrite, and they bite differently.**
-# AGENTS.md records that a command string starting with `/` arrives inside the
-# container as a `C:\...` path, which is why the last line says `exec` first.
-# The same rewrite also hits the *value* of an `-e` flag:
-# `-e DEFINITIONS_FILE=/tmp/definitions.json` reached the container as
-# `C:/Users/.../Temp/definitions.json`, so the script died on a file the line
-# above had just put there. `MSYS_NO_PATHCONV` turns the conversion off for
-# this one call and is ignored by every shell that does not do it.
+# Both halves of the Git Bash path rewrite, and they bite differently.
 MSYS_NO_PATHCONV=1 docker exec \
   -e DEFINITIONS_FILE=/tmp/definitions.json \
   -e DEFINITIONS_SOURCE="${SOURCE:-}" \

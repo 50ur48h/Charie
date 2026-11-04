@@ -42,17 +42,11 @@ class _JwksFromDocument(JwksCache):
         self._fetched_at = time.monotonic()
 
 
-# ---------------------------------------------------------------------------
-# It works
-# ---------------------------------------------------------------------------
+# --- It works ---
 
 
 async def test_a_dev_token_passes_the_real_validator() -> None:
-    """The point of the dev issuer: the same validation path, not a bypass.
-
-    A dev mode that skipped verification would leave the verifier untested until
-    the day it faces Entra.
-    """
+    """The point of the dev issuer: the same validation path, not a bypass."""
     settings = _dev_settings()
     app = create_app(settings=settings)
 
@@ -120,9 +114,7 @@ async def test_a_token_from_a_different_application_does_not_verify_here() -> No
     assert caught.value.code == "bad_signature"
 
 
-# ---------------------------------------------------------------------------
-# It cannot happen in production
-# ---------------------------------------------------------------------------
+# --- It cannot happen in production ---
 
 
 @pytest.mark.parametrize(
@@ -130,11 +122,7 @@ async def test_a_token_from_a_different_application_does_not_verify_here() -> No
     [("prod", "dev"), ("local", "prod"), ("prod", "prod")],
 )
 def test_a_production_build_refuses_to_boot_with_the_dev_issuer(env: str, build_env: str) -> None:
-    """Startup assertion, covering both halves of "production".
-
-    A process that boots and then fails open is indistinguishable from one that
-    works until somebody looks.
-    """
+    """Startup assertion, covering both halves of "production"."""
     with pytest.raises(RuntimeError, match="not permitted in a production"):
         create_app(settings=Settings(auth_mode="dev", env=env, build_env=build_env))  # type: ignore[arg-type]
 

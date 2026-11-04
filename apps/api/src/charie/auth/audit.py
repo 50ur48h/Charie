@@ -1,16 +1,4 @@
-"""Recording access-control decisions (DECISIONS D-008).
-
-Three destinations, chosen by how much we actually know:
-
-* **401, no trustworthy identity** — the application log only. There is no
-  tenant to attribute it to, and taking the organization from the URL would let
-  an unauthenticated caller write rows into any tenant's audit log at will.
-* **403 with a resolved membership** — ``audit_log``, scoped to that
-  organization. This is the row an admin expects to find.
-* **403 without a resolvable organization** — ``security_events``, the
-  platform-level log. Not lost, and queryable: "which accounts have been probing
-  for tenants they do not belong to" is one indexed query.
-"""
+"""Recording access-control decisions (DECISIONS D-008)."""
 
 from __future__ import annotations
 
@@ -30,14 +18,8 @@ AUTH_DENIED = "auth.denied"
 
 
 def log_unauthenticated(*, reason: str, route: str | None, method: str | None) -> None:
-    """A 401. Application log only, and deliberately so.
-
-    Writing this to a tenant's audit_log would mean an unauthenticated request
-    could choose whose audit log to fill.
-    """
-    # In the message, not in `extra`: the default formatter drops extras, so a
-    # reason recorded there is invisible exactly when it is needed. It names the
-    # failed check, never anything from the token.
+    """A 401. Application log only, and deliberately so."""
+    # In the message, not in `extra`: the default formatter drops extras.
     logger.warning(
         "rejected an unauthenticated request: reason=%s %s %s", reason, method or "-", route or "-"
     )
@@ -94,8 +76,7 @@ async def _record_org_denial(
                 )
             )
     except Exception:
-        # A failure to audit must not turn a 403 into a 500: the caller is being
-        # refused either way. Fall back to the platform log so it is not lost.
+        # A failure to audit must not turn a 403 into a 500: the caller is being refused either way.
         logger.exception("could not write an audit row for a denial")
         await record_security_event(
             action=AUTH_DENIED,

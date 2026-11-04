@@ -1,20 +1,4 @@
-"""The development backend: one Fernet-encrypted file (DECISIONS D-001).
-
-Every value is encrypted individually with a key that lives outside the file, so
-the file itself carries no plaintext. What it does reveal is which references
-exist — org and data-source identifiers — which is why it is gitignored and why
-the factory refuses to build this backend in production at all.
-
-Fernet is AES-128-CBC with an HMAC-SHA256 authentication tag and a timestamp,
-which means a tampered ciphertext fails to decrypt rather than decrypting to
-something else. Key rotation is a re-registration of the data source, exactly as
-architecture Part 7.3 describes.
-
-All file work happens in a worker thread: this process is async end to end, and a
-synchronous read on the event loop would stall every other request. The lock
-around it makes read-modify-write atomic between coroutines, and the write itself
-is a temp file plus ``os.replace``, so a crash mid-write cannot truncate the store.
-"""
+"""The development backend: one Fernet-encrypted file (DECISIONS D-001)."""
 
 from __future__ import annotations
 
@@ -32,8 +16,7 @@ from charie.secrets.base import SecretNotFoundError, validate_ref
 
 __all__ = ["InvalidSecretsKeyError", "LocalSecretsProvider", "SecretDecryptionError"]
 
-#: Bumped only if the on-disk layout changes. A file from the future is refused
-#: rather than half-understood.
+#: Bumped only if the on-disk layout changes.
 FILE_VERSION = 1
 
 
@@ -42,12 +25,7 @@ class InvalidSecretsKeyError(ValueError):
 
 
 class SecretDecryptionError(RuntimeError):
-    """The stored ciphertext will not open with the configured key.
-
-    Almost always a rotated or mistyped ``LOCAL_SECRETS_KEY``; the alternative is
-    a tampered file, which Fernet's authentication tag turns into this same
-    refusal rather than into a plausible-looking value.
-    """
+    """The stored ciphertext will not open with the configured key."""
 
 
 class LocalSecretsProvider:
@@ -57,8 +35,7 @@ class LocalSecretsProvider:
         try:
             self._fernet = Fernet(key)
         except (ValueError, TypeError) as error:
-            # The message says nothing about the key's content beyond its length,
-            # which is what makes the common mistake (a truncated paste) findable.
+            # The message says nothing about the key's content beyond its length.
             raise InvalidSecretsKeyError(
                 "LOCAL_SECRETS_KEY is not a valid Fernet key (got "
                 f"{len(key)} characters; a key is 44). Generate one with "
@@ -147,8 +124,7 @@ class LocalSecretsProvider:
         document = json.dumps(
             {"version": FILE_VERSION, "secrets": entries}, indent=2, sort_keys=True
         )
-        # Unique per process: two developers' processes writing the same file
-        # would otherwise race on one temp name and lose an entry.
+        # Unique per process: two developers' processes writing the same file would otherwise...
         temp = self._path.with_name(f"{self._path.name}.{os.getpid()}.tmp")
         temp.write_text(document + "\n", encoding="utf-8")
         _restrict(temp, 0o600)
@@ -163,11 +139,7 @@ def _restrict(target: Path, mode: int) -> None:
 
 
 def _as_object(value: object) -> dict[str, object] | None:
-    """Narrow a decoded JSON value to an object, or None if it is not one.
-
-    JSON keys are always strings; the type system cannot know that from
-    ``json.loads``, and one cast here beats a suppression at every use site.
-    """
+    """Narrow a decoded JSON value to an object, or None if it is not one."""
     if not isinstance(value, dict):
         return None
     return cast("dict[str, object]", value)

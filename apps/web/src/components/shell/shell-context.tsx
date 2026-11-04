@@ -1,9 +1,6 @@
 "use client";
 
-/**
- * What the shell knows that the screens inside it may want: who you are, which
- * organization this is, and a way to open the navigation on a small screen.
- */
+/** What the shell knows that the screens inside it may want: who you are. */
 
 import { createContext, useContext } from "react";
 

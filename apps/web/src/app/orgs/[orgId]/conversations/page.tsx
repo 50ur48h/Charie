@@ -1,12 +1,6 @@
 "use client";
 
-/**
- * The app's home: an empty chat (WP13.1b).
- *
- * No `Page`/`PageHeader` chrome and no Back button — the shell's sidebar is the
- * navigation now, and a title bar reading "Ask" above a composer that already
- * says what it is would be furniture. Signing in is handled by the shell.
- */
+/** The app's home: an empty chat (WP13.1b). */
 
 import { use } from "react";
 

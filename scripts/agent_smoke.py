@@ -1,34 +1,4 @@
-"""One real question, end to end, against a real model. Local only — never in CI.
-
-CI proves the agent's logic against the FakeLLM: the repair fires once, a
-refusal is an ending, a citation is verified. What it cannot prove is that a
-*real* model, shown a real catalog, writes SQL the DAL will accept. That is the
-claim this script exists for, and only a real call can make it.
-
-    make agent.smoke ARGS="--source 'Pizza demo'"
-    make agent.smoke ARGS="--source 'Pizza demo' --question 'How many stores?'"
-    make agent.smoke ARGS="--source 'Pizza demo' --then 'check again' --then 'and in June?'"
-
-``--then`` asks a follow-up **in the same conversation**, which is the only way
-to exercise D-029 against a real model: *"check again"* is meaningless unless the
-run is given the turn it follows, and until B-064 was fixed it was answered with
-"no business question has been given". The trace line for `context_selected`
-prints `history_turns`, so a follow-up that answered blind is visible rather than
-inferred from the prose.
-
-It asks the M7 gate question by default — *"How many orders were placed in July
-2026?"* — because that is the one the phase is judged on, and because `orders` is
-one of the tables that is reliably findable today (B-039).
-
-``--source`` is required whenever the organization has more than one data
-source, which the demo does. The runner refuses to guess (WP7.2c), and this
-script does not paper over that: it takes the name and resolves it, so what you
-are testing is the agent, not a default nobody chose.
-
-Cost: three model calls at most — plan, possibly one repair, compose. With the
-demo's `LLM_ROLE_MAP` that is a fraction of a cent. It still spends real money,
-which is why it is a script you run and not a test that runs itself.
-"""
+"""One real question, end to end, against a real model."""
 
 from __future__ import annotations
 
@@ -68,8 +38,7 @@ async def _resolve_source(org_id: uuid.UUID, name: str | None) -> uuid.UUID:
 
 
 async def _first_user(org_id: uuid.UUID) -> uuid.UUID:
-    """Any member, to own the conversation. The smoke is about the agent, not
-    about who asked."""
+    """Any member, to own the conversation."""
     async with org_session(org_id) as session:
         found = (
             await session.execute(
@@ -111,18 +80,13 @@ async def _ask(
 
     print(f"  status    {outcome.status}")
     print(f"  answered  {outcome.answered}")
-    # `repaired` retired with the single-shot runner: a correction is now just
-    # the next iteration (WP8.1b), so what is worth printing is how many steps
-    # it took and whether a ceiling cut it short.
+    # `repaired` retired with the single-shot runner: a correction is now just the next iteration.
     print(f"  iterations{outcome.iterations:>3}")
     print(f"  stopped   {outcome.stopped_by or '-'}")
     print(f"  llm calls {outcome.llm_calls}")
     print(f"\n  {outcome.answer}\n")
 
-    # The trace, because "it answered" and "it can show its working" are
-    # different claims and the gate wants both. `context_selected` carries how
-    # much of the thread this run was given (D-029), which is the whole point of
-    # a `--then`: a follow-up showing `history_turns 0` answered blind.
+    # The trace, because "it answered" and "it can show its working" are different claims and...
     print("  trace:")
     for event in await read_events(org_id=org_id, run_id=asked.run_id):
         extra = ""
@@ -186,8 +150,7 @@ async def main() -> int:
     print(f"  org       {org_id}")
     print(f"  thread    {conversation.id}\n")
 
-    # Sequential and never concurrent: a follow-up whose predecessor has not
-    # finished has nothing to follow, which is a different test.
+    # Sequential and never concurrent.
     code = await _ask(
         org_id=org_id,
         user_id=user_id,

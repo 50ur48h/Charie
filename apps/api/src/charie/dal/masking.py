@@ -1,31 +1,4 @@
-"""Masking the values that come back (architecture Part 7.6).
-
-Catalog samples were masked at write time (D-013), which said nothing about
-query results: a sample of `customers.email` in the catalog is already
-`a***@d***.com`, and a *query* for that column would still have returned the
-address. This is where that stops.
-
-Three rules decide what happens to a cell:
-
-* **Which cells.** ``Validated.projections`` says, per output position, whether
-  a masked column's value can be read out of it — the column itself, or anything
-  built from it. Position rather than name, because ``SELECT c.email, s.email``
-  returns two columns called ``email``.
-* **How.** An Admin's ``mask_type`` if they set one, otherwise ``auto``, which
-  reads the shape off the value itself: an address comes back as an address, a
-  phone number keeps its last four digits, everything else is redacted. The
-  column's *semantic role* is not consulted, because it answers a different
-  question — ``measure | dimension | time | id`` is about how a column is used
-  in analysis, not about what kind of personal data it holds. A projection that
-  is *derived* from a masked column (``UPPER(email)``) is always redacted in
-  full: the shape of the value is no longer known, so preserving it would be
-  pretending rather than preserving.
-* **NULL stays NULL.** Masking an absent value would invent a present one, and
-  "this customer has no email" is not a secret about the customer.
-
-The masked value is deliberately not reversible and not a token: nothing else in
-the system can undo it, because nothing else in the system should.
-"""
+"""Masking the values that come back (architecture Part 7.6)."""
 
 from __future__ import annotations
 
@@ -62,8 +35,7 @@ class MaskedFrame:
     rows: tuple[tuple[object, ...], ...]
     truncated: bool
     duration_ms: int
-    #: Output column names that were masked, for the audit row and for a UI that
-    #: should say so rather than let a person think `a***@d***.com` is the data.
+    #: Output column names that were masked.
     masked_columns: tuple[str, ...]
 
     @property
@@ -72,10 +44,7 @@ class MaskedFrame:
 
 
 def styles_for(catalog: Catalog) -> dict[ColumnRef, MaskStyle]:
-    """The mask each masked column asks for, by name.
-
-    Built from the catalog the validator already loaded, so this adds no read.
-    """
+    """The mask each masked column asks for, by name."""
     styles: dict[ColumnRef, MaskStyle] = {}
     for table in catalog.tables:
         for column in table.columns:
@@ -87,12 +56,7 @@ def styles_for(catalog: Catalog) -> dict[ColumnRef, MaskStyle]:
 
 
 def mask_value(value: object, style: MaskStyle) -> object:
-    """One cell. Anything that is not text is redacted rather than reshaped.
-
-    A number, a date or a binary blob has no format worth preserving and every
-    attempt to preserve one leaks part of it — a masked salary of ``9****`` says
-    the salary has five digits.
-    """
+    """One cell. Anything that is not text is redacted rather than reshaped."""
     if value is None:
         return None
     if not isinstance(value, str):
@@ -118,13 +82,7 @@ def mask_frame(
     projections: tuple[Projection, ...],
     styles: dict[ColumnRef, MaskStyle],
 ) -> MaskedFrame:
-    """Apply the column policies to a result, by position.
-
-    Falls back to masking *everything* when the projection list and the result
-    disagree about how many columns there are. That should not happen — the
-    canonical SQL names its projections — but the safe answer to "which cell was
-    the address in?" when the answer is unknown is "assume all of them".
-    """
+    """Apply the column policies to a result, by position."""
     if len(projections) != len(frame.columns):
         return _mask_everything(frame)
 
@@ -159,8 +117,7 @@ def mask_frame(
 
 
 def _style(projection: Projection, styles: dict[ColumnRef, MaskStyle]) -> MaskStyle:
-    # A derived value — UPPER(email), a concatenation — has no shape left to
-    # preserve, so it is redacted whatever the column's own style is.
+    # A derived value — UPPER(email), a concatenation — has no shape left to preserve.
     if projection.source is None:
         return MASK_FULL
     return styles.get(projection.source, MASK_FULL)
@@ -177,12 +134,7 @@ def _mask_everything(frame: ResultFrame) -> MaskedFrame:
 
 
 def _mask_auto(value: str) -> str:
-    """Keep the shape the value actually has, rather than one it was declared to.
-
-    Deciding from the value is not weaker than deciding from a column name — the
-    mask is applied either way, and this one cannot be wrong about a column whose
-    contents are not what its name suggests.
-    """
+    """Keep the shape the value actually has, rather than one it was declared to."""
     if "@" in value:
         return _mask_email(value)
     if sum(character.isdigit() for character in value) >= _PHONE_DIGITS:

@@ -1,30 +1,4 @@
-"""Registering data sources, and keeping their credentials out of this database.
-
-The rule this module exists to enforce (architecture Part 7.3): a username and a
-password reach the ``SecretsProvider`` and nothing else. What lands in
-``data_sources`` is where the database is, what it is called, and a ``secret_ref``
-that is worthless without the store it points at.
-
-Two orderings here are deliberate, and both come from asking what a half-finished
-operation leaves behind:
-
-* **Create** writes the secret first and the row second, deleting the secret again
-  if the row fails. An orphaned secret is invisible and harmless; an orphaned row
-  is a data source that exists in the UI and can never connect.
-* **Delete** removes the row first and the secret second. The reverse would leave
-  a row whose credentials are gone — the same broken state, arrived at from the
-  other side.
-
-Reads of ``data_sources`` go through ``org_session``, so row-level security is in
-force even if a filter is ever forgotten.
-
-The TLS mode (B-013) lives in ``settings`` beside host and port, because that is
-what it is: the non-secret half of how to connect, which architecture Part 10.1
-already gives that column for. Rows written before the setting existed carry no
-mode, and ``_tls_mode`` answers for them from the policy rather than assuming the
-weakest option — so an old row pointing at a remote host is tightened on read,
-not grandfathered.
-"""
+"""Registering data sources, and keeping their credentials out of this database."""
 
 from __future__ import annotations
 
@@ -69,31 +43,17 @@ USERNAME_HINT_CHARS = 4
 
 
 class NotFoundError(Exception):
-    """No such data source in this organization.
-
-    Also what a caller sees for a data source that exists in *another*
-    organization: row-level security means this process cannot tell the
-    difference, which is the right answer either way.
-    """
+    """No such data source in this organization."""
 
 
 def credentials_ref(org_id: uuid.UUID, data_source_id: uuid.UUID) -> str:
-    """The reference under which one data source's credentials are stored.
-
-    Derived from identifiers rather than stored as a random name, so a row and
-    its secret cannot drift apart, and so an orphaned secret is identifiable.
-    """
+    """The reference under which one data source's credentials are stored."""
     return f"ds/{org_id}/{data_source_id}/credentials"
 
 
 @dataclass(frozen=True, slots=True)
 class DataSourceView:
-    """What the rest of the application may know about a data source.
-
-    There is no ``password`` field and no ``username`` field, only the last four
-    characters of the username (architecture Part 7.3) — enough to answer "which
-    account is this connecting as?" without reading the credential back.
-    """
+    """What the rest of the application may know about a data source."""
 
     id: uuid.UUID
     name: str
@@ -113,9 +73,7 @@ class DataSourceView:
     created_at: datetime
 
 
-# ---------------------------------------------------------------------------
-# The non-secret half of a connection, as stored in data_sources.settings
-# ---------------------------------------------------------------------------
+# --- The non-secret half of a connection, as stored in data_sources.settings ---
 
 
 def _display(host: str, port: int, database: str) -> str:
@@ -130,21 +88,14 @@ def _connection_settings(
         "host": host,
         "port": port,
         "database": database,
-        # Not the username: the last of it, so a screen can identify the account
-        # without this table becoming half a credential.
+        # Not the username: the last of it.
         "username_last4": username_last4,
         "tls_mode": tls_mode,
     }
 
 
 def _tls_mode(settings: dict[str, object], host: str) -> str:
-    """The mode a row connects with — stored, or decided by policy for old rows.
-
-    Falling back to the policy rather than to ``prefer`` matters: this is the
-    read path, so a row registered before B-013 that points at a remote host
-    starts requiring TLS from the next connection onward instead of keeping the
-    plaintext behaviour it happened to be created with.
-    """
+    """The mode a row connects with — stored, or decided by policy for old rows."""
     stored = settings.get("tls_mode")
     if isinstance(stored, str) and stored in TLS_MODES:
         return stored
@@ -191,9 +142,7 @@ def _view(row: DataSource) -> DataSourceView:
     )
 
 
-# ---------------------------------------------------------------------------
-# Operations
-# ---------------------------------------------------------------------------
+# --- Operations ---
 
 
 async def create_data_source(
@@ -210,15 +159,10 @@ async def create_data_source(
     tls_mode: str | None = None,
     provider: SecretsProvider | None = None,
 ) -> DataSourceView:
-    """Store the credentials, then record where the database is.
-
-    Raises ``TlsPolicyError`` before anything is written if the requested
-    encryption is weaker than this address is allowed to use.
-    """
+    """Store the credentials, then record where the database is."""
     store = provider if provider is not None else get_secrets_provider()
 
-    # First, and before the secret exists: a registration this deployment will
-    # not permit should leave no trace of the credential it was offered.
+    # First, and before the secret exists.
     mode = resolve_tls_mode(host=host, requested=tls_mode, settings=get_settings())
 
     data_source_id = uuid.uuid4()
@@ -241,8 +185,7 @@ async def create_data_source(
                 created_by=actor_user_id,
             )
             session.add(row)
-            # Flushed here so the view carries the database's own created_at and
-            # status rather than this process's guess at them.
+            # Flushed here so the view carries the database's own created_at and status rather...
             await session.flush()
             audit(
                 session,
@@ -251,9 +194,7 @@ async def create_data_source(
                 action="datasource.created",
                 object_type="data_source",
                 object_id=str(data_source_id),
-                # host_display, the engine and how encrypted the connection is —
-                # never the credential. Audit rows are read by admins and shipped
-                # to log aggregators.
+                # host_display, the engine and how encrypted the connection is.
                 details={
                     "name": name,
                     "engine": engine,
@@ -266,8 +207,7 @@ async def create_data_source(
         await store.delete(secret_ref)
         raise ConflictError(f"A data source named {name!r} already exists here") from error
     except Exception:
-        # Any other failure would leave a credential nobody can reach, belonging
-        # to a row that was never written.
+        # Any other failure would leave a credential nobody can reach.
         await store.delete(secret_ref)
         raise
 
@@ -304,12 +244,7 @@ async def update_data_source(
     tls_mode: str | None = None,
     provider: SecretsProvider | None = None,
 ) -> DataSourceView:
-    """Rename, re-address, rotate credentials, or change the TLS mode.
-
-    Credential work happens inside the transaction that records it: if the secret
-    store refuses, the row does not move either, and the caller is told about one
-    failure instead of finding an inconsistency later.
-    """
+    """Rename, re-address, rotate credentials, or change the TLS mode."""
     store = provider if provider is not None else get_secrets_provider()
 
     async with org_session(org_id) as session:
@@ -359,9 +294,7 @@ async def update_data_source(
         row.host_display = _display(next_host, next_port, next_database)
 
         if changed:
-            # A verification describes the address and credentials it was run
-            # against. Change either and it is no longer evidence about this row,
-            # so it goes back to unverified rather than staying comfortingly green.
+            # A verification describes the address and credentials it was run against.
             row.status = STATUS_REGISTERED
             row.readonly_verified = False
             row.last_verified_at = None
@@ -372,8 +305,7 @@ async def update_data_source(
                 action="datasource.updated",
                 object_type="data_source",
                 object_id=str(data_source_id),
-                # Which fields moved, never what they moved to. "credentials"
-                # records that a rotation happened, and nothing about it.
+                # Which fields moved, never what they moved to.
                 details={"fields": changed, "host_display": row.host_display},
             )
 
@@ -381,14 +313,7 @@ async def update_data_source(
 
 
 def _next_tls_mode(*, host: str, requested: str | None, current: str) -> str:
-    """The mode after an update, which an address change can force upward.
-
-    An explicit request is judged on its merits and refused if it is a downgrade
-    the new address may not have. Without one, the stored mode is kept — unless
-    the source has just been moved somewhere that mode is no longer allowed, in
-    which case it is tightened to the policy default rather than failing a
-    rename. Tightening is the only automatic direction there is.
-    """
+    """The mode after an update, which an address change can force upward."""
     settings = get_settings()
     if requested is not None:
         return resolve_tls_mode(host=host, requested=requested, settings=settings)
@@ -428,8 +353,7 @@ async def delete_data_source(
             details={"name": name},
         )
 
-    # After the commit. A secret deleted for a row that then failed to delete
-    # would leave a data source nobody can repair.
+    # After the commit.
     await store.delete(secret_ref)
 
 
@@ -440,16 +364,7 @@ async def test_data_source(
     data_source_id: uuid.UUID,
     provider: SecretsProvider | None = None,
 ) -> Health:
-    """Is the address reachable, do the credentials work, and can they write?
-
-    Two steps, because they fail differently and a person needs to know which:
-    a TCP probe first (a typo or a firewall, answered without a credential on the
-    wire), then the connector's own verification with the stored credentials.
-
-    All of it happens between transactions rather than inside one. Holding a
-    database transaction open across a network call to somebody else's machine is
-    how a slow third party becomes a lock queue on your own.
-    """
+    """Is the address reachable, do the credentials work, and can they write?"""
     store = provider if provider is not None else get_secrets_provider()
     view = await get_data_source(org_id, data_source_id)
 
@@ -466,10 +381,7 @@ async def test_data_source(
             row.status = status
             row.readonly_verified = health.readonly_verified
             if health.readonly_verified:
-                # Only on success. The column answers "when was this last proven
-                # read-only", and stamping it after a failure would let a screen
-                # say "verified a minute ago" about a check that just failed. Every
-                # attempt, successful or not, is in the audit log with its own time.
+                # Only on success. The column answers "when was this last proven read-only".
                 row.last_verified_at = health.checked_at
         audit(
             session,
@@ -478,16 +390,14 @@ async def test_data_source(
             action="datasource.tested",
             object_type="data_source",
             object_id=str(data_source_id),
-            # The detail is already sanitized by the connector; the evidence
-            # names privileges and roles, never credentials.
+            # The detail is already sanitized by the connector.
             details={
                 "reachable": health.reachable,
                 "readonly_verified": health.readonly_verified,
                 "status": status,
                 "host_display": view.host_display,
                 "detail": health.detail,
-                # What was asked for, and what the far end actually did — the
-                # second is the one worth having a record of (B-013).
+                # What was asked for, and what the far end actually did.
                 "tls_mode": view.tls_mode,
                 "tls_encrypted": health.tls.encrypted if health.tls is not None else None,
             },
@@ -497,11 +407,7 @@ async def test_data_source(
 
 
 async def _verify(view: DataSourceView, store: SecretsProvider) -> Health:
-    """The checks, cheapest and most local first.
-
-    An engine we cannot speak is decided here, before a secret is read or a
-    socket is opened towards somebody else's network.
-    """
+    """The checks, cheapest and most local first."""
     try:
         require_supported(view.engine)
     except ConnectorError as error:
@@ -564,17 +470,7 @@ def _connector(view: DataSourceView, credentials: dict[str, str]) -> Connector:
 async def connector_for_view(
     view: DataSourceView, provider: SecretsProvider | None = None
 ) -> Connector:
-    """An open-able connector for a registered data source.
-
-    The one way anything outside this module gets one, because it is the one
-    place that reads the credential: the caller passes a ``DataSourceView``,
-    which has no password on it and never will, and receives a connector that
-    does. Callers own closing it.
-
-    Raises ``ConnectorError`` for an engine with no connector, and
-    ``SecretNotFoundError`` / ``SecretDecryptionError`` when the credential
-    cannot be read — both of which say what is wrong without saying what it was.
-    """
+    """An open-able connector for a registered data source."""
     require_supported(view.engine)
     store = provider if provider is not None else get_secrets_provider()
     return _connector(view, await store.get(view.secret_ref))

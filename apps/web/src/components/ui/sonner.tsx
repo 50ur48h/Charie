@@ -2,11 +2,7 @@
 
 import { Toaster as Sonner, type ToasterProps } from "sonner";
 
-/**
- * Small confirmations ("Answer copied.") as a dark pill above the composer —
- * the design's toast. Colour-independent of the palette on purpose, so it reads
- * the same on every theme.
- */
+/** Small confirmations ("Answer copied.") as a dark pill above the composer. */
 export function Toaster(props: ToasterProps) {
   return (
     <Sonner

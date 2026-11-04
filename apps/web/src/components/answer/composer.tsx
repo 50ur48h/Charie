@@ -1,12 +1,6 @@
 "use client";
 
-/**
- * The composer (design: `.composer`): a soft rounded box that grows with the
- * question, a way to add documents, the reasoning mode, and a round send button.
- *
- * Enter sends and Shift+Enter makes a new line — what every chat does, so
- * people try it without being told.
- */
+/** The composer (design: `.composer`): a soft rounded box that grows with the question. */
 
 import { ArrowUp, Brain, Paperclip } from "lucide-react";
 import { useEffect, useId, useImperativeHandle, useRef, type Ref } from "react";

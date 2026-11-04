@@ -1,23 +1,5 @@
 #!/usr/bin/env sh
 # Run the golden evals inside the API container (plan WP9.2).
-#
-# Inside, for an organization whose data source carries a compose hostname —
-# `seed-pizza-pg` resolves there and nowhere else. A harness run from the host
-# against one of those gets `getaddrinfo failed` and reports twenty failures that
-# are really one DNS lookup, which is the least useful failure a suite can
-# produce. `scripts/agent_smoke.py` is run the same way and for the same reason.
-#
-# **This header used to say the data source *is* registered that way, flatly, and
-# it was not** (**B-115**). `make evals.setup` reads `SEED_PIZZA_HOST` from
-# `.env`, which is `localhost` — so `make evals` on the host worked and this
-# script was the one that would have failed. Two provisioners now exist and each
-# says which network it is for: `evals.setup` (host, and what CI runs) and
-# `demo.setup` (compose, and what the browser uses). Point EVALS_ORG_ID at an
-# organization built by the second when running this.
-#
-# The files are copied in rather than mounted: the api service mounts only
-# `apps/api/src`, and widening that for a harness would put the whole repository
-# inside a container that has customer credentials in its environment.
 
 set -eu
 
@@ -42,8 +24,7 @@ docker cp "$ROOT/ops/evals/golden.yaml" "$CONTAINER:/tmp/evals/golden.yaml" >/de
 docker cp "$ROOT/ops/seed/truths.json" "$CONTAINER:/tmp/evals/truths.json" >/dev/null
 docker cp "$ROOT/apps/api/tests/llm_fixture.py" "$CONTAINER:/tmp/evals/llm_fixture.py" >/dev/null
 
-# `exec` first: Git Bash rewrites a leading `/` into a Windows path, so the
-# command string has to start with a word (see AGENTS.md).
+# `exec` first: Git Bash rewrites a leading `/` into a Windows path.
 docker exec \
     -e EVALS_ORG_ID="$EVALS_ORG_ID" \
     -e EVALS_SOURCE="${EVALS_SOURCE:-Demo}" \

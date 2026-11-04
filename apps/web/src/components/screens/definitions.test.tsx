@@ -72,11 +72,7 @@ function json(body: unknown, status = 200): Response {
   });
 }
 
-/**
- * The screen loads definitions and proposals together, so a stub keyed by URL
- * is the only honest shape — a positional list would depend on which half of
- * `Promise.all` the runtime happened to start first.
- */
+/** The screen loads definitions and proposals together. */
 function stubFetch(
   routes: {
     definitions?: Response;
@@ -95,17 +91,14 @@ function stubFetch(
       if (url.endsWith("/definitions/proposals")) {
         return Promise.resolve((routes.proposals ?? json([])).clone());
       }
-      // Before the bare `/definitions` check: the retired list is the same path
-      // with a query string, and `endsWith` would miss it (B-094).
+      // Before the bare `/definitions` check.
       if (url.endsWith("/definitions?status=retired")) {
         return Promise.resolve((routes.retired ?? json([])).clone());
       }
       if (url.endsWith("/versions")) {
         return Promise.resolve((routes.versions ?? json([])).clone());
       }
-      // Method before URL: writing one by hand (B-169) POSTs to the same path
-      // the list is read from, and matching on the path alone answers a create
-      // with an array.
+      // Method before URL: writing one by hand.
       if (init.method === "POST" && url.endsWith("/definitions")) {
         return Promise.resolve(
           (routes.post ?? json({ ...BINDING, id: "new", name: "net_revenue" })).clone(),
@@ -126,14 +119,7 @@ function stubFetch(
   return calls;
 }
 
-/**
- * The open editor, scoped.
- *
- * "Write one by hand" (**B-169**) is always on the page and uses the same field
- * labels as the editor, because they are the same fields. A reader tells them
- * apart by which card they are in, so a test has to do the same rather than
- * asking the whole document for a label that legitimately appears twice.
- */
+/** The open editor, scoped. */
 function inEditor() {
   const save = screen.getByRole("button", { name: "Save changes" });
   const item = save.closest("li");
@@ -149,8 +135,7 @@ function bodyOf(calls: { url: string; init: RequestInit }[], method: string): un
 
 describe("describeFilter", () => {
   it("reads a filter the way the prompt words it", () => {
-    // The same phrasing the API's `describe()` uses, so an Admin reading the
-    // screen and a model reading the prompt are told the same thing.
+    // The same phrasing the API's `describe()` uses.
     expect(describeFilter(BINDING.required_filters[0]!)).toBe(
       "orders.status none of cancelled, refunded",
     );
@@ -163,8 +148,7 @@ describe("describeProvenance", () => {
   });
 
   it("says nothing when there is nothing to say", () => {
-    // A definition typed by hand has no provenance, and "Imported from
-    // undefined" would be worse than an absent line.
+    // A definition typed by hand has no provenance.
     expect(describeProvenance({})).toBeNull();
   });
 });
@@ -195,9 +179,7 @@ describe("badgeLabel", () => {
   });
 
   it("does not claim enforcement a hollow filter is not delivering (B-171)", () => {
-    // `edible_waste` badged `enforced` over `edible_flag = 1` after MiseQ v6.7
-    // made that column constant: still checked by the critic, and unable to
-    // exclude a single row. "Enforced" alone overstates it.
+    // `edible_waste` badged `enforced` over `edible_flag = 1` after MiseQ v6.7 made that column...
     const hollow = { ...BINDING, excluding_nothing: ["orders.status"] };
 
     expect(badgeLabel(hollow)).toBe("enforced, but currently excluding nothing");
@@ -205,10 +187,7 @@ describe("badgeLabel", () => {
   });
 
   it("reads an absent field as fine rather than as hollow", () => {
-    // An older API does not send it. Defaulting the other way would label every
-    // definition in the product as hollow on the strength of a missing key.
-    // Built by omission rather than by destructuring the key away, so the test
-    // reads as "an API that never sent this" instead of as an unused variable.
+    // An older API does not send it.
     const older = { ...BINDING };
 
     expect("excluding_nothing" in older).toBe(false);
@@ -218,9 +197,7 @@ describe("badgeLabel", () => {
 
 describe("changesFrom", () => {
   it("sends only the field that moved", () => {
-    // **The omission is the contract** (B-088). The API reads an absent field
-    // as "leave it alone", so sending the whole form back would make every save
-    // a rewrite of fields nobody touched.
+    // The omission is the contract (B-088).
     const changes = changesFrom(BINDING, {
       description: "Revenue excluding cancelled and refunded orders.",
       expression: "sum(orders.total_amount)",
@@ -233,8 +210,7 @@ describe("changesFrom", () => {
   });
 
   it("clears a formula with null rather than an empty string", () => {
-    // The one place where absent and null differ: a metric with no formula is a
-    // real thing to say, and "" is not how the API is told so.
+    // The one place where absent and null differ: a metric with no formula is a real thing to say.
     const changes = changesFrom(BINDING, {
       description: BINDING.description,
       expression: "   ",
@@ -247,9 +223,7 @@ describe("changesFrom", () => {
   });
 
   it("sends an empty filter list when the last filter is removed", () => {
-    // "Stop enforcing this, keep the prose" is a real request, and one an Admin
-    // has to be able to make — the alternative way to undo a wrong filter is
-    // the database.
+    // "Stop enforcing this, keep the prose" is a real request.
     const changes = changesFrom(BINDING, {
       description: BINDING.description,
       expression: "sum(orders.total_amount)",
@@ -276,9 +250,7 @@ describe("editSummary", () => {
   });
 
   it("says plainly when an edit stops enforcing anything", () => {
-    // The same disclosure `acceptanceSummary` makes, at the other end of a
-    // definition's life: removing the last filter is a decision with the same
-    // consequence as accepting without one.
+    // The same disclosure `acceptanceSummary` makes, at the other end of a definition's life.
     const summary = editSummary(BINDING, {
       description: BINDING.description,
       expression: "sum(orders.total_amount)",
@@ -291,10 +263,7 @@ describe("editSummary", () => {
   });
 
   it("never reads as a receipt", () => {
-    // The first draft opened every line with "Saved, …", and on the manual walk
-    // that sentence sat above an editor whose save had just been refused — so
-    // the screen appeared to confirm a change it had not made. A line about a
-    // consequence must not be mistakable for one about an outcome.
+    // The first draft opened every line with "Saved, …".
     const drafts = [
       { description: "Changed.", expression: "", caveat: "", synonyms: "", filters: [] },
       {
@@ -351,9 +320,7 @@ describe("describeVersion", () => {
   });
 
   it("reads a reinstatement as its own act, not as an edit", () => {
-    // A history that called it an edit would read as though somebody had
-    // changed the wording, and the gap between retired and active is the thing
-    // a reader of the history most needs to see (B-094).
+    // A history that called it an edit would read as though somebody had changed the wording.
     expect(
       describeVersion({
         version: 6,
@@ -406,10 +373,7 @@ describe("<Definitions />", () => {
   });
 
   it("puts an imported caveat in front of the Admin who is about to bless it", async () => {
-    // The reason `caveat` exists is that it reaches a *reader*, and the first
-    // reader is whoever accepts the proposal. A caveat the review screen does
-    // not show is one an Admin approves without having seen — which is the
-    // shape of B-133, where a computed value reached a trace and no screen.
+    // The reason `caveat` exists is that it reaches a reader.
     stubFetch({ proposals: json([PROPOSAL]) });
 
     render(<Definitions orgId="org-1" dataSourceId="ds-1" role="admin" />);
@@ -428,12 +392,7 @@ describe("<Definitions />", () => {
   });
 
   it("writes a definition by hand, through the form, with its filter", async () => {
-    // **B-169, and the point is the route.** `createDefinition` was on the API
-    // client from the start and no screen called it, so the POST was reachable
-    // only from a script holding a bearer token. This drives the card the way a
-    // person does — typing, adding a filter, clicking — and asserts the body
-    // that leaves the browser. A test calling `bodyFrom` would pass over a card
-    // that renders no button at all.
+    // B-169, and the point is the route.
     const calls = stubFetch({});
 
     render(<Definitions orgId="org-1" dataSourceId="ds-1" role="admin" />);
@@ -470,8 +429,7 @@ describe("<Definitions />", () => {
   });
 
   it("omits the fields nobody filled in rather than sending them empty", async () => {
-    // `expression: ""` is a formula that is the empty string, and the API would
-    // store it as one. An untouched field is absent, not empty.
+    // `expression: ""` is a formula that is the empty string, and the API would store it as one.
     const calls = stubFetch({});
 
     render(<Definitions orgId="org-1" dataSourceId="ds-1" role="admin" />);
@@ -490,9 +448,7 @@ describe("<Definitions />", () => {
   });
 
   it("says whether what was just written binds anything", async () => {
-    // D-033 at the moment it happens. A definition with no filter is guidance
-    // the critic ignores, and an Admin who meant to write a rule has to find
-    // that out now rather than from an answer that quietly ignored it.
+    // D-033 at the moment it happens.
     stubFetch({ post: json({ ...PROSE, name: "basket_size", binds: false }) });
 
     render(<Definitions orgId="org-1" dataSourceId="ds-1" role="admin" />);
@@ -515,8 +471,7 @@ describe("<Definitions />", () => {
   });
 
   it("shows on the card which filter is excluding nothing (B-171)", async () => {
-    // The badge says that something is hollow; this says which, because the
-    // answer is a property of today's data rather than of the definition.
+    // The badge says that something is hollow; this says which.
     stubFetch({
       definitions: json([{ ...BINDING, excluding_nothing: ["orders.status"] }]),
     });
@@ -526,15 +481,12 @@ describe("<Definitions />", () => {
     expect(
       await screen.findByText("enforced, but currently excluding nothing"),
     ).toBeInTheDocument();
-    // The explanation, not the filter list — both name the column, and only
-    // one of them says why it currently guarantees nothing.
+    // The explanation, not the filter list — both name the column.
     expect(screen.getByText(/holds a single value that this filter accepts/)).toBeInTheDocument();
   });
 
   it("separates what is enforced from what is only prose", async () => {
-    // The whole of D-033 on one screen. A definition with filters is a
-    // constraint; one without is guidance, and reading them as the same thing
-    // is the mistake this labelling exists to prevent.
+    // The whole of D-033 on one screen.
     stubFetch({ definitions: json([BINDING, PROSE]) });
 
     render(<Definitions orgId="org-1" dataSourceId="ds-1" role="admin" />);
@@ -565,8 +517,7 @@ describe("<Definitions />", () => {
   });
 
   it("asks the API for nothing when the role would be refused", async () => {
-    // A 403 for a screen that never offered the action is noise, and the audit
-    // row it writes is a denial nobody attempted.
+    // A 403 for a screen that never offered the action is noise.
     const calls = stubFetch({ proposals: json([PROPOSAL]) });
 
     render(<Definitions orgId="org-1" dataSourceId="ds-1" role="reader" />);
@@ -586,9 +537,7 @@ describe("<Definitions />", () => {
   });
 
   it("changes what the button promises once a filter is staged", async () => {
-    // The button names the act it is about to perform. Accepting as prose and
-    // accepting as a constraint are different decisions, and one label for both
-    // is how somebody enforces a rule they did not mean to.
+    // The button names the act it is about to perform.
     stubFetch({ proposals: json([PROPOSAL]) });
 
     render(<Definitions orgId="org-1" dataSourceId="ds-1" role="admin" />);
@@ -629,8 +578,7 @@ describe("<Definitions />", () => {
   });
 
   it("keeps a rejected filter on screen to correct rather than retype", async () => {
-    // The API's message names the column that was wrong. Clearing the staged
-    // work on failure would make the correction a retype.
+    // The API's message names the column that was wrong.
     vi.stubGlobal(
       "fetch",
       vi.fn((url: string) => {
@@ -685,11 +633,7 @@ describe("<Definitions />", () => {
   });
 
   it("carries the customer's own names into the import (B-085, B-087)", async () => {
-    // The field the form did not have, found when a gate walk imported 18
-    // metrics and every question sailed past all of them. A definition is
-    // matched by name and synonym; imported without synonyms it answers only to
-    // its key, which nobody types. The import binds nothing and looks like the
-    // feature not working.
+    // The field the form did not have.
     const calls = stubFetch();
 
     render(<Definitions orgId="org-1" dataSourceId="ds-1" role="admin" />);
@@ -740,9 +684,7 @@ describe("<Definitions />", () => {
   });
 
   it("corrects a filter on a definition already in force", async () => {
-    // **B-088, and the whole of it.** This screen used to show a definition and
-    // offer nothing but reading it: no edit, no un-accept, and the only way to
-    // give a filter the column it should have had was deleting the row in psql.
+    // B-088, and the whole of it.
     const calls = stubFetch({ definitions: json([BINDING]) });
 
     render(<Definitions orgId="org-1" dataSourceId="ds-1" role="admin" />);
@@ -753,8 +695,7 @@ describe("<Definitions />", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
 
     await waitFor(() => expect(bodyOf(calls, "PATCH")).toBeDefined());
-    // Only the field that moved. A save that resent the filters would be a
-    // rewrite of what the platform enforces, dressed as a typo fix.
+    // Only the field that moved.
     expect(bodyOf(calls, "PATCH")).toEqual({
       description: "Revenue, excluding anything cancelled.",
     });
@@ -778,9 +719,7 @@ describe("<Definitions />", () => {
   });
 
   it("says what saving will do before it is saved", async () => {
-    // The same disclosure accepting makes, at the other end of a definition's
-    // life: removing the last filter has the same consequence as accepting
-    // without one, and the moment to say so is before the click.
+    // The same disclosure accepting makes, at the other end of a definition's life.
     stubFetch({ definitions: json([BINDING]) });
 
     render(<Definitions orgId="org-1" dataSourceId="ds-1" role="admin" />);
@@ -791,9 +730,7 @@ describe("<Definitions />", () => {
   });
 
   it("keeps a refused edit on screen to correct", async () => {
-    // The API refuses a filter naming a column this database does not have, and
-    // it names the column. Clearing the form would send the Admin back to
-    // retype work the message was written to help them repair.
+    // The API refuses a filter naming a column this database does not have.
     const calls = stubFetch({
       definitions: json([BINDING]),
       patch: json({ detail: "'net_revenue' requires a filter on orders.nope" }, 400),
@@ -812,11 +749,7 @@ describe("<Definitions />", () => {
   });
 
   it("shows a refused save inside the editor, not at the top of the page", async () => {
-    // **Found by the owner on the manual walk.** The message was rendered in one
-    // region above the import form and the review queue, and the editor is at
-    // the bottom of a long screen — so a refused save looked like nothing
-    // happening at all. The previous test asserted the sentence was *somewhere*
-    // on the page, which it was, and so it caught nothing.
+    // Found by the owner on the manual walk.
     const calls = stubFetch({
       definitions: json([BINDING]),
       patch: json({ detail: "'net_revenue' requires a filter on orders.nope" }, 400),
@@ -837,8 +770,7 @@ describe("<Definitions />", () => {
   });
 
   it("asks twice before taking a definition out of force", async () => {
-    // Retiring changes what the platform enforces on every query that follows,
-    // so the first click offers the decision and the second makes it.
+    // Retiring changes what the platform enforces on every query that follows.
     const calls = stubFetch({ definitions: json([BINDING]) });
 
     render(<Definitions orgId="org-1" dataSourceId="ds-1" role="admin" />);
@@ -854,8 +786,7 @@ describe("<Definitions />", () => {
   });
 
   it("shows which version is in force, and what the earlier ones said", async () => {
-    // A definition binds, so "what did it require when that answer was written"
-    // is a question about whether an answer was right (D-036).
+    // A definition binds, so "what did it require when that answer was written" is a question...
     stubFetch({
       definitions: json([BINDING]),
       versions: json([
@@ -898,9 +829,7 @@ describe("<Definitions />", () => {
   });
 
   it("shows what is out of force, so there is something to bring back", async () => {
-    // **B-094's other half.** Retiring made a definition vanish from every view,
-    // so an Admin could not see that anything was recoverable — which is what
-    // turned a mis-click into a database job.
+    // B-094's other half. Retiring made a definition vanish from every view.
     stubFetch({ definitions: json([]), retired: json([{ ...BINDING, version: 5 }]) });
 
     render(<Definitions orgId="org-1" dataSourceId="ds-1" role="admin" />);
@@ -912,8 +841,7 @@ describe("<Definitions />", () => {
   });
 
   it("hides the out-of-force card when there is nothing in it", async () => {
-    // An ordinary organization never sees it. A card that is always there,
-    // usually empty, is one people stop reading.
+    // An ordinary organization never sees it.
     stubFetch({ definitions: json([BINDING]), retired: json([]) });
 
     render(<Definitions orgId="org-1" dataSourceId="ds-1" role="admin" />);
@@ -933,14 +861,12 @@ describe("<Definitions />", () => {
         calls.some((call) => call.url.endsWith("/reinstate") && call.init.method === "POST"),
       ).toBe(true),
     );
-    // No filters sent: the API reads an absent list as "as it was retired", and
-    // an empty one as "replace them with none", which is a different request.
+    // No filters sent: the API reads an absent list as "as it was retired".
     expect(bodyOf(calls, "POST")).toEqual({});
   });
 
   it("says being listed is not being in force", async () => {
-    // The card is a way back, not a back door. Nothing here binds anything or
-    // reaches the model until somebody reinstates it.
+    // The card is a way back, not a back door.
     stubFetch({ definitions: json([]), retired: json([{ ...BINDING, version: 5 }]) });
 
     render(<Definitions orgId="org-1" dataSourceId="ds-1" role="admin" />);
@@ -950,8 +876,7 @@ describe("<Definitions />", () => {
   });
 
   it("says plainly when a definition has no recorded history", async () => {
-    // One written before the platform kept a history. An empty list is a real
-    // answer, and implying a history exists would be worse than saying none does.
+    // One written before the platform kept a history.
     stubFetch({ definitions: json([BINDING]), versions: json([]) });
 
     render(<Definitions orgId="org-1" dataSourceId="ds-1" role="admin" />);

@@ -1,32 +1,4 @@
-"""What every connector is, and what may reach one (architecture Part 5.1).
-
-The agent thinks "I need schema information". Only this package knows what
-``information_schema`` looks like on each engine, how a statement timeout is set,
-or whether LIMIT is spelled TOP. Everything above the connectors sees one shape.
-
-Two enforcement points live here, and the second is the important one.
-
-**Capabilities.** ``Caps`` states per-engine truth the DAL and the profiler adapt
-to, rather than each of them guessing from a dialect string.
-
-**The query type gate.** ``execute`` accepts only a ``ValidatedQuery``, and a
-``ValidatedQuery`` cannot be built without a ``PolicyGrant`` held by a module on
-a short, named list. The DAL's validator joins that list in Phase 5; until then
-the only holder is ``connectors.introspection``, whose SQL is fixed templates
-with bound parameters and never touches user input.
-
-Be precise about what that buys, because "impossible" is too strong a word for
-Python:
-
-* A call site that passes a bare string does not type-check. pyright runs in
-  strict mode in CI, so this one is real and mechanical.
-* A module that wants to forge a grant must name itself as one of the sanctioned
-  validators — a lie that is one grep away in review, and asserted against in
-  ``test_only_sanctioned_modules_can_validate_sql``.
-* Nothing stops a determined author with commit access. The gate makes "run
-  unvalidated SQL" a deliberate, visible act instead of an easy accident, which
-  is the achievable half of the goal.
-"""
+"""What every connector is, and what may reach one (architecture Part 5.1)."""
 
 from __future__ import annotations
 
@@ -52,9 +24,7 @@ __all__ = [
     "ValidatedQuery",
 ]
 
-#: The only modules that may declare SQL fit to run. Extended in Phase 5 by the
-#: DAL's validator and by nothing else; a test asserts this set's contents so
-#: that widening it is a reviewed change rather than an import.
+#: The only modules that may declare SQL fit to run.
 SANCTIONED_VALIDATORS: frozenset[str] = frozenset(
     {
         # Fixed templates with bound parameters, no user input anywhere near them.
@@ -66,25 +36,7 @@ SANCTIONED_VALIDATORS: frozenset[str] = frozenset(
 
 
 class ConnectorError(Exception):
-    """A failure talking to a customer database, already sanitized.
-
-    Connectors raise only this. The driver's own exception is *not* chained:
-    ``raise ... from error`` would keep the unsanitized text in ``__cause__``,
-    where the next traceback to be printed would put a DSN in a log file.
-
-    ``statement_fault`` says which of two unrelated things happened, because the
-    caller has to treat them differently and could not tell them apart. *The
-    database could not be reached* is unfixable by rewriting the SQL. *The
-    database rejected this SQL* usually is — and the engine generally says how.
-    Treating both as unfixable is what ended a live run after one query on
-    ``function round(double precision, integer) does not exist``, whose own HINT
-    read *"You might need to add explicit type casts"*.
-
-    Each connector decides, because the evidence is dialect-specific: PostgreSQL
-    has SQLSTATE, SQL Server has error numbers. **The default is False**, so a
-    connector that has not been taught keeps today's behaviour rather than
-    silently gaining a retry loop.
-    """
+    """A failure talking to a customer database, already sanitized."""
 
     def __init__(self, message: str, *, statement_fault: bool = False) -> None:
         super().__init__(message)
@@ -93,12 +45,7 @@ class ConnectorError(Exception):
 
 @final
 class PolicyGrant:
-    """The right to declare a piece of SQL validated.
-
-    Constructing one requires naming yourself, and the name must be on
-    ``SANCTIONED_VALIDATORS``. Pass ``__name__``; passing anything else is
-    either a mistake or a lie, and both are visible.
-    """
+    """The right to declare a piece of SQL validated."""
 
     __slots__ = ("holder",)
 
@@ -113,12 +60,7 @@ class PolicyGrant:
 
 @final
 class ValidatedQuery:
-    """SQL that a sanctioned validator has approved, plus its bound parameters.
-
-    Immutable, and deliberately reticent in ``repr``: parameters can carry values
-    from a customer's database, and a dataclass repr in a traceback is a very
-    ordinary way for those to reach a log.
-    """
+    """SQL that a sanctioned validator has approved, plus its bound parameters."""
 
     __slots__ = ("_dialect", "_origin", "_parameters", "_sql")
 
@@ -130,8 +72,7 @@ class ValidatedQuery:
         dialect: str,
         parameters: Sequence[object] = (),
     ) -> None:
-        # The annotation says PolicyGrant; this is the runtime half of the same
-        # statement, for callers that are not type-checked at all.
+        # The annotation says PolicyGrant; this is the runtime half of the same statement.
         if not isinstance(grant, PolicyGrant):  # pyright: ignore[reportUnnecessaryIsInstance]
             raise TypeError("A ValidatedQuery needs a PolicyGrant from the SQL policy module.")
         self._sql = sql
@@ -187,12 +128,7 @@ class Caps:
 
 @dataclass(frozen=True, slots=True)
 class TlsStatus:
-    """What was asked for, and what the *server* says actually happened.
-
-    Both halves are here because they can disagree, and the disagreement is the
-    interesting part: ``prefer`` against a database that serves no certificate is
-    a plaintext connection that no error ever mentions (B-013).
-    """
+    """What was asked for, and what the server says actually happened."""
 
     #: The policy this connection was opened with.
     mode: str
@@ -204,25 +140,16 @@ class TlsStatus:
 
 @dataclass(frozen=True, slots=True)
 class Health:
-    """The answer to "can we use this data source, and is it safe to?"
-
-    ``readonly_verified`` is the one that matters at registration: it is false
-    unless this process has evidence that the credentials **cannot write**.
-    Unknown is false. A failed check is false. It is never assumed.
-    """
+    """The answer to "can we use this data source, and is it safe to?"."""
 
     reachable: bool
     readonly_verified: bool
     detail: str
     checked_at: datetime
     server_version: str | None = None
-    #: Each check that ran, and what it found. Safe to show an admin: it names
-    #: privileges and roles, never credentials.
+    #: Each check that ran, and what it found.
     evidence: tuple[str, ...] = ()
-    #: None when the check never got far enough to know. Deliberately separate
-    #: from ``readonly_verified``: a plaintext connection to a genuinely
-    #: read-only account is a real risk *and* a real verification, and collapsing
-    #: the two would report one of them wrongly.
+    #: None when the check never got far enough to know.
     tls: TlsStatus | None = None
 
 
@@ -270,31 +197,19 @@ class ExecLimits:
 class ResultFrame:
     columns: tuple[str, ...]
     rows: tuple[tuple[object, ...], ...]
-    #: True when ``max_rows`` cut the result short — so a caller never mistakes a
-    #: truncated answer for a complete one.
+    #: True when ``max_rows`` cut the result short.
     truncated: bool
     duration_ms: int
 
 
 @runtime_checkable
 class Connector(Protocol):
-    """One database, spoken to in one shape.
-
-    The full protocol in architecture Part 5.1 also carries ``sample``,
-    ``profile`` and ``explain``. Those arrive with the profiler in Phase 4 and
-    the DAL in Phase 5 — each method lands in the phase that has a caller for
-    it, rather than as an abstract method nobody implements.
-    """
+    """One database, spoken to in one shape."""
 
     def capabilities(self) -> Caps: ...
 
     async def aclose(self) -> None:
-        """Release the connection. Every caller owes a connector this.
-
-        Part of the protocol rather than of one implementation: a session left
-        open is left open on somebody else's server, and the caller cannot know
-        which connectors hold one.
-        """
+        """Release the connection. Every caller owes a connector this."""
         ...
 
     async def test_connection(self) -> Health: ...

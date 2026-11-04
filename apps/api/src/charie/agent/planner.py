@@ -1,31 +1,4 @@
-"""One model call that turns a question into SQL (architecture Part 4.3).
-
-Planning in the single-shot runner is deliberately small: one call, one
-structured answer, grounded in the context bundle rather than in the raw
-catalog. Architecture 4.3's fuller planner — two to six re-plannable steps, a
-capability pre-check — belongs to Phase 8's loop; what is here is the part M7
-needs and no more.
-
-**The role is `sql`, not `plan`.** This call writes a statement, and STATUS is
-explicit about not economising on it: the DAL refuses SQL it cannot ground, so a
-weaker model buys a refusal, a repair round trip and another billed call. `plan`
-is the tier the Phase 8 planner will use for deciding *what to investigate*,
-which is a different job.
-
-**The schema is closed and required.** `extra="forbid"` with no optional fields
-lets a provider constrain decoding natively where it can (B-033); where it
-cannot, `llm.complete` renders the schema into the prompt and repairs once. Both
-paths end at the same pydantic object, which is the point of the front door.
-
-**The task asks for aliased projections, and that is a mitigation rather than a
-fix.** Canonicalising runs sqlglot's qualifier, which names an unaliased output
-column `_col_1` — stable, unambiguous, and meaningless to the person now being
-shown it in WP7.3's evidence panel (**B-020**). A model that aliases its own
-columns produces a better name than any pass we could write, so it is asked to.
-It may forget, and then `_col_1` is what a person sees: the deterministic naming
-pass in `dal/validator.py` is still owed, and asking nicely here does not close
-that item.
-"""
+"""One model call that turns a question into SQL (architecture Part 4.3)."""
 
 from __future__ import annotations
 
@@ -47,14 +20,7 @@ class Plan(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    #: A term this run needs defined before the SQL can be right (**B-075**,
-    #: D-032). Empty on the overwhelming majority of steps, and that is the
-    #: intended shape: looking something up costs an iteration, so it is worth it
-    #: only when the question turns on a word the business defines for itself.
-    #: When it is set the loop dispatches `search_knowledge` and re-plans; `sql`
-    #: is ignored on that step, which is why the field can be filled in with
-    #: anything plausible rather than left blank — a closed schema has no
-    #: optional fields (B-033).
+    #: A term this run needs defined before the SQL can be right (B-075, D-032).
     define: str = Field(
         default="",
         max_length=200,
@@ -93,21 +59,9 @@ class Plan(BaseModel):
 
 
 #: Room to write the statement this call's own schema allows.
-#:
-#: `CallLimits` defaults to 1,024 output tokens, which is about 4,000 characters
-#: — while `Plan.sql` permits 20,000. A schema that promises more room than the
-#: call can deliver truncates the reply **mid-string**, and a truncated JSON
-#: object is not a parse failure the repair path can fix: the second attempt is
-#: cut off in the same place. The M8 revenue-decline scenario failed exactly
-#: this way, with `did not produce valid Plan in two attempts`.
-#:
-#: Sized to the schema rather than guessed: a 20,000-character statement is
-#: ~5,000 tokens, plus the envelope and the other fields.
 PLAN_OUTPUT_TOKENS = 6_000
 
-#: Appended to the assembled context for this one call. Kept here rather than in
-#: `context.py` because it is about *this* step, not about the run: the layered
-#: prompt describes the world, and this describes the task.
+#: Appended to the assembled context for this one call.
 _TASK = """\
 Write one SQL SELECT that answers the question, using only the tables and columns
 in the reference data above.
@@ -145,14 +99,7 @@ async def plan_query(
     settings: Settings | None = None,
     repair_of: str | None = None,
 ) -> tuple[Plan, int]:
-    """Ask for a statement. Returns the plan and the tokens it cost.
-
-    ``repair_of`` carries the previous failure back in — the second and last
-    attempt the M7 criterion allows. It is a separate parameter rather than
-    something the caller splices into the question, so that a repair is visibly
-    a repair in the prompt and in this signature, and so it cannot be issued
-    twice by accident.
-    """
+    """Ask for a statement. Returns the plan and the tokens it cost."""
     messages = list(render(bundle))
     task = _TASK if repair_of is None else f"{_TASK}\n\n{repair_of}"
     from charie.agent.reviews import (
@@ -166,9 +113,7 @@ async def plan_query(
         task += f"\n\n{BRIEF_DISPLAY}"
     elif review_requested(bundle.question):
         task += f"\n\n{REVIEW_EVIDENCE}"
-    # The tool list goes in the system turn: it describes what exists, which is
-    # world rather than task, and putting it beside the question would let a
-    # crafted question sit next to the capability list.
+    # The tool list goes in the system turn: it describes what exists.
     messages[0] = Message(
         role="system", content=f"{messages[0].content}\n\n[L4] Tools\n{registry.describe_for(role)}"
     )

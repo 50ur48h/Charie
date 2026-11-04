@@ -1,9 +1,4 @@
-"""The local secrets backend, tested for what it must never do.
-
-A round trip is the easy half. The half that matters is on disk: a file that a
-developer, a backup job or a stray `docker cp` might see, and that must reveal
-nothing about the credential it holds.
-"""
+"""The local secrets backend, tested for what it must never do."""
 
 from __future__ import annotations
 
@@ -50,8 +45,7 @@ async def test_nothing_readable_reaches_the_file(tmp_path: Path) -> None:
 
     assert CREDENTIAL["password"] not in on_disk
     assert CREDENTIAL["username"] not in on_disk
-    # The reference is not a secret and is expected to be there: it is what makes
-    # an orphaned entry identifiable.
+    # The reference is not a secret and is expected to be there.
     assert REF in on_disk
 
 

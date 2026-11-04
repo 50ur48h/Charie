@@ -1,9 +1,6 @@
 import { cn } from "@/lib/utils";
 
-/**
- * Charie's mark: a rounded tile holding a "D" with a data point at its heart.
- * Drawn in `currentColor`, so it takes the palette's accent wherever it sits.
- */
+/** Charie's mark: a rounded tile holding a "D" with a data point at its heart. */
 export function BrandMark({ className }: { className?: string | undefined }) {
   return (
     <svg viewBox="0 0 32 32" aria-hidden="true" className={cn("block shrink-0", className)}>

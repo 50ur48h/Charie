@@ -1,13 +1,4 @@
-"""Choosing what goes into a prompt, against a real catalog.
-
-``test_context.py`` proves the assembler is a correct function of a bundle. This
-file proves the bundle is built from the right things — which is the half that
-can leak, because everything selected here ends up in front of a model.
-
-The claim worth holding: **nothing selected can carry a value the DAL would have
-hidden.** Card examples were masked before they were stored (D-013), so a card is
-safe by construction rather than by a filter here that somebody could forget.
-"""
+"""Choosing what goes into a prompt, against a real catalog."""
 
 from __future__ import annotations
 
@@ -48,12 +39,7 @@ async def _any_column_of(wired: URL, org_id: uuid.UUID, table: str) -> uuid.UUID
 
 
 async def _restrict(context: ToolContext, wired: URL, policy: str) -> tuple[str, str]:
-    """Put a policy on a column of a table this question really selects.
-
-    Chosen from what the search returns rather than named outright, because a
-    table is not reliably findable by its own name yet (**B-039**) — so a test
-    that named one would be testing the defect instead of the behaviour.
-    """
+    """Put a policy on a column of a table this question really selects."""
     question = "shops and regions"
     bundle = await build_context(
         org_id=context.org_id, question=question, data_source_id=context.data_source_id
@@ -156,11 +142,7 @@ async def test_a_broad_question_expands_a_single_lexical_hit(
 async def test_a_masked_column_is_summarised_into_the_prompt(
     context: ToolContext, wired: URL
 ) -> None:
-    """So the model does not spend a round trip writing SQL the DAL will refuse.
-
-    A courtesy rather than a control: the refusal happens whether or not this
-    summary was right, which is why a stale one is a performance bug.
-    """
+    """So the model does not spend a round trip writing SQL the DAL will refuse."""
     question, table = await _restrict(context, wired, "mask")
 
     bundle = await build_context(
@@ -184,8 +166,7 @@ async def test_a_denied_column_is_named_as_unusable_anywhere(
     system = render(bundle)[0].content
 
     assert any(r.policy == "deny" for r in bundle.restrictions)
-    # The distinction is the whole point: one may be counted, the other may not
-    # appear at all.
+    # The distinction is the whole point: one may be counted, the other may not appear at all.
     assert "Denied" in system
     assert "including in filters" in system
 
@@ -193,8 +174,7 @@ async def test_a_denied_column_is_named_as_unusable_anywhere(
 async def test_restrictions_cover_only_the_tables_that_were_selected(
     context: ToolContext, wired: URL
 ) -> None:
-    """A list of every restricted column in the organization would be longer than
-    the cards and would tell the model about tables it was not given."""
+    """A list of every restricted column in the organization would be longer than the cards..."""
     question, _ = await _restrict(context, wired, "deny")
 
     bundle = await build_context(

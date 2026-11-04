@@ -1,34 +1,5 @@
 #!/usr/bin/env python
-"""`make preflight` really is every CI step it does not explicitly excuse.
-
-**Why this exists, in one sentence: the tool's claim was false in the most
-expensive direction available to it.** `preflight` printed *"Preflight clean.
-Safe to push."* while skipping `test.dal` — the DAL suite's **90% coverage gate**,
-plan §4.4's requirement on the security boundary — and `test.rls`, whose whole
-purpose is to fail when the tenant-isolation proofs collect *nothing*. Of every
-step it could have quietly dropped, it dropped the two guarding the boundary the
-architecture says is not negotiable.
-
-It had already been corrected twice for the same overstatement, once for
-`test.web.e2e` and once for `compile.web`, each time by adding the missing target
-and moving on. A third correction without a guard would have been a promise to be
-more careful, which is what the first two were.
-
-So the claim is checked. Three assertions, and the third is the one that makes
-this more than a second list to drift:
-
-1. **Every CI step is accounted for** — either covered by a `preflight`
-   prerequisite or excused in writing. A new job cannot arrive unnoticed.
-2. **Every entry still matches a real step**, so a stale excuse cannot outlive
-   the step it excused and quietly exempt something else.
-3. **Every target claimed as coverage is genuinely reachable from `preflight`**,
-   read out of the Makefile itself. Without this, the manifest could claim
-   `test.dal` while the Makefile had dropped it, and the guard would agree with
-   the lie it was written to catch.
-
-Run with `--selftest` to prove it still fails when it should (B-019's rule: a
-guard that has stopped catching anything must fail loudly, not pass everything).
-"""
+"""`make preflight` really is every CI step it does not explicitly excuse."""
 
 from __future__ import annotations
 
@@ -45,10 +16,7 @@ WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 MAKEFILE = ROOT / "Makefile"
 MANIFEST = Path(__file__).resolve().parent / "preflight_coverage.json"
 
-#: Actions that set a job up rather than check anything: no local equivalent is
-#: owed for a checkout or a language install. Anything else using `uses:` is a
-#: check and must be accounted for — `gitleaks` is the reason this list is a
-#: list and not "ignore every `uses:` step".
+#: Actions that set a job up rather than check anything.
 SETUP_ACTIONS = (
     "actions/checkout",
     "actions/setup-node",

@@ -1,11 +1,4 @@
-"""Org-scoped repository base — the *first* of the two isolation layers.
-
-Row-level security already makes a missing filter harmless, so why filter again?
-Because defence in depth means neither layer is allowed to be the only one
-(architecture Part 6.3). RLS is the net; this is not walking off the beam. The
-duplication is the point, and the RLS proof suite exists precisely to show the
-net still holds when this layer is deliberately bypassed.
-"""
+"""Org-scoped repository base — the first of the two isolation layers."""
 
 from __future__ import annotations
 
@@ -52,10 +45,7 @@ class OrgScopedRepository[ModelT]:
         return getattr(self._model, self._tenant_key)
 
     def select(self) -> Select[tuple[ModelT]]:
-        """A SELECT already narrowed to this organization.
-
-        Start every query from here rather than from a bare ``select(Model)``.
-        """
+        """A SELECT already narrowed to this organization."""
         return select(self._model).where(self._tenant_column() == self._org_id)
 
     def scoped(self, statement: Select[tuple[ModelT]]) -> Select[tuple[ModelT]]:
@@ -72,12 +62,7 @@ class OrgScopedRepository[ModelT]:
         return result.scalars().one_or_none()
 
     def add(self, entity: ModelT) -> ModelT:
-        """Stage a new row, forcing its tenant column to this organization.
-
-        Setting it here rather than trusting the caller means a wrong ``org_id``
-        cannot arrive from a request body; the RLS ``WITH CHECK`` clause would
-        reject it anyway, and this turns that rejection into an impossibility.
-        """
+        """Stage a new row, forcing its tenant column to this organization."""
         setattr(entity, self._tenant_key, self._org_id)
         self._session.add(entity)
         return entity

@@ -1,47 +1,4 @@
-"""Build an organization the *product* can query, from an empty database.
-
-    make demo.setup
-
-**This exists because the other provisioner does not do this job** (**B-115**).
-``ops/evals/provision.py`` registers the pizza database at the address in
-``.env`` — ``SEED_PIZZA_HOST=localhost``, ``SEED_PIZZA_PORT=6543`` — which is
-correct for the eval harness, because that harness runs in-process on the host
-and on a CI runner where the fixture is published on ``localhost``. It is wrong
-for everything a person actually sees: the API answers questions **inside the
-api container**, where ``localhost`` is the API itself and the seed database
-answers to ``seed-pizza-pg``.
-
-The failure was not subtle once looked at, and completely invisible before. On a
-machine whose Docker volumes had been lost, ``make evals.setup`` produced an
-organization, a credential proven read-only and a six-table catalog — all real
-rows, all correct — and every question asked of it in a browser died at the
-connector. From ``charie-api-1``::
-
-    localhost:6543      -> ConnectionRefusedError: [Errno 111] Connection refused
-    seed-pizza-pg:5432  -> reachable
-
-**So this script runs inside the container, and that is not an implementation
-detail.** Registering an address is only half of it — ``test_data_source``,
-discovery and profiling all *connect*, so whoever provisions must stand where the
-product stands. A host process cannot register ``seed-pizza-pg`` honestly,
-because it cannot reach it to check. ``ops/scripts/demo_setup.sh`` is what puts
-this file in the container, for the same reason ``ops/scripts/evals.sh`` does it
-for the harness.
-
-**It ends by asking, not by asserting.** The last thing it prints is, for every
-data source in every organization on this platform database, whether the API can
-open a socket to the address that source is registered with. That is the check
-whose absence B-115 was: a catalog proves the database was reachable *once, from
-wherever the provisioner ran*, and says nothing about whether the product can
-reach it now.
-
-Idempotent. A rerun reuses the organization and each source rather than making a
-second of either, so it is safe after a partial failure and safe to put in a
-workflow that reruns.
-
-A source whose database is not up is **skipped and named**, not fatal, so a
-missing sample database is reported rather than aborting the run.
-"""
+"""Build an organization the product can query, from an empty database."""
 
 from __future__ import annotations
 
@@ -57,16 +14,10 @@ sys.path.insert(0, "/app/src")
 #: Stable, so a rerun finds what the last run made rather than creating another.
 ORG_NAME = os.environ.get("DEMO_ORG_NAME", "Demo")
 
-#: Not a person. The rows this script writes need an actor, and audit entries
-#: that named a real user would be claiming they clicked something.
+#: Not a person. The rows this script writes need an actor.
 SETUP_USER_EMAIL = "setup@localhost"
 
-#: Compose service names and container-internal ports, deliberately hard-coded
-#: rather than read from `.env`. The `SEED_*_HOST` values there are the host's
-#: view (`localhost:6543`), which is the whole of B-115 — reading them here would
-#: reintroduce the defect this file exists to remove. These names come from
-#: `ops/docker-compose.yml`, which is where the network they belong to is
-#: defined.
+#: Compose service names and container-internal ports.
 SOURCES: tuple[dict[str, object], ...] = (
     {
         "name": "Pizza demo",
@@ -81,13 +32,7 @@ SOURCES: tuple[dict[str, object], ...] = (
 
 
 def _reachable(host: str, port: int, timeout: float = 3.0) -> bool:
-    """Can this process open a socket to that address?
-
-    Deliberately a bare socket rather than a database handshake: the question is
-    whether the *address* resolves and answers from here, which is what B-115
-    turned on. A credential problem is a different report, and
-    ``test_data_source`` already makes it.
-    """
+    """Can this process open a socket to that address?"""
     connection = socket.socket()
     connection.settimeout(timeout)
     try:
@@ -101,12 +46,7 @@ def _reachable(host: str, port: int, timeout: float = 3.0) -> bool:
 
 
 async def _ensure_org_and_actor(engine: object) -> tuple[uuid.UUID, uuid.UUID]:
-    """The organization and the actor its audit rows will name.
-
-    Written with the owner connection: these are the rows RLS is *about*, so
-    there is no org session to make them in — the same reasoning as
-    ``ops/evals/provision.py``.
-    """
+    """The organization and the actor its audit rows will name."""
     from sqlalchemy import text
 
     async with engine.begin() as connection:  # type: ignore[attr-defined]
@@ -156,19 +96,7 @@ async def _ensure_org_and_actor(engine: object) -> tuple[uuid.UUID, uuid.UUID]:
 
 
 async def _report_reachability(org_id: uuid.UUID) -> list[str]:
-    """Ask, for every registered source, whether the API can reach its address.
-
-    The check B-115 was the absence of. It reports over *every* organization on
-    this platform database, not only the one this script just built, because the
-    unreachable source that started all this belonged to a different one and
-    seeing it named is most of the value.
-
-    **Only this run's organization can fail the command, though.** A host-addressed
-    eval organization is unreachable from here *correctly* — that is what
-    `make evals.setup` is for — and exiting non-zero because one exists would make
-    this target red on every machine that has ever run the harness, which teaches
-    people to ignore it. Named, not fatal.
-    """
+    """Ask, for every registered source, whether the API can reach its address."""
     from sqlalchemy import text
 
     from charie.db.engine import build_engine
@@ -242,8 +170,7 @@ async def main() -> int:
             print(f"  skipped: {spec['password_env']} is not set")
             continue
 
-        # Checked before registering rather than after, so a database that was
-        # never seeded reads as "not there yet" instead of as a failed catalog.
+        # Checked before registering rather than after.
         if not _reachable(host, port):
             print(f"  skipped: nothing is listening — run `{spec['made_by']}` first")
             continue
@@ -283,8 +210,7 @@ async def main() -> int:
             org_id=org_id, actor_user_id=user_id, data_source_id=view.id, embedder=embedder
         )
         print(f"  profiling: {profiled.detail}")
-        # Idempotent, so a rerun after a key is configured fills in what the
-        # first run could not (**B-018**).
+        # Idempotent, so a rerun after a key is configured fills in what the first run could not.
         embedded = await cards.embed_cards(org_id, view.id, embedder=embedder)
         print(f"  embedded {embedded} card(s) in the backfill")
         registered += 1

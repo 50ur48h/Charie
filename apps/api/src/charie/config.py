@@ -1,9 +1,4 @@
-"""Application settings.
-
-The only sanctioned way to read configuration (plan §1.4). Secrets never appear
-in code, compose files, or docs — they arrive as environment variables here, and
-from Phase 3 customer credentials go exclusively through ``SecretsProvider``.
-"""
+"""Application settings."""
 
 from __future__ import annotations
 
@@ -19,29 +14,11 @@ from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 Environment = Literal["local", "ci", "dev", "prod"]
 SecretsBackend = Literal["local", "keyvault"]
 #: How hard a Muse model reasons before it answers (dev.meta.ai/docs/reasoning).
-#: ``none`` is absent on purpose: Muse Wonder and Muse Spark refuse it with a 400.
 MetaReasoningEffort = Literal["minimal", "low", "medium", "high", "xhigh", "max"]
-#: Where whole query results live. Separate from SecretsBackend on purpose:
-#: the two have different stakes, and a single "use Azure" switch would make
-#: losing an artifact and leaking a credential the same decision.
+#: Where whole query results live.
 ArtifactsBackend = Literal["local", "blob"]
 
-#: **What each mode requires, declared once and read by three things.**
-#:
-#: Keyed by ``(field, value)``: when that field holds that value, every field
-#: named must be set. `Settings.missing_for_mode` reads it, `/healthz` reports
-#: `degraded` from it, and `scripts/check_env.sh` keeps a copy that a test
-#: asserts is equal — the arrangement `TENANT_TABLES` has with revision 0002.
-#:
-#: **The direction is the point.** Before this, the deployment templates were
-#: checked against a list of couplings somebody had already been bitten by:
-#: `SECRETS_BACKEND=keyvault` needing `KEY_VAULT_URL`, then
-#: `ARTIFACTS_BACKEND=blob` needing an account URL, then `AUTH_MODE=entra`
-#: needing an authority. Each was added *after* a deployment failed on it, which
-#: made the guard a record of past failures rather than a detector of the next
-#: one. This table is derived from what the **application** refuses to run
-#: without, so a new requirement added here fails the template check before
-#: anything is deployed.
+#: What each mode requires, declared once and read by three things.
 MODE_REQUIREMENTS: dict[tuple[str, str], tuple[str, ...]] = {
     ("auth_mode", "entra"): ("oidc_authority",),
     ("secrets_backend", "keyvault"): ("key_vault_url",),
@@ -49,54 +26,21 @@ MODE_REQUIREMENTS: dict[tuple[str, str], tuple[str, ...]] = {
     ("artifacts_backend", "blob"): ("artifacts_account_url",),
 }
 
-#: **What a deployment needs in every mode, because a *run* needs it.**
-#:
-#: `MODE_REQUIREMENTS` is keyed on a mode being selected. This is the shorter
-#: list of things no mode makes optional, and it is kept separate rather than
-#: folded in because the condition is different — no field equals a value — and a
-#: table whose key sometimes means "when this is set" and sometimes means
-#: "always" is a table nobody can read correctly.
-#:
-#: **Both entries here are B-126.** `apps.bicep` gave the deployed API
-#: `OPENAI_API_KEY` and none of the four `LLM_*` variables, so `llm_providers`
-#: fell to its default of `("openai",)` and `llm_models` to `{}` — and
-#: `registry.resolve` raised *"LLM_MODELS names no models for provider
-#: 'openai'"* on the first model call of every run. The credential shipped and
-#: the configuration that makes it usable did not, which is the same sentence
-#: `ops/docker-compose.yml` already carries about Phase 7.
-#:
-#: `check_env.sh` keeps a copy, because it is POSIX shell and cannot import
-#: Python; `tests/test_mode_requirements.py` is what makes the copy true.
+#: What a deployment needs in every mode, because a run needs it.
 RUN_REQUIRED: tuple[str, ...] = ("llm_providers", "llm_models")
 
-#: How much encryption a connection to a *customer's* database must have, spelled
-#: the way libpq spells it so the words mean what an operator already thinks they
-#: mean. ``allow`` is deliberately absent: "try plaintext first, then TLS" is a
-#: mode nobody wants and everybody misreads.
+#: How much encryption a connection to a customer's database must have.
 TlsMode = Literal["disable", "prefer", "require", "verify-ca", "verify-full"]
 
-#: The subset that guarantees encryption. The distinction is not decoration:
-#: ``disable`` and ``prefer`` both permit a plaintext connection, and ``prefer``
-#: does it silently, which is the failure mode B-013 was raised about.
+#: The subset that guarantees encryption.
 EncryptedTlsMode = Literal["require", "verify-ca", "verify-full"]
 
-#: Where the local backend keeps its encrypted file, relative to the repository
-#: root. Gitignored, and every value inside it is encrypted regardless.
+#: Where the local backend keeps its encrypted file, relative to the repository root.
 LOCAL_SECRETS_RELATIVE_PATH = Path("ops") / ".secrets" / "secrets.json"
 
 
 def find_env_file(start: Path) -> Path | None:
-    """First ``.env`` at or above ``start``, or None.
-
-    Resolved from the source file rather than the working directory, because
-    `make migrate` runs Alembic with its cwd inside apps/api and a developer
-    running uvicorn by hand may be anywhere.
-
-    Searching upward rather than counting parents is not stylistic: inside the
-    container this module lives at ``/app/src/charie/config.py``, which has
-    fewer ancestors than the repository layout. A fixed index raised IndexError
-    there — at import time, so the image would not start at all.
-    """
+    """First ``.env`` at or above ``start``, or None."""
     for parent in start.resolve().parents:
         candidate = parent / ".env"
         if candidate.is_file():
@@ -104,24 +48,12 @@ def find_env_file(start: Path) -> Path | None:
     return None
 
 
-#: In a container there is no .env and configuration comes from the environment,
-#: which is how it should be; this is a local-development convenience only.
+#: In a container there is no .env and configuration comes from the environment.
 _REPO_ENV_FILE = find_env_file(Path(__file__))
 
 
 def _with_password(dsn: str, password: SecretStr | None) -> str:
-    """Put a separately-supplied password back into a DSN that omits it.
-
-    **One helper, called from the two places that hand out a DSN**, because the
-    deployment templates keep the password out of the URL on purpose — one secret
-    in the vault, the rest readable — and something has to reassemble them. Doing
-    it where the DSN is handed out means no caller can be given the passwordless
-    one by mistake.
-
-    A URL that already carries a password wins. A local `.env` embeds one, and
-    silently overwriting it would make a developer's stack depend on which of the
-    two variables they happened to set last.
-    """
+    """Put a separately-supplied password back into a DSN that omits it."""
     if password is None:
         return dsn
     parsed = urlsplit(dsn)
@@ -221,9 +153,7 @@ class Settings(BaseSettings):
             "May omit the password, in which case APP_DB_PASSWORD supplies it."
         ),
     )
-    #: The owner's half of the same arrangement. Only the migration job is given
-    #: this; the API never is, which is the separation AGENTS.md states as a hard
-    #: rule and the reason `charie_app` owns nothing.
+    #: The owner's half of the same arrangement.
     db_password: SecretStr | None = Field(
         default=None,
         description=(
@@ -232,8 +162,7 @@ class Settings(BaseSettings):
             "Locally the password is already inside DATABASE_URL and this is unset."
         ),
     )
-    #: SecretStr for the reason `local_secrets_key` is: it must not surface in a
-    #: repr, a traceback frame or a settings dump.
+    #: SecretStr for the reason `local_secrets_key` is: it must not surface in a repr.
     app_db_password: SecretStr | None = Field(
         default=None,
         description=(
@@ -254,9 +183,7 @@ class Settings(BaseSettings):
             "production build or environment; 'keyvault' arrives in WP12.2."
         ),
     )
-    #: SecretStr, unlike the DSNs above: this one key decrypts every customer
-    #: credential this deployment holds, so it must not be readable from a repr,
-    #: a traceback frame, or a settings dump.
+    #: SecretStr, unlike the DSNs above.
     local_secrets_key: SecretStr | None = Field(
         default=None,
         description=(
@@ -272,9 +199,6 @@ class Settings(BaseSettings):
         ),
     )
     #: Not a SecretStr, and deliberately: a vault's address is not a credential.
-    #: What guards it is the managed identity's role assignment, not obscurity —
-    #: and treating a URL as secret would hide it from the logs that make a
-    #: misconfigured deployment diagnosable.
     key_vault_url: str | None = Field(
         default=None,
         description=(
@@ -285,10 +209,7 @@ class Settings(BaseSettings):
         ),
     )
 
-    #: Typed as the *encrypted* subset on purpose: there is no supported way to
-    #: configure this deployment to talk to a remote database in plaintext. A
-    #: `.env` that tries fails at startup, naming the field, rather than quietly
-    #: sending credentials over somebody else's network.
+    #: Typed as the encrypted subset on purpose.
     tls_mode: EncryptedTlsMode = Field(
         default="require",
         description=(
@@ -342,10 +263,7 @@ class Settings(BaseSettings):
         ),
     )
 
-    #: Ordered: the first is primary and the rest are the fallback chain WP6.2
-    #: walks on a retryable failure (architecture 4.9). No default provider is
-    #: usable out of the box — a build that ships with one configured would make
-    #: "which model answered" depend on what nobody set.
+    #: Ordered: the first is primary and the rest are the fallback chain WP6.2 walks on a...
     llm_providers: Annotated[tuple[str, ...], NoDecode] = Field(
         default=("openai",),
         description=(
@@ -381,10 +299,7 @@ class Settings(BaseSettings):
         ),
     )
 
-    #: SecretStr, like LOCAL_SECRETS_KEY: a provider key is a spending credential,
-    #: and it must not be readable from a repr, a traceback frame, or a settings
-    #: dump. Optional so the app still boots — and the whole test suite still
-    #: runs — with no key at all.
+    #: SecretStr, like LOCAL_SECRETS_KEY: a provider key is a spending credential.
     openai_api_key: SecretStr | None = Field(
         default=None,
         description="Key for the OpenAI provider. From platform.openai.com (D-017).",
@@ -411,16 +326,6 @@ class Settings(BaseSettings):
     )
 
     # -- Phase 10: embeddings -------------------------------------------------
-    #
-    # Separate from `llm_models` on purpose. An embedding model is not a *tier*
-    # of the chat models — D-018's small/mid/strong ladder does not apply to it,
-    # nothing routes to it by role, and its output is a number that is written
-    # into a column whose width is fixed by a migration. Folding it into that map
-    # would let a config edit silently disagree with `vector(1536)`.
-    #
-    # No default for the model id, for D-017's reason: a model id compiled into a
-    # release is stale within months, and a stale one either 404s or writes
-    # vectors of the wrong width into a column that will accept none of them.
     embeddings_provider: str = Field(
         default="openai",
         description=(
@@ -517,8 +422,7 @@ class Settings(BaseSettings):
         ),
     )
 
-    # NoDecode: without it pydantic-settings JSON-decodes any complex-typed env
-    # var, so the natural `CORS_ORIGINS=http://a,http://b` would be a boot error.
+    # NoDecode: without it pydantic-settings JSON-decodes any complex-typed env var.
     cors_origins: Annotated[tuple[str, ...], NoDecode] = Field(
         default=("http://localhost:3000",),
         description="Browser origins allowed to call this API. The web app only.",
@@ -527,24 +431,7 @@ class Settings(BaseSettings):
     @model_validator(mode="before")
     @classmethod
     def _blank_is_unset(cls, values: object) -> object:
-        """``KEY=`` anywhere means *not set*, so the field's default applies.
-
-        **This is what lets compose pass every setting without copying its
-        defaults.** ``DAL_MAX_ROWS: ${DAL_MAX_ROWS:-}`` is how a variable that
-        the developer has not set arrives in the container: as the empty string.
-        Without this rule an integer field would refuse to parse it and the API
-        would not boot — so the safe-looking fix is to write the default into
-        `ops/docker-compose.yml` too, and then there are two defaults that drift.
-
-        The alternative to passing them is worse and is **B-090**: a setting
-        tuned on the host that reaches nothing where the product runs.
-        ``EMBEDDINGS_DIMENSIONS`` was already passed this way, so a `.env`
-        without that line was a container that could not start.
-
-        Empty means unset, never "the empty value". ``LOCAL_SECRETS_KEY=`` has
-        said so since Phase 3 (below, kept because a caller may pass ``""``
-        directly rather than through the environment); this generalises it.
-        """
+        """``KEY=`` anywhere means not set, so the field's default applies."""
         if not isinstance(values, dict):
             return values
         return {
@@ -556,12 +443,7 @@ class Settings(BaseSettings):
     @field_validator("local_secrets_key", mode="before")
     @classmethod
     def _blank_key_is_no_key(cls, value: object) -> object:
-        """``LOCAL_SECRETS_KEY=`` in a .env means "not set", not "the empty key".
-
-        Without this, the commented placeholder in .env.example produces a
-        SecretStr("") that fails much later, inside Fernet, with a message about
-        key length rather than about configuration.
-        """
+        """``LOCAL_SECRETS_KEY=`` in a .env means "not set", not "the empty key"."""
         if isinstance(value, str) and not value.strip():
             return None
         return value
@@ -579,21 +461,11 @@ class Settings(BaseSettings):
 
     @property
     def is_production(self) -> bool:
-        """A production *build* or a production *environment* — either counts.
-
-        Both halves matter: a dev image deployed to prod and a prod image with a
-        careless ENV are the same mistake seen from opposite ends, and every
-        weaker-mode-for-convenience switch in this file is refused for both.
-        """
+        """A production build or a production environment — either counts."""
         return self.build_env == "prod" or self.env == "prod"
 
     def resolve_audiences(self) -> list[str]:
-        """Every audience value that identifies *this* API.
-
-        A token is still accepted only if it names this one registration; the
-        list exists because Entra spells that registration differently depending
-        on the token version it issued.
-        """
+        """Every audience value that identifies this API."""
         return [part.strip() for part in self.oidc_audience.split(",") if part.strip()]
 
     def resolve_authority(self) -> str:
@@ -609,12 +481,7 @@ class Settings(BaseSettings):
         return self.oidc_authority
 
     def assert_auth_is_production_safe(self) -> None:
-        """Refuse to start a production build that trusts the dev issuer.
-
-        Checked at application startup rather than at first request, because a
-        service that boots and *then* fails open is indistinguishable from one
-        that works until someone looks.
-        """
+        """Refuse to start a production build that trusts the dev issuer."""
         if self.auth_mode == "dev" and self.is_production:
             raise RuntimeError(
                 "AUTH_MODE=dev is not permitted in a production build or environment: "
@@ -622,13 +489,7 @@ class Settings(BaseSettings):
             )
 
     def assert_secrets_backend_is_production_safe(self) -> None:
-        """Refuse to start a production build that keeps credentials in a file.
-
-        The local backend's key lives in an environment variable next to the
-        ciphertext it unlocks, which is fine on a laptop and unacceptable for
-        customer credentials. Checked at startup for the same reason as the auth
-        assertion above: a process that boots and then fails open looks healthy.
-        """
+        """Refuse to start a production build that keeps credentials in a file."""
         if self.secrets_backend == "local" and self.is_production:
             raise RuntimeError(
                 "SECRETS_BACKEND=local is not permitted in a production build or "
@@ -637,25 +498,7 @@ class Settings(BaseSettings):
             )
 
     def assert_llm_providers_are_production_safe(self) -> None:
-        """Refuse to start a production build that is configured to fabricate.
-
-        WP11.2b ships a `scripted` provider so CI can drive the real product in a
-        browser without a model. `ProviderCaps.is_stub` already names the hazard:
-        a stub reaching production would not fail — it would answer, confidently
-        and from nothing, in a product whose entire claim is that its answers are
-        evidenced. That is worse than an outage, because an outage is visible.
-
-        Checked at startup for the reason the two assertions above are, and it is
-        the reason worth repeating: `registry.get_provider` refuses a stub too,
-        but it does so at the **first call that needs a model**. A service that
-        boots healthy, serves its health check, accepts a question and only then
-        refuses has already told an operator it was fine. This one refuses before
-        anything is served.
-
-        Both guards stay. They catch different things: this reads configuration
-        and so cannot see a provider registered at runtime; that reads the
-        instance and so cannot see one that is configured but never built.
-        """
+        """Refuse to start a production build that is configured to fabricate."""
         from charie.llm.registry import STUB_PROVIDERS
 
         if not self.is_production:
@@ -683,35 +526,14 @@ class Settings(BaseSettings):
         return self.local_secrets_key.get_secret_value()
 
     def resolve_local_secrets_path(self) -> Path:
-        """Where the local backend's encrypted file lives.
-
-        Anchored to the repository root — the directory holding ``.env`` — so that
-        `make api.dev` from any directory and `uvicorn` from apps/api use the same
-        file. In a container there is no ``.env``, and the path is resolved
-        against the working directory instead; compose sets it explicitly.
-        """
+        """Where the local backend's encrypted file lives."""
         if self.local_secrets_path is not None:
             return self.local_secrets_path
         root = _REPO_ENV_FILE.parent if _REPO_ENV_FILE else Path()
         return root / LOCAL_SECRETS_RELATIVE_PATH
 
     def missing_for_mode(self) -> list[str]:
-        """Settings this configuration promises and does not supply.
-
-        Every entry is a deployment that will boot, pass a liveness probe, and
-        then refuse the first request that reaches the part it lied about — which
-        is how `AUTH_MODE=entra` with no `OIDC_AUTHORITY` reached production and
-        answered 500 to every authenticated route while `/healthz` stayed green.
-
-        **And how the fix for that then missed the next one.** This method's
-        first version read `MODE_REQUIREMENTS` alone, so a deployment with no
-        model configuration reported `ok` here while every question asked in the
-        browser failed (**B-126**). The guard was right and its coverage was the
-        gap — the third time in this project those two have needed separating.
-
-        Returned as environment-variable names because that is what the reader
-        has to go and set.
-        """
+        """Settings this configuration promises and does not supply."""
         missing: list[str] = []
         for (field, expected), required in MODE_REQUIREMENTS.items():
             if str(getattr(self, field, None)) != expected:
@@ -721,12 +543,7 @@ class Settings(BaseSettings):
                 if value is None or (isinstance(value, str) and not value.strip()):
                     missing.append(name.upper())
 
-        # `RUN_REQUIRED`, which is not a mode question and cannot be checked by
-        # the loop above: what makes `LLM_MODELS` missing is not that it is unset
-        # but that it says nothing about a provider `LLM_PROVIDERS` names. The
-        # condition is `registry.resolve`'s own first two refusals, restated here
-        # rather than imported — `registry` imports this module, so the
-        # dependency only runs one way.
+        # `RUN_REQUIRED`, which is not a mode question and cannot be checked by the loop above.
         if not self.llm_providers:
             missing.append("LLM_PROVIDERS")
         elif any(not self.llm_models.get(provider) for provider in self.llm_providers):
@@ -735,12 +552,7 @@ class Settings(BaseSettings):
         return sorted(set(missing))
 
     def require_database_url(self) -> str:
-        """The owner DSN, or a failure that names the fix.
-
-        Code paths that genuinely need the database call this instead of reading
-        the optional field, so a missing DSN surfaces as one clear message rather
-        than an ``asyncpg`` error about connecting to ``None``.
-        """
+        """The owner DSN, or a failure that names the fix."""
         if not self.database_url:
             raise RuntimeError(
                 "DATABASE_URL is not set. Copy .env.example to .env (`make env`) "
@@ -749,13 +561,7 @@ class Settings(BaseSettings):
         return _with_password(self.database_url, self.db_password)
 
     def require_app_database_url(self) -> str:
-        """The runtime DSN. Never falls back to the owner DSN.
-
-        A fallback here would mean that forgetting one environment variable
-        silently promotes the API to the role that owns every table — which
-        ``FORCE ROW LEVEL SECURITY`` would still contain, but which is exactly
-        the kind of quiet privilege drift this separation exists to prevent.
-        """
+        """The runtime DSN. Never falls back to the owner DSN."""
         if not self.app_database_url:
             raise RuntimeError(
                 "APP_DATABASE_URL is not set. It must connect as charie_app, "
@@ -766,9 +572,5 @@ class Settings(BaseSettings):
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
-    """Process-wide settings, read once.
-
-    Cached so that reading configuration is never a hidden I/O cost on a request
-    path. Tests that need different settings clear the cache explicitly.
-    """
+    """Process-wide settings, read once."""
     return Settings()

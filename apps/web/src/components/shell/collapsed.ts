@@ -1,18 +1,6 @@
 "use client";
 
-/**
- * Whether the rail is collapsed — shared by the rail and the page beside it.
- *
- * **It has to be shared now that the rail is `position: fixed`.** A fixed rail
- * is out of the document flow, so the page no longer sits beside it
- * automatically: something has to reserve the width, and that something is a
- * margin on the main element. Two components therefore need the same answer,
- * and a copy in each would be two answers that drift.
- *
- * Read through `useSyncExternalStore` for the reason `persisted.ts` explains:
- * the server has no storage, so the snapshot it renders and the first client
- * render have to agree or hydration complains.
- */
+/** Whether the rail is collapsed — shared by the rail and the page beside it. */
 
 import { useSyncExternalStore } from "react";
 

@@ -1,33 +1,4 @@
-"""The SQL Server connector (architecture Part 5.1, plan WP3.3).
-
-The same protocol as the Postgres connector, and the same three promises —
-bounded work, sanitized failures, declared encryption. One promise it cannot
-make the same way, and the difference is written down here rather than glossed:
-
-**There is no read-only session.** Postgres has ``default_transaction_read_only``
-and refuses a write at the session level before privileges are even consulted.
-SQL Server has no equivalent: ``ApplicationIntent=ReadOnly`` is about availability
-group routing, and ODBC's ``SQL_ATTR_ACCESS_MODE`` is advisory — Microsoft's
-driver accepts it and enforces nothing. So this connector's guard is different in
-kind: it never commits. Connections are opened with ``autocommit`` off and every
-execution ends in a rollback, in a ``finally``, whether it succeeded or not.
-A write that somehow reached this class would be undone rather than refused,
-which is weaker than a refusal and is why ``readonly_verified`` matters more here
-than it does on Postgres.
-
-**Synchronous driver, async protocol.** pyodbc blocks, so every call into it goes
-through ``asyncio.to_thread``. A pyodbc connection may be used from more than one
-thread only if the uses do not overlap, and the thread-pool gives no guarantee
-about which thread runs what — so an ``asyncio.Lock`` serialises everything that
-touches the handle. It is not there for correctness of *our* logic; it is there
-because the driver requires it.
-
-**Whole-second timeouts.** ``Caps.statement_timeout_mechanism`` says
-``driver_query_timeout`` for this engine, and that is a real limitation: ODBC's
-query timeout is an integer number of seconds, so a sub-second ``ExecLimits``
-rounds up to one second rather than silently becoming "no timeout at all", which
-is what ``int(0.1)`` would have meant.
-"""
+"""The SQL Server connector (architecture Part 5.1, plan WP3.3)."""
 
 from __future__ import annotations
 
@@ -60,15 +31,12 @@ from charie.connectors.tls import odbc_parameters, tls_detail
 
 __all__ = ["SQLSERVER_CAPS", "SqlServerConnector"]
 
-#: pyodbc's objects carry partial annotations, so they are held as ``Any`` at
-#: this one boundary and everything leaving the module is a declared type —
-#: the same arrangement the Postgres connector documents for asyncpg.
+#: pyodbc's objects carry partial annotations.
 type OdbcConnection = Any
 
 _connect: Any = pyodbc.connect
 
-#: Installed by ``apps/api/docker/install-odbc.sh``. Named in full because ODBC
-#: driver names are registry keys, not version ranges: there is no "latest".
+#: Installed by ``apps/api/docker/install-odbc.sh``.
 ODBC_DRIVER = "ODBC Driver 18 for SQL Server"
 
 #: Shows up in sys.dm_exec_sessions, so a DBA can see who is asking.
@@ -79,9 +47,7 @@ DEFAULT_CONNECT_TIMEOUT_SECONDS = 10
 SQLSERVER_CAPS = Caps(
     dialect="tsql",
     max_identifier_length=128,
-    # T-SQL's own spelling is [brackets]; double quotes are equally valid while
-    # QUOTED_IDENTIFIER is ON, which it is for every ODBC connection, and one
-    # character is what this field can hold.
+    # T-SQL's own spelling is [brackets].
     identifier_quote='"',
     catalog_access="sys",
     limit_syntax="top",
@@ -90,19 +56,12 @@ SQLSERVER_CAPS = Caps(
     explain_format="showplan_xml",
 )
 
-#: SQLSTATE class 42 is "syntax error or access rule violation" — which is what a
-#: refused CREATE TABLE is. Distinguishing it from, say, 08S01 (communication
-#: link failure) is what keeps a network problem from being read as proof that
-#: the credentials cannot write.
+#: SQLSTATE class 42 is "syntax error or access rule violation".
 _ACCESS_RULE_VIOLATION = "42"
 
 
 class SqlServerConnector:
-    """One customer SQL Server database.
-
-    Holds at most one open connection, lazily. Use it as an async context
-    manager, or call ``aclose()``.
-    """
+    """One customer SQL Server database."""
 
     def __init__(
         self,
@@ -150,12 +109,7 @@ class SqlServerConnector:
     # -- connections -------------------------------------------------------
 
     def _known(self) -> tuple[str, ...]:
-        """What must never appear in an error message leaving this class.
-
-        Login failures on this engine quote the account back at you — the driver
-        text is literally ``Login failed for user 'sa'`` — so the username being
-        on this list is not a precaution, it is the common case.
-        """
+        """What must never appear in an error message leaving this class."""
         return (self._password, self._host, self._username, self._database)
 
     def _fail(self, error: Exception) -> ConnectorError:
@@ -168,9 +122,7 @@ class SqlServerConnector:
             raise self._fail(error) from None
 
     def _connect_blocking(self, *, read_only: bool) -> OdbcConnection:
-        # Keyword form rather than a hand-built connection string: pyodbc brace-
-        # quotes values that contain ODBC's separators, so a password with a
-        # semicolon in it connects instead of silently truncating the string.
+        # Keyword form rather than a hand-built connection string.
         return _connect(
             driver=f"{{{ODBC_DRIVER}}}",
             server=f"{self._host},{self._port}",
@@ -182,9 +134,7 @@ class SqlServerConnector:
             # pyodbc's own keywords, not connection-string attributes.
             timeout=self._connect_timeout,
             autocommit=False,
-            # Advisory on this driver, as the module docstring says. Set anyway:
-            # it costs nothing, it is the standard's way to say what we intend,
-            # and the probe connection deliberately does not set it.
+            # Advisory on this driver, as the module docstring says.
             readonly=read_only,
         )
 
@@ -196,12 +146,7 @@ class SqlServerConnector:
     # -- the one execution path -------------------------------------------
 
     async def execute(self, query: ValidatedQuery, limits: ExecLimits) -> ResultFrame:
-        """Run approved SQL. The only place this module sends a query.
-
-        Ends in a rollback whatever happens. With no read-only session to lean
-        on, "nothing this connector does is ever committed" is the guard, and a
-        guard in a ``finally`` is the only kind worth having.
-        """
+        """Run approved SQL. The only place this module sends a query."""
         connection = await self._reader()
         started = time.perf_counter()
 
@@ -227,14 +172,10 @@ class SqlServerConnector:
             cursor.execute(query.sql, *query.parameters)
             description = cast("Sequence[Sequence[object]] | None", cursor.description)
             if description is None:
-                # A statement with no result set. The DAL will only ever send
-                # SELECT and EXPLAIN, so this is not a path anything takes on
-                # purpose — but fetching from it raises "previous SQL was not a
-                # query", and an empty answer is the truthful one.
+                # A statement with no result set.
                 return (), []
             columns = tuple(str(column[0]) for column in description)
-            # One more than asked for, so "there was more" is a fact rather than
-            # a guess — the same trick as the server-side cursor on Postgres.
+            # One more than asked for, so "there was more" is a fact rather than a guess.
             fetched = cast("list[Sequence[object]]", cursor.fetchmany(limits.max_rows + 1))
             return columns, [tuple(row) for row in fetched]
         finally:
@@ -282,13 +223,7 @@ class SqlServerConnector:
         ]
 
     async def list_foreign_keys(self, schemas: Sequence[str]) -> list[ForeignKey]:
-        """One key per constraint, with its columns in key order.
-
-        The query returns a row per column because T-SQL has no array_agg worth
-        depending on across versions, so the grouping happens here — relying on
-        the ORDER BY in the template, which is part of the template for exactly
-        this reason.
-        """
+        """One key per constraint, with its columns in key order."""
         frame = await self.execute(introspection.tsql_foreign_keys(), _METADATA_LIMITS)
         wanted = set(schemas)
 
@@ -324,12 +259,7 @@ class SqlServerConnector:
     # -- verification ------------------------------------------------------
 
     async def test_connection(self) -> Health:
-        """Connect, then prove the credentials cannot write.
-
-        Never raises, and ``readonly_verified`` is false unless there is evidence
-        for it — the same contract as the Postgres connector, reached through a
-        different set of catalog questions.
-        """
+        """Connect, then prove the credentials cannot write."""
         checked_at = datetime.now(UTC)
 
         try:
@@ -384,16 +314,7 @@ class SqlServerConnector:
         )
 
     async def _tls_status(self) -> TlsStatus | None:
-        """Whether this session is encrypted — from the server if it will say.
-
-        ``sys.dm_exec_connections`` needs VIEW SERVER STATE, which a genuinely
-        read-only login will not have, so the common case for a correctly
-        registered data source is that the server refuses to answer. That is not
-        a reason to report nothing: every mode except ``disable`` asks the driver
-        for encryption and the driver fails the connection rather than falling
-        back, so a connection that exists is an encrypted one. The wording says
-        which of the two answered.
-        """
+        """Whether this session is encrypted — from the server if it will say."""
         try:
             frame = await self.execute(introspection.tsql_tls_status(), ExecLimits(1))
             option = str(frame.rows[0][0]).upper()
@@ -420,12 +341,7 @@ class SqlServerConnector:
         )
 
     async def _write_probe(self) -> tuple[bool, str]:
-        """Attempt one write on a connection that is not declared read-only.
-
-        Same experiment as on Postgres and the same rollback, but it carries more
-        weight here: with no read-only session to sit behind, this and the
-        privilege catalog are the whole of the evidence.
-        """
+        """Attempt one write on a connection that is not declared read-only."""
         try:
             connection = await self._open(read_only=False)
         except ConnectorError as error:
@@ -447,8 +363,7 @@ class SqlServerConnector:
             state = _sqlstate(error)
             if state.startswith(_ACCESS_RULE_VIOLATION):
                 return True, f"CREATE TABLE was refused (SQLSTATE {state})"
-            # A link failure is not a refusal, and reading it as one would let a
-            # flaky network hand out a green tick.
+            # A link failure is not a refusal.
             return False, f"the write probe could not run (SQLSTATE {state})"
         else:
             return False, (
@@ -461,8 +376,7 @@ class SqlServerConnector:
                 connection.rollback()
 
 
-#: Metadata results are bounded by the size of the customer's schema, not by
-#: their data. Generous, and still a limit.
+#: Metadata results are bounded by the size of the customer's schema, not by their data.
 _METADATA_LIMITS = ExecLimits(max_rows=50_000, timeout_seconds=30.0)
 
 

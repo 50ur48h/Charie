@@ -1,25 +1,6 @@
 "use client";
 
-/**
- * Where a chat begins: a greeting, a composer, and nothing to configure first
- * (WP13.1b), in the Calm design.
- *
- * **The conversation is created on send, not on arrival.** A "New chat" that
- * created a row immediately would fill the sidebar with empty threads. So this
- * screen holds a draft, and one send does three things in order: create the
- * thread, post the question, then navigate to it. The conversation screen picks
- * the run up from `last_run_id` and polls it to completion.
- *
- * **The failure case is the reason the steps are separate.** If the thread is
- * created and the question then fails to post, the person stays here with their
- * text and the reason. The half-made thread is held and reused on the next
- * attempt, and the idempotency key is held with it (D-019), so a retry neither
- * leaves a trail of empty chats nor buys a second run.
- *
- * **A Reader sees exactly this screen.** Asking is granted to every role; what
- * differs is what an Admin can do about a missing database, and the message
- * below says which of the two you are.
- */
+/** Where a chat begins: a greeting, a composer, and nothing to configure first (WP13.1b). */
 
 import { Database, Lightbulb, TrendingUp, Trophy, TriangleAlert } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -34,10 +15,7 @@ import { ApiError, createApi, type ActiveDataSource, type DataSource } from "@/l
 import { useSession } from "@/lib/auth/session";
 import { useOrgRole } from "@/lib/use-org-role";
 
-/**
- * Starting points. They fill the composer rather than send, so a person can
- * make one fit their own data before asking.
- */
+/** Starting points. They fill the composer rather than send. */
 const STARTERS = [
   { icon: TrendingUp, text: "How are sales doing this month compared with last month?" },
   { icon: Trophy, text: "What are our five best-selling products by revenue?" },
@@ -53,8 +31,7 @@ export function ChatHome({ orgId }: { orgId: string }) {
 
   const [question, setQuestion] = useState("");
   const [active, setActive] = useState<ActiveDataSource | null>(null);
-  // Read alongside the choice so this screen can tell the truth about whether
-  // asking will work — see `answersFrom` below.
+  // Read alongside the choice so this screen can tell the truth about whether asking will work.
   const [sources, setSources] = useState<DataSource[] | null>(null);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -98,8 +75,7 @@ export function ChatHome({ orgId }: { orgId: string }) {
       const conversationId = pending.current ?? (await api.createConversation(orgId, {})).id;
       pending.current = conversationId;
       await api.ask(orgId, conversationId, content, idempotencyKey.current);
-      // Only past this point is the question definitely on its way, so only
-      // here are the key and the held thread retired.
+      // Only past this point is the question definitely on its way.
       idempotencyKey.current = crypto.randomUUID();
       pending.current = null;
       router.push(`/orgs/${orgId}/conversations/${conversationId}`);
@@ -109,14 +85,7 @@ export function ChatHome({ orgId }: { orgId: string }) {
     }
   }, [api, orgId, question, router]);
 
-  /**
-   * The database a question asked right now would actually reach, or null.
-   *
-   * This mirrors `agent/scheduler.resolve_data_source` deliberately: the server
-   * decides, this only decides what to *say*. The choice wins; otherwise a
-   * single registered source is what a run would resolve; otherwise there is
-   * nothing to ask, and the two reasons are said differently below.
-   */
+  /** The database a question asked right now would actually reach, or null. */
   const answersFrom =
     active?.data_source_name ?? (sources?.length === 1 ? (sources[0]?.name ?? null) : null);
 
@@ -166,9 +135,7 @@ export function ChatHome({ orgId }: { orgId: string }) {
             ))}
         </div>
 
-        {/* Your question, the moment you send it — faint until it is real
-            (D-049). If the send fails it disappears and the reason takes its
-            place, rather than hardening into a message never stored. */}
+        {/* Your question, the moment you send it — faint until it is real (D-049). */}
         {sending && (
           <div className="mb-5 grid animate-fade-up gap-3">
             <p className="ml-auto max-w-[78%] rounded-[20px] bg-bubble px-[18px] py-2.5 text-[15.5px] whitespace-pre-wrap opacity-60">

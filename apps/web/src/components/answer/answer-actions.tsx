@@ -1,14 +1,6 @@
 "use client";
 
-/**
- * Under the answer (design: `.a-actions`, `.a-follow`): copy, a quick reaction,
- * a way to say it is wrong, how the run ended — and a few next questions.
- *
- * **The ending is a word, and the true word** (B-133, D-044). A refusal and a
- * partial answer are correct outcomes rather than errors, so they are muted
- * rather than red, and a partial answer names its missing half. Only a run the
- * platform could not complete is red.
- */
+/** Under the answer (design: `.a-actions`, `.a-follow`): copy, a quick reaction. */
 
 import {
   CircleAlert,

@@ -55,9 +55,7 @@ function stubFetch(
     vi.fn((url: string, init: RequestInit = {}) => {
       calls.push({ url, init });
       if (url.includes("/active-data-source")) return Promise.resolve(json(options.chosen ?? CHOSEN));
-      // The settings page loads its three facts together and renders none of
-      // them if any request fails, which is how it already treats the active
-      // data source. A stub missing this route blanks the whole screen.
+      // The settings page loads its three facts together and renders none of them if any...
       if (url.includes("/show-run-cost")) {
         return Promise.resolve(json({ visible: options.showCost ?? true }));
       }
@@ -108,12 +106,7 @@ describe("<Settings />", () => {
   });
 
   it("names the unbuilt sections without pretending they work", async () => {
-    /**
-     * **An honest gap, not a convincing lie.** A disabled select under "Tone"
-     * would look operable and do nothing — the interface asserting something the
-     * system cannot back, which is B-133's defect in a different costume. So
-     * these are prose and a badge, and there is no control to press.
-     */
+    /** An honest gap, not a convincing lie. */
     stubFetch();
 
     render(<Settings orgId="o1" />);
@@ -223,9 +216,7 @@ describe("<Settings />", () => {
   });
 
   it("turns spend off for the whole organization, and says so", async () => {
-    // **D-066, and it is a switch rather than a permission.** Off hides cost
-    // from everyone including the Admin who set it, so the label must not read
-    // as "hidden from others".
+    // D-066, and it is a switch rather than a permission.
     const calls = stubFetch({ showCost: true });
 
     render(<Settings orgId="o1" />);

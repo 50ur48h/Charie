@@ -1,27 +1,4 @@
 -- Pizza chain demo database for SQL Server (plan WP3.3, architecture Part 9.2).
---
--- The same fixture as the PostgreSQL one, in this engine's dialect, and for a
--- different job. `seed-pizza-pg` is the dataset the agent and the evals reason
--- about; this one exists so that a *second* dialect is exercised end to end —
--- introspection from sys.*, T-SQL types, the read-only verification, and the
--- error paths. So it keeps every structural property and none of the
--- statistical ones:
---
---   * still NO order_items table, so item-level questions stay unanswerable;
---   * customers.email and customers.phone are still real-shaped personal data;
---   * a foreign key graph worth walking: orders → stores, orders → customers,
---     staff → stores, payments → orders;
---   * table and column descriptions, which on this engine means extended
---     properties rather than COMMENT ON;
---   * a second schema, so "list the tables in these schemas" is a filter with
---     something to exclude rather than a formality.
---
--- The data is generated arithmetically from a row number, never from RAND() or
--- GETDATE(), so re-running this produces exactly the same rows. There is no
--- truths.json for it: ops/seed/truths.json describes the PostgreSQL dataset, and
--- a second set of ground truths nobody asks questions of would only go stale.
---
--- Run it with `make seed.mssql`, which passes $(ReadonlyPassword).
 
 SET NOCOUNT ON;
 GO
@@ -33,9 +10,7 @@ GO
 USE pizza;
 GO
 
--- ---------------------------------------------------------------------------
--- Schema. Dropped in dependency order; reseeding rebuilds everything.
--- ---------------------------------------------------------------------------
+-- --- Schema ---
 DROP VIEW IF EXISTS analytics.busy_stores;
 DROP TABLE IF EXISTS dbo.payments;
 DROP TABLE IF EXISTS dbo.orders;
@@ -125,10 +100,7 @@ LEFT JOIN dbo.orders o ON o.store_id = s.id
 GROUP BY s.id, s.name;
 GO
 
--- ---------------------------------------------------------------------------
--- Descriptions. MS_Description is the convention SSMS reads and writes, and
--- what the connector's introspection looks for.
--- ---------------------------------------------------------------------------
+-- --- Descriptions ---
 EXEC sys.sp_addextendedproperty @name = N'MS_Description',
      @value = N'Physical restaurant locations.',
      @level0type = N'SCHEMA', @level0name = N'dbo',
@@ -168,10 +140,7 @@ EXEC sys.sp_addextendedproperty @name = N'MS_Description',
      @level2type = N'COLUMN', @level2name = N'total_amount';
 GO
 
--- ---------------------------------------------------------------------------
--- Data. A tally table of cross-joined constants, then arithmetic on the row
--- number — no RAND(), no GETDATE(), so two runs produce identical rows.
--- ---------------------------------------------------------------------------
+-- --- Data ---
 DECLARE @start date = '2025-02-01';
 DECLARE @days int = 546;           -- through 2026-07-31, the PostgreSQL window
 
@@ -257,18 +226,7 @@ FROM dbo.orders o
 WHERE o.status <> 'cancelled';
 GO
 
--- ---------------------------------------------------------------------------
--- The login a data source should actually be registered with.
---
--- db_datareader and nothing else: it may SELECT every table and may create
--- nothing, which is what makes `readonly_verified` mean something when the demo
--- is registered. sa exists to build this fixture and should never be handed to
--- the platform.
---
--- CHECK_POLICY is off because this is a local container with a documented
--- throwaway password, and the Windows password policy is not a thing a Linux
--- container should be arguing with.
--- ---------------------------------------------------------------------------
+-- --- The login a data source should actually be registered with ---
 USE master;
 GO
 
@@ -289,8 +247,7 @@ GO
 ALTER ROLE db_datareader ADD MEMBER pizza_readonly;
 GO
 
--- Belt and braces, and a statement of intent that survives someone adding a
--- role membership by hand: whatever else is granted, these are refused.
+-- Belt and braces, and a statement of intent that survives someone adding a role membership by...
 DENY INSERT, UPDATE, DELETE, ALTER, CREATE TABLE TO pizza_readonly;
 GO
 

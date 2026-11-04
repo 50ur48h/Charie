@@ -1,24 +1,4 @@
-"""Load a file of metric definitions into a registered data source.
-
-    make seed.definitions FILE=path/to/definitions.json SOURCE="<data source name>"
-
-Runs **inside the api container**, for `provision_demo.py`'s reason: writing a
-definition validates its `required_filters` against the catalog, which means
-loading a `SourcePolicy`, which means being the process that can reach the
-platform database. A host script cannot honestly do it.
-
-**Why active rather than proposed.** `accept()` replaces a row's filters with
-whatever the accepting call sends, so a definition seeded as a proposal loses
-its filter the moment somebody clicks Accept without re-typing it. These arrive
-already reviewed — each one was checked against the data before it was written —
-so the review that matters already happened, and asking for a second one would
-cost `edible_waste` the single filter that makes it bind.
-
-**Idempotent by name.** A rerun updates the definition in place rather than
-failing or duplicating, so correcting a caveat is editing this file and running
-it again. That path goes through `update()`, which versions the change, so the
-history says what moved and when.
-"""
+"""Load a file of metric definitions into a registered data source."""
 
 from __future__ import annotations
 
@@ -64,8 +44,7 @@ async def _org_and_actor() -> tuple[uuid.UUID, uuid.UUID]:
             if user is None:
                 raise SystemExit(f"No {SETUP_USER_EMAIL} user. Run `make demo.setup` first.")
     finally:
-        # Disposed explicitly: this engine is built for two queries and the
-        # process goes on to open tenant sessions of its own.
+        # Disposed explicitly: this engine is built for two queries and the process goes on to...
         await engine.dispose()
     return uuid.UUID(str(org)), uuid.UUID(str(user))
 
@@ -135,8 +114,7 @@ async def main(wanted: list[dict[str, Any]]) -> int:
                 print(f"  + {name}  ({binds}, {len(view.synonyms)} synonyms)")
                 created += 1
         except Exception as error:
-            # Named, because the API's own error says which column a filter got
-            # wrong, and a generic failure would send whoever ran this to guess.
+            # Named, because the API's own error says which column a filter got wrong.
             print(f"  ! {name}: {error}")
             return 1
 
@@ -146,7 +124,6 @@ async def main(wanted: list[dict[str, Any]]) -> int:
 
 
 if __name__ == "__main__":
-    # Read before the loop starts: it is a local file, and reading it inside an
-    # async function is a blocking call dressed as a non-blocking one.
+    # Read before the loop starts: it is a local file.
     document: dict[str, Any] = json.loads(Path(FILE).read_text(encoding="utf-8"))
     raise SystemExit(asyncio.run(main(document["definitions"])))

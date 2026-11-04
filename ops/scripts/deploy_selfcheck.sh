@@ -1,27 +1,5 @@
 #!/usr/bin/env sh
-#
 # Ask the deployed identity whether it can do what the product needs (B-125).
-#
-# **The check runs as the app, not as the pipeline, and that is the entire
-# point.** This script starts a Container Apps job that runs on the same
-# user-assigned identity as the API and executes `python -m charie.ops.selfcheck`
-# — which writes and deletes a Key Vault secret and writes and reads a Blob
-# artifact, through the product's own providers.
-#
-# The obvious implementation is a few `az` commands right here. It would be
-# wrong. This runner is authenticated as the **OIDC deploy identity**, which has
-# broad permissions on the resource group, so a vault write from here would have
-# succeeded happily throughout the entire period the *app* identity held a
-# read-only role (B-125) — a check that passes for a reason unrelated to the
-# thing it checks. That class of defect has cost this project five separate
-# incidents. The only honest way to test what the app can do is to be the app.
-#
-# **Ordering: after the apps are rolled, not before.** It shares the migration
-# job's ordering constraint in reverse — nothing depends on it, and running it
-# last means a failure names a permission problem on a deployment that is
-# otherwise complete, rather than blocking a rollout that would have worked.
-#
-# POSIX sh, for the reason the other ops scripts are: see db_setup.sh.
 
 set -eu
 
@@ -32,12 +10,7 @@ set -eu
 JOB_NAME="${SELFCHECK_JOB_NAME:-cj-charie-selfcheck-dev}"
 CONTAINER=selfcheck
 
-# The whole value of this script is in what it prints when it fails, so the log
-# retrieval is the same two-source arrangement `deploy_migrate.sh` arrived at the
-# hard way: `job logs show` reads the live replica and Container Apps deletes that
-# within minutes, after which only Log Analytics has it — and console logs take up
-# to ~15 minutes to land there, so an empty fallback means "not yet", never "the
-# container said nothing".
+# The whole value of this script is in what it prints when it fails.
 dump_logs() {
   execution=$1
   echo "--- container output for $execution ---" >&2
@@ -74,9 +47,7 @@ dump_logs() {
 
 echo "Starting $JOB_NAME on ${REGISTRY}/charie-api:${IMAGE_TAG}"
 
-# Update first, then start. A job execution inherits the job's template, so an
-# override that failed to apply would silently probe with the previous image —
-# the shape of defect that makes a deploy look fine.
+# Update first, then start. A job execution inherits the job's template.
 az containerapp job update \
   --name "$JOB_NAME" \
   --resource-group "$RESOURCE_GROUP" \
@@ -90,9 +61,7 @@ EXECUTION=$(az containerapp job start \
 
 echo "Execution $EXECUTION started; waiting for it to finish."
 
-# Four round trips to two services. Three minutes of polling is generous against
-# a job whose own replica timeout is two, and short enough that a hang is
-# reported rather than waited out.
+# Four round trips to two services.
 i=0
 while [ "$i" -lt 18 ]; do
   STATUS=$(az containerapp job execution show \

@@ -1,13 +1,6 @@
 "use client";
 
-/**
- * One session interface, two implementations behind it.
- *
- * `dev` asks the API's dev issuer for a token; `entra` runs MSAL auth-code +
- * PKCE. Screens consume `useSession()` and never learn which is in play — the
- * point of WP2.1a's decision to give the dev issuer real signatures and a real
- * JWKS was that everything above the token behaves identically.
- */
+/** One session interface, two implementations behind it. */
 
 import {
   PublicClientApplication,
@@ -26,8 +19,7 @@ import {
 
 import { authConfig, missingEntraSettings, type AuthConfig } from "./config";
 
-// Without these the token carries no email or name, and a person shows up as
-// their opaque subject id.
+// Without these the token carries no email or name.
 const OIDC_SCOPES = ["openid", "profile", "email"];
 import {
   DevTokenRefused,
@@ -53,16 +45,7 @@ export interface Session {
 
 const SessionContext = createContext<Session | null>(null);
 
-/**
- * One MSAL instance per page, created outside React and initialized once.
- *
- * React Strict Mode invokes effects twice in development. Creating the instance
- * inside the effect made two of them: the first consumed the redirect response
- * and cached the account, then had its result discarded because cleanup had
- * already run; the second called handleRedirectPromise() on a spent response,
- * got null, and raced the first one's cache write. The visible symptom was
- * landing back on the sign-in screen and having to click Sign in a second time.
- */
+/** One MSAL instance per page, created outside React and initialized once. */
 let msalInstance: PublicClientApplication | null = null;
 let msalReady: Promise<IPublicClientApplication> | null = null;
 
@@ -75,8 +58,7 @@ function msalOnce(authority: string, clientId: string): Promise<IPublicClientApp
   const instance = msalInstance;
   msalReady = instance
     .initialize()
-    // Must run before anything else touches the cache, and exactly once: the
-    // response is consumed by the first caller.
+    // Must run before anything else touches the cache, and exactly once.
     .then(() => instance.handleRedirectPromise())
     .then(() => instance);
   return msalReady;
@@ -101,9 +83,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Restore a dev sign-in across reloads. Dev tokens are short-lived and the
-  // issuer's keypair dies with the API process, so only the *subject* is kept —
-  // a stale token would fail validation and look like a bug.
+  // Restore a dev sign-in across reloads.
   useEffect(() => {
     if (config.mode !== "dev") return;
     const remembered = rememberedDevSubject();
@@ -113,8 +93,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         setDevToken(identity.token);
         setWho(identity.subject);
       })
-      // Only a refusal makes the remembered subject worthless; an aborted or
-      // failed request (a navigation mid-fetch) leaves it for the next page.
+      // Only a refusal makes the remembered subject worthless; an aborted or failed request.
       .catch((cause: unknown) => {
         if (cause instanceof DevTokenRefused) forgetDevSubject();
       });
@@ -127,9 +106,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     msalOnce(config.authority, config.clientId)
       .then((instance) => {
         if (cancelled) return;
-        // Read the account after initialization has settled, not from the
-        // redirect result: whichever mount consumed the response, the account
-        // is in the shared cache by now.
+        // Read the account after initialization has settled, not from the redirect result.
         const signedIn = instance.getActiveAccount() ?? instance.getAllAccounts()[0] ?? null;
         if (signedIn) instance.setActiveAccount(signedIn);
         setMsal(instance);
@@ -155,8 +132,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       });
       return result.accessToken;
     } catch {
-      // A silent failure means interaction is required; ask for it rather than
-      // leaving the caller with a null token and no explanation.
+      // A silent failure means interaction is required.
       await msal.acquireTokenRedirect({ scopes: [...OIDC_SCOPES, config.apiScope], account });
       return null;
     }

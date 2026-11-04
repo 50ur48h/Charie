@@ -90,16 +90,7 @@ const EXECUTION = {
 /** Comfortably longer than the screen's 1500ms poll, so a stray tick would land. */
 const POLL_QUIET_MS = 2200;
 
-/**
- * A response that arrives on a later task, the way a real one does.
- *
- * Not decoration. The bug this file's regression test covers is a race between
- * a `setState` and the `await` after it: React commits the update — and runs the
- * effect cleanup that cancels the in-flight tick — on a macrotask. A stub that
- * resolves in a microtask beats the commit and hides the bug entirely, which is
- * exactly what happened the first time this test was written: it passed against
- * the broken code. Real latency is what makes the ordering deterministic.
- */
+/** A response that arrives on a later task, the way a real one does. */
 function delayed(body: unknown, ms = 5): Promise<Response> {
   return new Promise((resolve) => setTimeout(() => resolve(json(body)), ms));
 }
@@ -111,12 +102,7 @@ function json(body: unknown, status = 200): Response {
   });
 }
 
-/**
- * Routes on the URL rather than on call order.
- *
- * This screen polls, so the number of calls is not fixed and a sequence stub
- * would make every assertion depend on timing.
- */
+/** Routes on the URL rather than on call order. */
 function routeFetch(overrides: Partial<Record<string, unknown>> = {}) {
   const calls: { url: string; init: RequestInit }[] = [];
   vi.stubGlobal(
@@ -128,9 +114,7 @@ function routeFetch(overrides: Partial<Record<string, unknown>> = {}) {
         return Promise.resolve(json({ run_id: "r1", events: [], last_seq: 0 }));
       }
       if (url.includes("/runs/")) return Promise.resolve(json(overrides.run ?? ANSWERED));
-      // The thread's runs (**B-106**). Defaults to the same run the messages
-      // name, so a test that says nothing about it gets a thread whose answer
-      // renders as its card — which is what the screen does now.
+      // The thread's runs (B-106). Defaults to the same run the messages name.
       if (url.endsWith("/runs")) {
         if ("runs" in overrides) return Promise.resolve(json(overrides.runs));
         return Promise.resolve(json([overrides.run ?? ANSWERED]));
@@ -167,16 +151,7 @@ describe("<ConversationThread />", () => {
   });
 
   it("shows the query behind a lone citation without a second click", async () => {
-    /**
-     * The product's central claim, made checkable rather than asserted: the
-     * answer names a finding, the finding names an execution, and the execution
-     * opens into the statement that produced the number.
-     *
-     * **A finding with one citation shows it outright** (D-047). Having opened
-     * *Evidence*, being asked to open the evidence again is a click that buys
-     * nothing — so the toggle is still there, reading *Hide*, and the query is
-     * already on screen.
-     */
+    /** The product's central claim, made checkable rather than asserted. */
     routeFetch();
 
     render(<ConversationThread orgId="o1" conversationId="c1" />);
@@ -206,12 +181,7 @@ describe("<ConversationThread />", () => {
 
     render(<ConversationThread orgId="o1" conversationId="c1" />);
 
-    // A run that could not answer *completes* (WP7.2b), so dressing it up as an
-    // error would send people hunting for a bug in their question — and calling it
-    // **answered** was the opposite mistake (**B-133**). This assertion used to
-    // read `getByText("answered")`, which is the defect written down as an
-    // expectation: the card labelled every honest refusal with the one claim a
-    // refusal exists to deny.
+    // A run that could not answer completes (WP7.2b).
     expect(await screen.findByText(/more than one data source/)).toBeInTheDocument();
     expect(screen.getByText("could not answer")).toBeInTheDocument();
     expect(screen.queryByText("answered")).not.toBeInTheDocument();
@@ -219,9 +189,7 @@ describe("<ConversationThread />", () => {
   });
 
   it("still says answered when the run answered", async () => {
-    // **The control.** Without it the assertion above is satisfied by a card that
-    // says "could not answer" on every run, which would be a worse defect than the
-    // one being fixed — it would make the product look incapable.
+    // The control.
     routeFetch({ run: { ...ANSWERED, state: "answered" } });
 
     render(<ConversationThread orgId="o1" conversationId="c1" />);
@@ -231,12 +199,7 @@ describe("<ConversationThread />", () => {
   });
 
   it("names the missing half when a run answered only part of the question", async () => {
-    // **The last hop of B-134's chain.** `unanswered` is written by the model
-    // into `FinalizeIn` and crosses the composer, the ending, a column, RunView
-    // and RunOut before it gets here. The API side of that is asserted in
-    // `tests/agent/test_outcome_state.py`; this is the end a person actually
-    // reads, and the reason the badge is not just a different word: "could not
-    // answer the cost" is useful, "partly answered" alone is not.
+    // The last hop of B-134's chain.
     routeFetch({ run: { ...ANSWERED, state: "partly", unanswered: "the cost" } });
 
     render(<ConversationThread orgId="o1" conversationId="c1" />);
@@ -246,9 +209,7 @@ describe("<ConversationThread />", () => {
   });
 
   it("keeps the status word for a run that never recorded whether it answered", async () => {
-    // Every run that ended before revision 0029 is this one. Guessing from the
-    // absence of findings would put a word in the mouth of a run that never said
-    // it, so `null` falls back to exactly what these runs showed before.
+    // Every run that ended before revision 0029 is this one.
     routeFetch({ run: { ...ANSWERED, findings: [], state: null } });
 
     render(<ConversationThread orgId="o1" conversationId="c1" />);
@@ -268,8 +229,7 @@ describe("<ConversationThread />", () => {
 
     render(<ConversationThread orgId="o1" conversationId="c1" />);
 
-    // `failed` is reserved for the platform breaking, and is the one case where
-    // the screen should say something went wrong on our side.
+    // `failed` is reserved for the platform breaking.
     expect(await screen.findByText("failed")).toBeInTheDocument();
     expect(screen.getByText(/The run could not be completed/)).toBeInTheDocument();
   });
@@ -298,28 +258,12 @@ describe("<ConversationThread />", () => {
     const post = calls.find((call) => call.init.method === "POST");
     const body = JSON.parse(String(post?.init.body)) as Record<string, string>;
     expect(body.content).toBe("Which store sold most?");
-    // Required by the API, and the reason a retried send returns the run that
-    // already exists rather than a second one under D-019's spend ceiling.
+    // Required by the API, and the reason a retried send returns the run that already exists...
     expect(body.idempotency_key).toBeTruthy();
   });
 
   it("shows the answer as soon as the run finishes, with no further interaction", async () => {
-    /**
-     * The bug the Phase 7 gate found, and the reason it did not pass.
-     *
-     * `POST …/messages` answers 202 with a run id and **no answer** — the reply
-     * becomes a message only when the run finishes. So the screen must re-fetch
-     * the thread at that moment. It did not: the poll wrote the finished run
-     * into state, that write cancelled the very tick that was meant to reload
-     * the messages, and the effect then saw a terminal run and stopped. The
-     * answer text arrived only on the *next* fetch something else triggered —
-     * so every reply rendered one message behind, and the user saw a card with
-     * a citation and no words.
-     *
-     * Modelled the way the API really behaves, which is what makes this fail
-     * without the fix: the assistant message does not exist while the run is
-     * running, and `send()`'s own reload therefore cannot pick it up.
-     */
+    /** The bug the Phase 7 gate found, and the reason it did not pass. */
     let runCalls = 0;
     let answered = false;
     const calls: { url: string; init: RequestInit }[] = [];
@@ -341,9 +285,7 @@ describe("<ConversationThread />", () => {
           if (init.method === "POST") {
             return delayed({ run_id: "r1", message_id: "m1", status: "queued", created: true });
           }
-          // The reply is written by the run, so it does not exist until the run
-          // has finished. This is what stops `send()`'s own reload from picking
-          // it up, and therefore what makes the test bite.
+          // The reply is written by the run, so it does not exist until the run has finished.
           return delayed(answered ? MESSAGES : [MESSAGES[0]]);
         }
         return delayed({ ...CONVERSATION, last_run_id: null, message_count: 0 });
@@ -366,12 +308,7 @@ describe("<ConversationThread />", () => {
   });
 
   it("is never a wordless answer, even if the thread has not caught up", async () => {
-    /**
-     * Belt to the fix above's braces. The run carries its own answer, so if the
-     * message list is empty — a slow reload, a failed one — the card says what
-     * the answer was rather than showing a confidence badge and a citation with
-     * no words, which is exactly what the gate saw.
-     */
+    /** Belt to the fix above's braces. */
     routeFetch({ messages: [] });
 
     render(<ConversationThread orgId="o1" conversationId="c1" />);
@@ -391,18 +328,13 @@ describe("<ConversationThread />", () => {
   });
 
   it("stops polling once the run has finished", async () => {
-    /** A page left open must not ask forever — and the fix moved the guard that
-     * stops it, so it is worth holding down. */
+    /** A page left open must not ask forever — and the fix moved the guard that stops it. */
     const calls = routeFetch();
 
     render(<ConversationThread orgId="o1" conversationId="c1" />);
     await screen.findByText("6,214 orders were placed in July 2026.");
 
-    // Let the opening fetches land before counting. Since **B-106** the answer
-    // renders from the thread's own runs, which can resolve before the live
-    // run's fetch does — so the text appearing no longer means every opening
-    // request is in. The property is that nothing *keeps* asking, and this is
-    // the honest way to snapshot it.
+    // Let the opening fetches land before counting.
     await new Promise((resolve) => setTimeout(resolve, POLL_QUIET_MS));
     const settled = calls.filter((call) => call.url.includes("/runs/")).length;
     await new Promise((resolve) => setTimeout(resolve, POLL_QUIET_MS));
@@ -440,8 +372,7 @@ describe("what the answer does not establish", () => {
   });
 
   it("says nothing at all when there is nothing to say", async () => {
-    // A clean run should not be made to sound uncertain. An empty list is a
-    // result, not a gap, so the section is absent rather than empty.
+    // A clean run should not be made to sound uncertain.
     routeFetch({ run: { ...ANSWERED, limitations: [] } });
 
     render(<ConversationThread orgId="o1" conversationId="c1" />);
@@ -461,9 +392,7 @@ describe("what the answer does not establish", () => {
 });
 
 describe("how the answer was reached", () => {
-  // **B-100.** Architecture 4.2's fourth part of an answer. The API built this
-  // sentence on every run from Phase 9 and no screen ever showed it, so the one
-  // line meant for a reader who will not open the SQL was the one nobody saw.
+  // B-100. Architecture 4.2's fourth part of an answer.
   it("shows the method line with the answer", async () => {
     routeFetch({ run: { ...ANSWERED, method: "2 queries over 2 steps, against orders." } });
 
@@ -474,7 +403,6 @@ describe("how the answer was reached", () => {
 
   it("says nothing when the run recorded no method", async () => {
     // A run answered before the column existed, or one that never composed.
-    // Absent rather than an empty label, which would be a heading over nothing.
     routeFetch({ run: { ...ANSWERED, method: "" } });
 
     render(<ConversationThread orgId="o1" conversationId="c1" />);
@@ -484,9 +412,7 @@ describe("how the answer was reached", () => {
   });
 });
 
-// jsdom draws nothing, so ECharts itself is stood in for. What these tests
-// claim is that the card offers the chart, its spec and its refusal — not that
-// a picture is drawn; the drawing is what the browser smoke is for.
+// jsdom draws nothing, so ECharts itself is stood in for.
 const echartsInit = vi.fn(() => ({ setOption: vi.fn(), resize: vi.fn(), dispose: vi.fn() }));
 vi.mock("@/lib/echarts", () => ({ echarts: { init: echartsInit } }));
 
@@ -502,12 +428,7 @@ describe("the chart, and the reason there is none", () => {
   };
 
   it("draws the chart inside the answer, from the spec the server sent", async () => {
-    /**
-     * **B-048 and B-109.** The chart is part of the claim, so it sits inside
-     * the answer card, and the colours come from the page's tokens rather than
-     * being written into the spec (the eight distinct series hues are held by
-     * `components/answer/chart-option.test.ts`).
-     */
+    /** B-048 and B-109. The chart is part of the claim, so it sits inside the answer card. */
     echartsInit.mockClear();
     routeFetch({ run: { ...ANSWERED, limitations: [], chart: { spec: SPEC } } });
 
@@ -518,10 +439,7 @@ describe("the chart, and the reason there is none", () => {
     await waitFor(() => expect(echartsInit).toHaveBeenCalled());
   });
   it("says why there is no chart, where the chart would have been", async () => {
-    // **The case the whole design turned on.** A picture that silently fails to
-    // appear is indistinguishable from a broken page, so the reason renders in
-    // the chart's own place — not in the limitations list, which is about
-    // whether the answer is true.
+    // The case the whole design turned on.
     routeFetch({
       run: {
         ...ANSWERED,
@@ -537,17 +455,13 @@ describe("the chart, and the reason there is none", () => {
     render(<ConversationThread orgId="o1" conversationId="c1" />);
 
     expect(await screen.findByText(/4,812 distinct values/)).toBeInTheDocument();
-    // And it did not become a limitation: that region is about the truth of the
-    // answer, and a missing picture says nothing about that.
+    // And it did not become a limitation: that region is about the truth of the answer.
     expect(screen.queryByText(/things to know/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/one thing to know/i)).not.toBeInTheDocument();
   });
 
   it("offers the spec, the way the SQL is offered", async () => {
-    // **B-048.** A chart nobody can trace back to the query behind it is
-    // decoration that looks like evidence, so the document the browser rendered
-    // is openable — the same claim Phase 7 made for answers, extended to
-    // pictures.
+    // B-048.
     routeFetch({ run: { ...ANSWERED, limitations: [], chart: { spec: SPEC } } });
 
     render(<ConversationThread orgId="o1" conversationId="c1" />);
@@ -559,8 +473,7 @@ describe("the chart, and the reason there is none", () => {
   });
 
   it("shows nothing at all when no chart was asked for", async () => {
-    // Most answers. No empty frame and no placeholder: those are what make an
-    // absent chart look like a broken one.
+    // Most answers. No empty frame and no placeholder.
     routeFetch({ run: { ...ANSWERED, limitations: [], chart: null } });
 
     render(<ConversationThread orgId="o1" conversationId="c1" />);
@@ -571,8 +484,7 @@ describe("the chart, and the reason there is none", () => {
   });
 
   it("renders a run recorded before charts existed", async () => {
-    // `chart` is absent rather than null on an older run, and an answer card
-    // that threw on one would lose the whole answer over a missing picture.
+    // `chart` is absent rather than null on an older run.
     routeFetch({ run: { ...ANSWERED, limitations: [] } });
 
     render(<ConversationThread orgId="o1" conversationId="c1" />);
@@ -602,8 +514,7 @@ describe("which findings are evidence", () => {
   });
 
   it("falls back to showing every finding when none is marked", async () => {
-    // Runs written before WP9.2 have no `cited` on any finding. Filtering them
-    // all away would empty the evidence panel of every older answer.
+    // Runs written before WP9.2 have no `cited` on any finding.
     routeFetch({
       run: {
         ...ANSWERED,
@@ -632,10 +543,7 @@ describe("which findings are evidence", () => {
   });
 
   it("says when a question matched none of the definitions that exist (B-087)", async () => {
-    // The sentence three gate walks needed and never got. Without it a question
-    // that named no metric answers exactly as it would with no semantic layer at
-    // all, and reads as the feature being broken rather than as the metric not
-    // being found.
+    // The sentence three gate walks needed and never got.
     routeFetch({ run: { ...ANSWERED, definitions_applied: [], definitions_available: 18 } });
 
     render(<ConversationThread orgId="o1" conversationId="c1" />);
@@ -645,9 +553,7 @@ describe("which findings are evidence", () => {
   });
 
   it("stays silent when there was nothing to match (B-087)", async () => {
-    // The case that keeps the line worth reading. An organization that has
-    // defined no metrics does not need telling that none applied, and a caveat
-    // on every answer is how people learn to stop reading caveats.
+    // The case that keeps the line worth reading.
     routeFetch({ run: { ...ANSWERED, definitions_applied: [], definitions_available: 0 } });
 
     render(<ConversationThread orgId="o1" conversationId="c1" />);
@@ -658,8 +564,7 @@ describe("which findings are evidence", () => {
   });
 
   it("renders a run recorded before these fields existed (B-087)", async () => {
-    // Old rows carry neither field. The page whose whole job is explaining what
-    // happened must not be the page that breaks.
+    // Old rows carry neither field.
     routeFetch({ run: ANSWERED });
 
     render(<ConversationThread orgId="o1" conversationId="c1" />);
@@ -670,12 +575,9 @@ describe("which findings are evidence", () => {
 });
 
 
-// ---------------------------------------------------------------------------
-// An answer keeps its evidence when the next question is asked (B-106)
-// ---------------------------------------------------------------------------
+// --- An answer keeps its evidence when the next question is asked (B-106) ---
 
-/** The chart the first answer carries. Its own copy, because the one in the
- *  chart suite is scoped to that describe and this is a different property. */
+/** The chart the first answer carries. */
 const FIRST_CHART = {
   $schema: "https://vega.github.io/schema/vega-lite/v5.json",
   mark: "bar",
@@ -706,10 +608,7 @@ const TWO_TURNS = [
   },
 ];
 
-/** After a second question, the conversation's last run is the second one — so
- *  the live run the screen watches is r2 and r1 comes from the thread's list.
- *  Getting this wrong made the first version of these tests assert against a
- *  fixture that contradicted itself. */
+/** After a second question, the conversation's last run is the second one. */
 const AFTER_TWO = { ...CONVERSATION, last_run_id: "r2", message_count: 4 };
 
 const SECOND_RUN = {
@@ -728,16 +627,7 @@ describe("an answer keeps its evidence when the next question is asked (B-106)",
   });
 
   it("draws the first answer's chart after a second question has been answered", async () => {
-    /**
-     * **The gate walk's defect.** The screen held one run and rendered one card,
-     * so asking again took the previous answer's chart off the page — along with
-     * its method line, its limitations, its findings, its evidence controls and
-     * its trace. Every one of those is a durable row; none of them had a route.
-     *
-     * A chart that survives only until the next message does not meet "the
-     * trend question renders a chart", which is why this blocked the phase gate
-     * rather than waiting for Phase 12.
-     */
+    /** The gate walk's defect. The screen held one run and rendered one card. */
     routeFetch({
       conversation: AFTER_TWO,
       run: SECOND_RUN,
@@ -759,20 +649,14 @@ describe("an answer keeps its evidence when the next question is asked (B-106)",
 
     render(<ConversationThread orgId="o1" conversationId="c1" />);
 
-    // One per answer. Anchored on the count rather than on presence, because
-    // presence passed against the broken screen — the newest answer always had
-    // one.
-    // `the query behind this`, not `Show …`: a lone citation now starts open and
-    // its control reads *Hide* (D-047). Matching only "Show" would count zero
-    // and report the product as broken when it is not.
+    // One per answer. Anchored on the count rather than on presence.
     expect(
       await screen.findAllByRole("button", { name: /the query behind this/ }),
     ).toHaveLength(2);
   });
 
   it("asks for the thread's runs once, not once per answer", async () => {
-    /** A screen whose cost grows with how much somebody has used it is one that
-     *  gets slower the more they like it. */
+    /** A screen whose cost grows with how much somebody has used it is one that gets slower... */
     const calls = routeFetch({ conversation: AFTER_TWO, run: SECOND_RUN, messages: TWO_TURNS, runs: [ANSWERED, SECOND_RUN] });
 
     render(<ConversationThread orgId="o1" conversationId="c1" />);
@@ -782,15 +666,7 @@ describe("an answer keeps its evidence when the next question is asked (B-106)",
   });
 
   it("keeps the whole thread when the runs request fails outright", async () => {
-    /**
-     * **What CI caught and the unit tests did not.** The runs began life in the
-     * same `Promise.all` and the same `catch` as the conversation and its
-     * messages, so a failure there emptied the screen — questions, answers and
-     * all. The test above covers a run *missing from the list*; this covers the
-     * request not answering, which is the case that took the thread down.
-     *
-     * The runs enrich the answers. The messages **are** the conversation.
-     */
+    /** What CI caught and the unit tests did not. */
     vi.stubGlobal(
       "fetch",
       vi.fn((url: string, init: RequestInit = {}) => {
@@ -820,8 +696,7 @@ describe("an answer keeps its evidence when the next question is asked (B-106)",
   });
 
   it("falls back to the words when a run could not be fetched", async () => {
-    /** The answer is what the reader came for. Losing it because a second
-     *  request failed would be a worse trade than losing the picture. */
+    /** The answer is what the reader came for. */
     routeFetch({ conversation: AFTER_TWO, run: SECOND_RUN, messages: TWO_TURNS, runs: [SECOND_RUN] });
 
     render(<ConversationThread orgId="o1" conversationId="c1" />);
@@ -830,9 +705,7 @@ describe("an answer keeps its evidence when the next question is asked (B-106)",
   });
 
   it("shows an answer once, not once in a bubble and once in a card", async () => {
-    /** The Phase 7 rule, and the reason `replied` used to exist. With the card
-     *  as the turn there is one rendering of an answer and nothing to keep in
-     *  step. */
+    /** The Phase 7 rule, and the reason `replied` used to exist. */
     routeFetch({ conversation: AFTER_TWO, run: SECOND_RUN, messages: TWO_TURNS, runs: [ANSWERED, SECOND_RUN] });
 
     render(<ConversationThread orgId="o1" conversationId="c1" />);
@@ -842,29 +715,17 @@ describe("an answer keeps its evidence when the next question is asked (B-106)",
   });
 });
 
-/**
- * What the question cost (B-153).
- *
- * **The columns behind this existed since revision 0012 and nothing wrote
- * them** — `model_usage`'s own comment called it "a rollup for the trace UI"
- * and the rollup was never built, so the API returned `null` and `{}` and no
- * screen could show what a run cost. These assert the half a person reads, and
- * particularly the case where an honest absence beats a tidy number.
- */
+/** What the question cost (B-153). */
 describe("how a table cell is aligned", () => {
   it("right-aligns numbers and money, and nothing else", () => {
-    // **B-179.** The first version right-aligned every column but the first, on
-    // the assumption that "every number here is money or a count". A `Period`
-    // column and a `Why it matters` column arrived ragged against the right
-    // edge, which is how the owner met it.
+    // B-179. The first version right-aligned every column but the first.
     for (const numeric of ["310817.09", "RM 310,817", "1,973 kg".replace(" kg", ""), "42", "-12.75", "87%", "RM 20,469.38"]) {
       expect(isNumeric(numeric)).toBe(true);
     }
   });
 
   it("leaves anything it cannot be sure about on the left", () => {
-    // A wrongly right-aligned word is the fault this replaces, so doubt goes
-    // left. "2025-12" is a period, not a number.
+    // A wrongly right-aligned word is the fault this replaces, so doubt goes left.
     for (const words of [
       "Ayam Penyet+Nasi+Sup",
       "2025-12",
@@ -879,8 +740,7 @@ describe("how a table cell is aligned", () => {
   });
 
   it("reads a number out of nested markup", () => {
-    // Money is bolded by the answer rule, so the cell holds an element rather
-    // than a string and a naive check would call every bold figure prose.
+    // Money is bolded by the answer rule.
     expect(isNumeric(["RM 310,817"])).toBe(true);
   });
 });
@@ -890,8 +750,7 @@ describe("how far through its allowance a run is", () => {
     ({ ...ANSWERED, progress: { used, limits } }) as unknown as Parameters<typeof progressLine>[0];
 
   it("counts steps and time, and predicts nothing", () => {
-    // **B-177.** A bar claims to know when a run finishes. What finishes a run
-    // is a model deciding it has enough, and nothing here can know that.
+    // B-177. A bar claims to know when a run finishes.
     const run = withProgress(
       { iterations: 6, wall_seconds: 210 },
       { iterations: 12, wall_seconds: 330 },
@@ -901,14 +760,12 @@ describe("how far through its allowance a run is", () => {
   });
 
   it("says nothing at all before the run has done anything", () => {
-    // "step 0 of 12" while the catalog is still being searched measures the
-    // wrong thing, and an empty strip is honest.
+    // "step 0 of 12" while the catalog is still being searched measures the wrong thing.
     expect(progressLine(ANSWERED as unknown as Parameters<typeof progressLine>[0])).toBeNull();
   });
 
   it("warns when a ceiling is close, before the answer arrives", () => {
-    // Saying it early is the feature: a reader who knows the search was cut
-    // short reads the caveats differently.
+    // Saying it early is the feature.
     const close = withProgress(
       { iterations: 11, wall_seconds: 200 },
       { iterations: 12, wall_seconds: 330 },
@@ -1030,10 +887,7 @@ describe("how an answer is rendered", () => {
   });
 
   it("shows headings, lists and tables as structure rather than as characters", async () => {
-    // **B-172.** This rendered into a bare `<p>` with `white-space: pre-wrap`,
-    // so a heading arrived as a literal `##` and a ranked list as a column of
-    // asterisks. The only sane instruction against that renderer was "plain
-    // words", which is why nine ranked products came back as one paragraph.
+    // B-172. This rendered into a bare `<p>` with `white-space: pre-wrap`.
     const markdown = [
       "## Products with high sales",
       "",
@@ -1044,9 +898,7 @@ describe("how an answer is rendered", () => {
       "| --- | --- |",
       "| Peha | 64.59 |",
     ].join("\n");
-    // The card renders the *message* where one exists — the run's own answer is
-    // the fallback for the window before the message lands (B-044). Overriding
-    // only the run would have tested the fallback and left the live path alone.
+    // The card renders the message where one exists.
     routeFetch({
       run: { ...ANSWERED, answer: markdown },
       messages: [MESSAGES[0], { ...MESSAGES[1], content: markdown }],
@@ -1066,10 +918,7 @@ describe("how an answer is rendered", () => {
   });
 
   it("escapes HTML in an answer rather than rendering it", async () => {
-    // The answer is written by a model that has just read customer rows. If raw
-    // HTML reached the DOM the answer would be a delivery mechanism, so
-    // `rehype-raw` is deliberately not installed — this is the test that says
-    // so out loud, and it goes red the day somebody adds it for convenience.
+    // The answer is written by a model that has just read customer rows.
     const hostile = 'Sales rose. <img src=x onerror="alert(1)"> <script>alert(2)</script> Done.';
     routeFetch({
       run: { ...ANSWERED, answer: hostile },
@@ -1084,8 +933,7 @@ describe("how an answer is rendered", () => {
   });
 
   it("still renders an answer that carries no markdown at all", async () => {
-    // Most answers are a sentence. Turning the renderer on must not require
-    // every answer to be a document.
+    // Most answers are a sentence.
     routeFetch({ run: ANSWERED });
     render(<ConversationThread orgId="o1" conversationId="c1" />);
 
@@ -1101,18 +949,14 @@ describe("what the run cost", () => {
     render(<ConversationThread orgId="o1" conversationId="c1" />);
 
     const cost = await screen.findByTestId("run-cost");
-    // Two decimals at or above a cent, four below it: $0.0195 reads as $0.02,
-    // which rounds *up* and so cannot understate. Four decimals everywhere would
-    // put trailing noise on every ordinary run.
+    // Two decimals at or above a cent, four below it: $0.0195 reads as $0.02.
     expect(cost).toHaveTextContent("$0.02");
     expect(cost).toHaveTextContent("3 model calls");
     expect(cost).toHaveTextContent("1,870 tokens");
   });
 
   it("says 'not priced' rather than a number that understates", async () => {
-    // The rule both columns were born with: null means unpriced, never free. A
-    // run with four fifths of its calls priced is exactly when a total is most
-    // tempting and most misleading, because it looks complete.
+    // The rule both columns were born with: null means unpriced, never free.
     routeFetch({
       run: {
         ...ANSWERED,
@@ -1124,17 +968,13 @@ describe("what the run cost", () => {
 
     const cost = await screen.findByTestId("run-cost");
     expect(cost).toHaveTextContent("not priced");
-    // The absence stays informative: it says how many calls could not be priced
-    // rather than leaving the reader to guess whether the run was free.
+    // The absence stays informative: it says how many calls could not be priced rather than...
     expect(cost).toHaveTextContent("1 not priced");
     expect(cost.textContent).not.toMatch(/\$/);
   });
 
   it("never renders a sub-cent run as free", async () => {
-    // `agent_runs.cost_estimate` stores four decimal places while the ledger
-    // prices each call at six, so a very cheap run rounds to 0.0000. "$0.0000"
-    // would read as free, which is the one thing this column promises never to
-    // say.
+    // `agent_runs.cost_estimate` stores four decimal places while the ledger prices each call...
     routeFetch({
       run: {
         ...ANSWERED,
@@ -1150,10 +990,7 @@ describe("what the run cost", () => {
   });
 
   it("says how much of the input was cached, because the total does not discount it", async () => {
-    // **Revision 0034.** `cost_estimate` prices the whole input at the full
-    // rate while the provider bills the cached part at less, so a reader
-    // checking this against an invoice needs to see the cached share rather
-    // than having to guess why the two disagree.
+    // Revision 0034.
     routeFetch({
       run: {
         ...priced,
@@ -1166,8 +1003,7 @@ describe("what the run cost", () => {
   });
 
   it("says when the token counts are our arithmetic rather than the provider's", async () => {
-    // Estimated tokens are priced as if measured. A total that mixes the two
-    // and does not say which is the silent-mixing shape, so the line says it.
+    // Estimated tokens are priced as if measured.
     routeFetch({
       run: { ...priced, model_usage: { ...priced.model_usage, estimated_calls: 2 } },
     });
@@ -1177,11 +1013,7 @@ describe("what the run cost", () => {
   });
 
   it("renders nothing when the organization has spend switched off (D-066)", async () => {
-    // The API withholds `cost_estimate` and `model_usage` rather than the
-    // screen declining to draw them, so what arrives is indistinguishable from
-    // a run that recorded no usage — which this component already handled. That
-    // is the whole reason the switch needed no web change, and this is the
-    // assertion that keeps it true.
+    // The API withholds `cost_estimate` and `model_usage` rather than the screen declining to...
     routeFetch({ run: { ...ANSWERED, cost_estimate: null, model_usage: {} } });
     render(<ConversationThread orgId="o1" conversationId="c1" />);
 
@@ -1190,8 +1022,7 @@ describe("what the run cost", () => {
   });
 
   it("shows nothing at all for a run that recorded no usage", async () => {
-    // Older runs, and runs that ended before a model was called. An empty strip
-    // is honest; "$0.00" would not be.
+    // Older runs, and runs that ended before a model was called.
     routeFetch({ run: { ...ANSWERED, cost_estimate: null, model_usage: {} } });
     render(<ConversationThread orgId="o1" conversationId="c1" />);
 

@@ -1,19 +1,4 @@
-"""What a mode requires, declared once and checked in both directions.
-
-**The guard was a record, not a detector.** `scripts/check_env.sh` compared the
-deployment templates against a list of couplings — `SECRETS_BACKEND=keyvault`
-needs `KEY_VAULT_URL`, `ARTIFACTS_BACKEND=blob` needs an account URL,
-`AUTH_MODE=entra` needs an authority — and every one of those three entries was
-added *after* a deployment had already failed on it. A list of past failures
-cannot catch the next omission, which is the only thing worth catching.
-
-`MODE_REQUIREMENTS` in `config.py` inverts it: the declaration lives beside the
-settings it constrains, derived from what the application refuses to run without.
-`check_env.sh` keeps a copy because it is POSIX shell and cannot import Python,
-and this file is what makes the copy true — the same arrangement `TENANT_TABLES`
-has with revision 0002, and for the same reason: two lists that must agree, in
-different languages, with something checking.
-"""
+"""What a mode requires, declared once and checked in both directions."""
 
 from __future__ import annotations
 
@@ -52,12 +37,7 @@ def _python_table() -> set[tuple[str, str, str]]:
 
 
 def test_the_shell_copy_matches_the_declaration() -> None:
-    """Drift here means the templates stop being checked for a mode, silently.
-
-    Only the entries a *deployment template* can set are compared:
-    `SECRETS_BACKEND=local` requires `LOCAL_SECRETS_KEY`, and no template sets
-    that mode — production refuses it outright — so the shell has no row for it.
-    """
+    """Drift here means the templates stop being checked for a mode, silently."""
     deployable = {row for row in _python_table() if row[1] != "local"}
 
     assert deployable == _shell_table(), (
@@ -88,12 +68,9 @@ def test_the_shell_copy_matches_the_declaration() -> None:
 def test_missing_for_mode_names_what_is_missing(
     overrides: dict[str, object], expected: list[str]
 ) -> None:
-    """A blank string counts as missing: `OIDC_AUTHORITY=` in a template is not a
-    value, and treating it as one is how an empty variable reaches production."""
+    """A blank string counts as missing: `OIDC_AUTHORITY=` in a template is not a value."""
     base: dict[str, object] = {
-        # Pinned off the repository's `.env`: pydantic-settings deep-merges dict
-        # fields, so `llm_models={}` cannot override a populated one from the env
-        # file — it adds nothing and the developer's map survives (B-032).
+        # Pinned off the repository's `.env`: pydantic-settings deep-merges dict fields.
         "_env_file": None,
         "auth_mode": "dev",
         "secrets_backend": "local",
@@ -102,8 +79,7 @@ def test_missing_for_mode_names_what_is_missing(
         "oidc_authority": None,
         "key_vault_url": None,
         "artifacts_account_url": None,
-        # Servable, so each case below isolates the one thing it varies. Without
-        # this every expectation would also carry LLM_MODELS (B-126).
+        # Servable, so each case below isolates the one thing it varies.
         "llm_models": {"openai": {"small": "s", "mid": "m", "strong": "l"}},
     }
     settings = Settings(**(base | overrides))  # pyright: ignore[reportArgumentType]
@@ -112,8 +88,7 @@ def test_missing_for_mode_names_what_is_missing(
 
 
 def test_a_complete_configuration_is_not_degraded() -> None:
-    """The control. Without it every test above passes against a method that
-    always reports something missing."""
+    """The control."""
     settings = Settings(  # pyright: ignore[reportArgumentType]
         _env_file=None,  # pyright: ignore[reportCallIssue]
         auth_mode="entra",
@@ -148,12 +123,7 @@ def _shell_run_required() -> set[str]:
 
 
 def test_the_shell_copy_of_run_required_matches_the_declaration() -> None:
-    """The second copy, kept true the same way the first one is.
-
-    Drift here is silent in the direction that matters: the shell forgetting a
-    name means the templates stop being checked for it, and B-126 is what that
-    costs — a deployment that passes every check, boots, and fails every question.
-    """
+    """The second copy, kept true the same way the first one is."""
     assert {name.upper() for name in RUN_REQUIRED} == _shell_run_required(), (
         "RUN_REQUIRED and check_env.sh's copy disagree. Add the row to the shell "
         "table with the reason beside it, so the deployment templates are checked "
@@ -162,12 +132,7 @@ def test_the_shell_copy_of_run_required_matches_the_declaration() -> None:
 
 
 def test_no_name_is_required_both_always_and_conditionally() -> None:
-    """The control on the split between the two tables.
-
-    They answer different questions — "this mode needs that" versus "everything
-    needs this" — and a name in both would mean one of the two is wrong about
-    when it applies.
-    """
+    """The control on the split between the two tables."""
     conditional = {name.upper() for names in MODE_REQUIREMENTS.values() for name in names}
 
     assert not (conditional & {name.upper() for name in RUN_REQUIRED})
@@ -178,8 +143,7 @@ def test_no_name_is_required_both_always_and_conditionally() -> None:
     [
         # The configuration that shipped: a credential and no model map.
         ({"llm_providers": ("openai",), "llm_models": {}}, ["LLM_MODELS"]),
-        # Set, non-empty, and about a provider nobody configured. A presence
-        # check passes this; `registry.resolve` does not.
+        # Set, non-empty, and about a provider nobody configured.
         (
             {"llm_providers": ("openai",), "llm_models": {"anthropic": {"small": "s"}}},
             ["LLM_MODELS"],
@@ -192,8 +156,7 @@ def test_no_name_is_required_both_always_and_conditionally() -> None:
             },
             ["LLM_MODELS"],
         ),
-        # Empty chain: nothing can serve any role, and the name to go and set is
-        # the chain rather than the map.
+        # Empty chain: nothing can serve any role.
         ({"llm_providers": (), "llm_models": {}}, ["LLM_PROVIDERS"]),
         # The control. Every provider named has models, so nothing is reported.
         (
@@ -210,9 +173,7 @@ def test_missing_for_mode_covers_the_model_configuration(
 ) -> None:
     """What `/healthz` reports `degraded` from, at the level below the route."""
     base: dict[str, object] = {
-        # Pinned off the repository's `.env`: pydantic-settings deep-merges dict
-        # fields, so `llm_models={}` cannot override a populated one from the env
-        # file — it adds nothing and the developer's map survives (B-032).
+        # Pinned off the repository's `.env`: pydantic-settings deep-merges dict fields.
         "_env_file": None,
         "auth_mode": "dev",
         "secrets_backend": "local",

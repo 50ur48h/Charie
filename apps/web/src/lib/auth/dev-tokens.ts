@@ -1,10 +1,4 @@
-/**
- * Development sign-in: ask the API's dev issuer for a token.
- *
- * The API only mounts `/dev/token` when it is running with `AUTH_MODE=dev`, and
- * its production image does not contain the module at all (WP2.1a). So this path
- * cannot be reached against a real deployment even if the web app is misbuilt.
- */
+/** Development sign-in: ask the API's dev issuer for a token. */
 
 import { apiBaseUrl } from "@/lib/api-client";
 
@@ -15,14 +9,7 @@ export interface DevIdentity {
   token: string;
 }
 
-/**
- * The API answered and would not issue a token for this subject.
- *
- * Kept apart from a request that never completed — a navigation that aborts it,
- * a network blip — because only a refusal says the remembered subject is no
- * good. Forgetting it on any failure signed people out when they merely moved
- * between pages while a token was being fetched.
- */
+/** The API answered and would not issue a token for this subject. */
 export class DevTokenRefused extends Error {}
 
 export async function mintDevToken(subject: string): Promise<DevIdentity> {

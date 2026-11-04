@@ -18,8 +18,7 @@ function TooltipProvider({
 function Tooltip({
   ...props
 }: React.ComponentProps<typeof TooltipPrimitive.Root>) {
-  // Carries its own provider, so a component using a tooltip renders on its own
-  // (in a unit test, say) as well as inside the app's layout.
+  // Carries its own provider, so a component using a tooltip renders on its own.
   return (
     <TooltipProvider delayDuration={300}>
       <TooltipPrimitive.Root data-slot="tooltip" {...props} />

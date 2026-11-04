@@ -1,29 +1,5 @@
 #!/bin/sh
 # Set one person's role in one organization, directly in the platform database.
-#
-#   sh ops/scripts/set_role.sh <org_id> <email> <admin|contributor|reader> "<why>"
-#
-# An operator escape hatch, not part of the product. Roles change through the
-# API, which audits every one and enforces "the last Admin cannot demote
-# themselves".
-#
-# **This is no longer the answer to being locked out (B-017, WP11.2a.)** The case
-# it was written for — nobody who can sign in holds Admin — is now handled inside
-# the product: an Admin arms a recovery grant in advance on the members screen,
-# keeps the token outside the product, and whoever holds it can claim Admin of
-# that one organization through `POST /v1/recovery-grants/claim`. That path is
-# audited against a named user, is single-use and revocable, and needs nobody
-# with database access.
-#
-# So reach for this only when there is no armed grant and no way to make one —
-# an organization that was already locked out before it could arm one. Arming a
-# grant is the *first* thing to do afterwards. If you find yourself here twice,
-# the second time is a bug report.
-#
-# It writes its own audit row with a NULL actor, because "someone edited the
-# database" is the honest description and attributing it to a user would be a
-# more comfortable lie. Row-level security still applies to the owner role, so
-# the transaction sets app.org_id like every other writer does.
 set -eu
 
 [ $# -ge 3 ] || {

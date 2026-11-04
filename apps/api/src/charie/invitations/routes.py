@@ -1,17 +1,4 @@
-"""Redeeming an invitation, and claiming a recovery grant (architecture Part 10.2).
-
-Neither is under ``/v1/orgs/{org_id}``, and for the same reason: the caller is
-not yet a member of that organization — or, for a recovery, is a member without
-the role the route would demand. No org-scoped guard could admit them. The token
-is the authorization.
-
-They are together in this module because they are the same shape and the same
-risks: a hashed bearer token, one indistinguishable failure message so neither
-becomes a guessing oracle, and a redemption that must survive two requests
-racing it. What differs is what redemption *does*, and **B-017** turns on
-exactly that difference — an invitation adds a membership only where there is
-none, while a recovery raises the one that is already there.
-"""
+"""Redeeming an invitation, and claiming a recovery grant (architecture Part 10.2)."""
 
 from __future__ import annotations
 
@@ -48,8 +35,7 @@ async def accept(
     try:
         accepted = await accept_invitation(user=user, token=body.token)
     except ConflictError as error:
-        # One message for every failure — unknown, expired and already-used are
-        # deliberately indistinguishable, or this becomes a token-guessing oracle.
+        # One message for every failure — unknown.
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)) from error
     return AcceptOut(org_id=accepted.org_id, org_name=accepted.org_name, role=accepted.role)
 
@@ -79,20 +65,12 @@ class ClaimRecoveryOut(BaseModel):
 async def claim(
     body: ClaimRecoveryIn, principal: Annotated[Principal, Depends(current_principal)]
 ) -> ClaimRecoveryOut:
-    """**B-017.** The way back into an organization whose Admins can no longer
-    sign in, armed in advance by an Admin who still could.
-
-    Authenticated, because the whole point is to make *this* caller an Admin and
-    there has to be somebody to make one. Not org-scoped, because a claimant who
-    is already a member is a Reader or a Contributor and would fail the guard
-    that matters.
-    """
+    """B-017. The way back into an organization whose Admins can no longer sign in."""
     user = await ensure_user(principal)
     try:
         claimed = await claim_recovery(user=user, token=body.token)
     except ConflictError as error:
-        # One message for every failure — unknown, expired, revoked and spent
-        # are deliberately indistinguishable, exactly as for an invitation.
+        # One message for every failure — unknown, expired.
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)) from error
     return ClaimRecoveryOut(
         org_id=claimed.org_id,

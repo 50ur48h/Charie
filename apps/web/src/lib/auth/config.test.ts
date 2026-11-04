@@ -8,11 +8,7 @@ describe("authConfig", () => {
   });
 
   it("defaults to entra when nothing is configured", () => {
-    // **This test asserted the opposite and the opposite was the defect.** With
-    // no configuration the mode was `dev`, so a deploy that passed no build args
-    // shipped a public page offering to mint a token for any name typed into it.
-    // `config.py` has defaulted the other way since Phase 2 for this reason: the
-    // weaker mode must always be something someone chose.
+    // This test asserted the opposite and the opposite was the defect.
     expect(authConfig().mode).toBe("entra");
   });
 
@@ -24,8 +20,7 @@ describe("authConfig", () => {
   });
 
   it("refuses dev mode in a deployed environment even when asked explicitly", () => {
-    // The belt to the default's braces: an explicit NEXT_PUBLIC_AUTH_MODE=dev in
-    // a dev/prod build is somebody's mistake, and it must not reach a browser.
+    // The belt to the default's braces.
     vi.stubEnv("NEXT_PUBLIC_ENV", "dev");
     vi.stubEnv("NEXT_PUBLIC_AUTH_MODE", "dev");
 

@@ -31,8 +31,7 @@ class MembershipOut(BaseModel):
 class MeOut(BaseModel):
     subject: str
     user_id: uuid.UUID
-    #: Null when the identity provider sent no email claim (B-009). The subject
-    #: is the identity; this is a convenience that may legitimately be missing.
+    #: Null when the identity provider sent no email claim (B-009).
     email: str | None
     name: str | None
     memberships: list[MembershipOut]
@@ -245,14 +244,7 @@ class ShowRunCostIn(BaseModel):
 async def get_active_data_source(
     context: Annotated[RequestContext, Depends(require_member)],
 ) -> ActiveDataSourceOut:
-    """Readable by any member, and that is deliberate (**D-045**).
-
-    The chat screen has to know whether asking is possible before it offers a
-    composer, and a Reader who cannot read this gets a control that fails for a
-    reason the screen is unable to explain. What it discloses is the *name* of a
-    database every member already queries — no host, no account, no credential —
-    so it tells a member nothing their own answers would not.
-    """
+    """Readable by any member, and that is deliberate (D-045)."""
     active = await service.active_data_source(context.org_id)
     return ActiveDataSourceOut(
         data_source_id=active.data_source_id, data_source_name=active.data_source_name
@@ -268,12 +260,7 @@ async def set_active_data_source(
     body: SetActiveDataSourceIn,
     context: Annotated[RequestContext, Depends(require_admin)],
 ) -> ActiveDataSourceOut:
-    """Admin only, and audited like every other org-shaping change.
-
-    A `PUT` because it sets one value to one state and setting it twice is
-    setting it once — and because null is a real value here, meaning *no choice*,
-    which a `PATCH` of a partial body could not distinguish from *field omitted*.
-    """
+    """Admin only, and audited like every other org-shaping change."""
     try:
         active = await service.set_active_data_source(
             org_id=context.org_id,
@@ -297,12 +284,7 @@ async def set_active_data_source(
 async def get_show_run_cost(
     context: Annotated[RequestContext, Depends(require_member)],
 ) -> ShowRunCostOut:
-    """Readable by any member, for `active-data-source`'s reason.
-
-    Every member is subject to this switch, and the settings screen has to be
-    able to show its current state to whoever can see the screen. It discloses
-    no spend — only whether spend is shown.
-    """
+    """Readable by any member, for `active-data-source`'s reason."""
     return ShowRunCostOut(visible=await service.show_run_cost(context.org_id))
 
 
@@ -315,13 +297,7 @@ async def set_show_run_cost(
     body: ShowRunCostIn,
     context: Annotated[RequestContext, Depends(require_admin)],
 ) -> ShowRunCostOut:
-    """Admin only to change, and audited — **but it is not a permission**.
-
-    Off hides spend from the whole organization, the Admin who turned it off
-    included (owner, 2026-08-29). A rule that showed cost to Admins and hid it
-    from Readers is a different feature and is the one this most resembles; it
-    is deliberately not what this does.
-    """
+    """Admin only to change, and audited — but it is not a permission."""
     return ShowRunCostOut(
         visible=await service.set_show_run_cost(
             org_id=context.org_id, actor_user_id=context.user_id, visible=body.visible
@@ -350,15 +326,7 @@ def _grant_out(view: GrantView) -> RecoveryGrantOut:
 async def arm_recovery(
     body: ArmRecoveryIn, context: Annotated[RequestContext, Depends(require_admin)]
 ) -> ArmedRecoveryOut:
-    """**B-017.** An organization whose only Admin loses their identity has no
-    way back: roles change through an Admin-only route, so nobody who can sign in
-    can repair it. This mints a token an Admin keeps outside the product.
-
-    Admin-only, and it grants the platform nothing — the alternative weighed was
-    a break-glass operator role that could reassign any organization's Admin,
-    which is a permanent cross-tenant privilege worth attacking precisely
-    because it exists.
-    """
+    """B-017. An organization whose only Admin loses their identity has no way back."""
     try:
         issued = await arm_grant(
             org_id=context.org_id,
@@ -386,9 +354,7 @@ async def arm_recovery(
 async def recovery_grants(
     context: Annotated[RequestContext, Depends(require_admin)],
 ) -> list[RecoveryGrantOut]:
-    """Used and revoked ones stay in the list. "Has anybody ever recovered this
-    organization, and when" is a question an Admin should be able to answer
-    without a database, and a credential nobody can see is one nobody renews."""
+    """Used and revoked ones stay in the list."""
     return [_grant_out(view) for view in await list_grants(org_id=context.org_id)]
 
 

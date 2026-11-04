@@ -1,16 +1,4 @@
-"""The check a model cannot talk its way past (architecture 4.3).
-
-The flagship is the M8 gate's own demo: **"which menu items sell best?" against a
-schema with no link between the two tables must refuse, name the missing link,
-and run no query at all**. It matters more than it looks. A join between
-unrelated tables does not error — it returns a cartesian product — so the
-alternative to refusing is a confident, correctly-cited answer computed from
-nonsense, which is indistinguishable from a real one.
-
-The graph tests are pure and need nothing; the loop tests go through
-`execute_run` against the real fixture, because "no query was sent" is a claim
-about `query_executions` and only the database can settle it.
-"""
+"""The check a model cannot talk its way past (architecture 4.3)."""
 
 from __future__ import annotations
 
@@ -39,12 +27,7 @@ from llm_fixture import build_settings
 
 
 def _graph(**references: list[str]) -> JoinGraph:
-    """`orders=["customers"]` means *orders has a foreign key to customers*.
-
-    Directional input, because that is what a foreign key actually is, and since
-    D-026 it is what decides a chasm from a safe path. The undirected adjacency
-    the reachability tests use is derived here rather than written out twice.
-    """
+    """`orders=["customers"]` means orders has a foreign key to customers."""
     edges: dict[str, set[str]] = {name: set() for name in references}
     for child, parents in references.items():
         for parent in parents:
@@ -56,14 +39,11 @@ def _graph(**references: list[str]) -> JoinGraph:
     )
 
 
-# ---------------------------------------------------------------------------
-# Reachability
-# ---------------------------------------------------------------------------
+# --- Reachability ---
 
 
 def test_a_declared_foreign_key_joins_both_ways() -> None:
-    """A foreign key points one way; a join works either way. Treating the graph
-    as directed would refuse half the questions it should allow."""
+    """A foreign key points one way; a join works either way."""
     graph = _graph(orders=["customers"], customers=[])
 
     assert graph.path("orders", "customers") == ("orders", "customers")
@@ -71,9 +51,7 @@ def test_a_declared_foreign_key_joins_both_ways() -> None:
 
 
 def test_a_multi_hop_path_is_found_and_reported_at_its_shortest() -> None:
-    """`payments → orders → customers` is a real answer to "can these be
-    combined", and the hop count is what tells a person whether the join is
-    sensible."""
+    """`payments → orders → customers` is a real answer to "can these be combined"."""
     graph = _graph(payments=["orders"], orders=["customers"], customers=[])
 
     assert graph.path("payments", "customers") == ("payments", "orders", "customers")
@@ -95,8 +73,7 @@ def test_one_table_is_always_answerable() -> None:
 
 
 def test_a_schema_prefix_is_the_same_table() -> None:
-    """A statement says `FROM orders` as often as `FROM public.orders`, and a
-    check that missed a gap over a prefix would be worse than no check."""
+    """A statement says `FROM orders` as often as `FROM public.orders`."""
     graph = _graph(orders=["customers"], customers=[], menu_items=[])
 
     assert graph.check(["public.orders", '"public"."customers"']).answerable is True
@@ -104,8 +81,7 @@ def test_a_schema_prefix_is_the_same_table() -> None:
 
 
 def test_the_refusal_names_both_tables_and_what_would_unlock_it() -> None:
-    """ "I cannot answer that" without a reason is indistinguishable from the
-    product being broken (4.3)."""
+    """ "I cannot answer that" without a reason is indistinguishable from the product being..."""
     sentence = CapabilityGap(left="menu_items", right="orders").sentence()
 
     assert "menu_items" in sentence
@@ -114,8 +90,7 @@ def test_the_refusal_names_both_tables_and_what_would_unlock_it() -> None:
 
 
 def test_the_gap_that_fails_is_the_one_named() -> None:
-    """Pairwise rather than "is the set connected", so a question over three
-    tables says *which* one is stranded."""
+    """Pairwise rather than "is the set connected"."""
     graph = _graph(orders=["customers"], customers=[], menu_items=[])
 
     verdict = graph.check(["orders", "customers", "menu_items"])
@@ -126,14 +101,7 @@ def test_the_gap_that_fails_is_the_one_named() -> None:
     }
 
 
-# ---------------------------------------------------------------------------
-# The chasm trap (B-057, D-026)
-#
-# The star schema, in the smallest form that has the problem: two facts and the
-# one-row dimension they both key to. Every one of these fails against the
-# pre-D-026 graph, which said `joinable` for the pair on the strength of a
-# two-hop path — a cartesian product it called an answer.
-# ---------------------------------------------------------------------------
+# --- The chasm trap (B-057, D-026) ---
 
 
 def _star() -> JoinGraph:
@@ -147,9 +115,7 @@ def _star() -> JoinGraph:
 
 
 def test_two_facts_under_a_shared_parent_are_comparable_and_not_joinable() -> None:
-    """The defect, stated. `fact_sale → dim_business → fact_purchase` walks *up*
-    a foreign key and then back *down* another, so the shared parent multiplies
-    the two sides together instead of matching them."""
+    """The defect, stated."""
     graph = _star()
 
     assert graph.path("fact_sale", "fact_purchase") is not None, "still reachable"
@@ -158,11 +124,7 @@ def test_two_facts_under_a_shared_parent_are_comparable_and_not_joinable() -> No
 
 
 def test_a_chasm_does_not_refuse_the_question() -> None:
-    """The half of this that matters as much as the detection.
-
-    These two tables *can* be compared — aggregate each to the shared key, then
-    join the aggregates — so making the pair unanswerable would trade B-057 for
-    B-058, which is the worse defect."""
+    """The half of this that matters as much as the detection."""
     verdict = _star().check(["fact_sale", "fact_purchase"])
 
     assert verdict.answerable is True, "a chasm is not a refusal"
@@ -173,8 +135,7 @@ def test_a_chasm_does_not_refuse_the_question() -> None:
 
 
 def test_the_guidance_names_the_key_and_says_what_to_do_instead() -> None:
-    """A prohibition would leave the model with nowhere to go. This names the
-    hub, so "aggregate to the shared key first" is an instruction it can follow."""
+    """A prohibition would leave the model with nowhere to go."""
     guidance = _star().check(["fact_sale", "fact_purchase"]).guidance()
 
     assert "dim_business" in guidance
@@ -183,8 +144,7 @@ def test_the_guidance_names_the_key_and_says_what_to_do_instead() -> None:
 
 
 def test_a_fact_still_joins_to_its_own_dimensions() -> None:
-    """The normal star query, which must not become collateral damage: one hop
-    up to a dimension is a many-to-one match and always was fine."""
+    """The normal star query, which must not become collateral damage."""
     graph = _star()
 
     assert graph.classify("fact_sale", "dim_outlet") == JOINABLE
@@ -193,17 +153,14 @@ def test_a_fact_still_joins_to_its_own_dimensions() -> None:
 
 
 def test_two_dimensions_of_one_fact_are_joinable_through_it() -> None:
-    """`dim_outlet → fact_sale → dim_item` goes *down* then *up*, which is the
-    ordinary "sales by outlet and item" shape and preserves the fact's grain.
-    Only up-then-down is a chasm."""
+    """`dim_outlet → fact_sale → dim_item` goes down then up."""
     graph = _graph(fact_sale=["dim_outlet", "dim_item"], dim_outlet=[], dim_item=[])
 
     assert graph.classify("dim_outlet", "dim_item") == JOINABLE
 
 
 def test_a_chain_of_many_to_one_hops_stays_joinable() -> None:
-    """`payments → orders → customers` is every hop narrowing, so the grain of
-    the left table survives. The multi-hop case D-026 must not break."""
+    """`payments → orders → customers` is every hop narrowing."""
     graph = _graph(payments=["orders"], orders=["customers"], customers=[])
 
     assert graph.safe_path("payments", "customers") == ("payments", "orders", "customers")
@@ -211,8 +168,7 @@ def test_a_chain_of_many_to_one_hops_stays_joinable() -> None:
 
 
 def test_an_unreachable_pair_is_still_unreachable() -> None:
-    """Three-valued, not two-renamed: a pair with no path at all keeps refusing,
-    which is the behaviour the Phase 8 gate was signed off on."""
+    """Three-valued, not two-renamed: a pair with no path at all keeps refusing."""
     graph = _graph(orders=["customers"], customers=[], menu_items=[])
 
     assert graph.classify("menu_items", "orders") == UNREACHABLE
@@ -220,9 +176,7 @@ def test_an_unreachable_pair_is_still_unreachable() -> None:
 
 
 def test_a_safe_route_wins_over_a_chasm_route() -> None:
-    """Two tables joined *both* through a shared parent and by a direct key are
-    joinable: the verdict is about whether a safe path exists, not about whether
-    an unsafe one does."""
+    """Two tables joined both through a shared parent and by a direct key are joinable."""
     graph = _graph(
         fact_sale=["dim_business", "dim_outlet"],
         dim_outlet=["dim_business"],
@@ -234,8 +188,7 @@ def test_a_safe_route_wins_over_a_chasm_route() -> None:
 
 
 def test_a_graph_without_direction_classifies_nothing_as_a_chasm() -> None:
-    """The default is the old behaviour, so a hand-built or future admin-declared
-    graph that arrives without direction cannot silently start refusing."""
+    """The default is the old behaviour."""
     graph = JoinGraph(
         edges={
             "fact_sale": frozenset({"dim_business"}),
@@ -250,12 +203,7 @@ def test_a_graph_without_direction_classifies_nothing_as_a_chasm() -> None:
 async def test_the_graph_includes_tables_that_join_to_nothing(
     context: ToolContext, wired: URL
 ) -> None:
-    """Built from the *tables*, not only from the edges.
-
-    A graph assembled from relationships alone would not contain `menu_items` at
-    all, and a question about it would fall through this check instead of being
-    refused by it — the exact failure the M8 gate is built to demonstrate.
-    """
+    """Built from the tables, not only from the edges."""
     assert context.data_source_id is not None
     graph = await load_join_graph(context.org_id, context.data_source_id)
 
@@ -264,20 +212,11 @@ async def test_the_graph_includes_tables_that_join_to_nothing(
     assert graph.path("products", "shops") is None
 
 
-# ---------------------------------------------------------------------------
-# What the planner is actually told (B-056)
-# ---------------------------------------------------------------------------
+# --- What the planner is actually told (B-056) ---
 
 
 def test_the_planner_hears_about_the_tables_the_question_selected() -> None:
-    """The truncation used to be alphabetical, which made it noise.
-
-    `unreachable_pairs()` sorts by table name, and `runner` took the first
-    twenty. On a schema with 385 gaps that meant twenty facts about whichever
-    table sorts first and none about the one the question was about — so 4.3's
-    "told up front" steered nothing, and the check caught the model afterwards
-    instead. Relevance is measured against the tables `context_selected` chose.
-    """
+    """The truncation used to be alphabetical, which made it noise."""
     from charie.agent.runner import CAPABILITY_NOTE_LIMIT, relevant_pairs
 
     noise = [
@@ -292,8 +231,7 @@ def test_the_planner_hears_about_the_tables_the_question_selected() -> None:
 
 
 def test_a_pair_the_question_spans_outranks_one_it_merely_touches() -> None:
-    """Both endpoints selected beats one, because the model is about to write a
-    statement over exactly those tables."""
+    """Both endpoints selected beats one."""
     from charie.agent.runner import relevant_pairs
 
     spanning = CapabilityGap(left="fact_sale", right="dim_calendar")
@@ -305,8 +243,7 @@ def test_a_pair_the_question_spans_outranks_one_it_merely_touches() -> None:
 
 
 def test_nothing_selected_falls_back_to_the_first_few() -> None:
-    """A run whose context chose no tables still gets a bounded note rather than
-    the whole catalog or nothing at all."""
+    """A run whose context chose no tables still gets a bounded note rather than the whole..."""
     from charie.agent.runner import CAPABILITY_NOTE_LIMIT, relevant_pairs
 
     pairs = [CapabilityGap(left=f"a{i}", right=f"b{i}") for i in range(50)]
@@ -314,9 +251,7 @@ def test_nothing_selected_falls_back_to_the_first_few() -> None:
     assert len(relevant_pairs(pairs, [])) == CAPABILITY_NOTE_LIMIT
 
 
-# ---------------------------------------------------------------------------
-# The flagship
-# ---------------------------------------------------------------------------
+# --- The flagship ---
 
 
 async def _ask(context: ToolContext, question: str) -> uuid.UUID:
@@ -363,15 +298,7 @@ async def _queries_run(context: ToolContext, run_id: uuid.UUID, wired: URL) -> i
 async def test_a_question_needing_an_absent_join_refuses_and_runs_nothing(
     context: ToolContext, fake_llm: FakeLLM, wired: URL
 ) -> None:
-    """**The M8 gate's own demo**, in the fixture's terms.
-
-    `products` and `shops` are unrelated in `customer_db.py` exactly as
-    `menu_items` and `orders` are in the pizza database. The model is scripted to
-    do the plausible wrong thing — join them anyway — and the check must stop it
-    **before the statement is sent**, because the join would not error: it would
-    return a cartesian product and an answer computed from one looks exactly like
-    a real answer.
-    """
+    """The M8 gate's own demo, in the fixture's terms."""
     fake_llm.script(
         Plan(
             sql=(
@@ -400,8 +327,7 @@ async def test_a_question_needing_an_absent_join_refuses_and_runs_nothing(
 
 
 async def test_the_verdict_is_in_the_trace(context: ToolContext, fake_llm: FakeLLM) -> None:
-    """10.3 gives `capability_checked` a place in the vocabulary; a refusal the
-    trace cannot account for is one nobody can check."""
+    """10.3 gives `capability_checked` a place in the vocabulary."""
     fake_llm.script(
         Plan(
             sql="SELECT * FROM products p JOIN shops s ON 1 = 1",
@@ -423,10 +349,7 @@ async def test_the_verdict_is_in_the_trace(context: ToolContext, fake_llm: FakeL
 async def test_a_question_over_joinable_tables_is_not_refused(
     context: ToolContext, fake_llm: FakeLLM, wired: URL
 ) -> None:
-    """The control. A check that refused everything would pass the flagship and
-    be worthless — `shops` and `regions` have a declared foreign key, so this
-    must go all the way through to an answer.
-    """
+    """The control. A check that refused everything would pass the flagship and be worthless."""
     fake_llm.script(
         Plan(
             sql=(
@@ -451,8 +374,7 @@ async def test_a_question_over_joinable_tables_is_not_refused(
         ).model_dump_json(),
         role="compose",
     )
-    # A run now ends with a critic pass (WP9.1), scripted explicitly so a
-    # critic that stopped running would fail here rather than pass quietly.
+    # A run now ends with a critic pass (WP9.1).
     fake_llm.script(CriticOut(verdict="pass", reasons=[]).model_dump_json(), role="critic")
     run_id = await _ask(context, "How many shops are in each region?")
 
@@ -465,9 +387,7 @@ async def test_a_question_over_joinable_tables_is_not_refused(
 async def test_the_planner_is_told_which_pairs_cannot_be_joined(
     context: ToolContext, fake_llm: FakeLLM
 ) -> None:
-    """4.3: the planner is *told so as fact*. Being told is a courtesy — the
-    check above is the control — but a model that is never told will keep
-    proposing the dead end and spending an iteration on it each time."""
+    """4.3: the planner is told so as fact."""
     fake_llm.script(
         Plan(sql="SELECT 1", purpose="anything", answerable=False, reason="nope").model_dump_json(),
         role="sql",
@@ -477,31 +397,20 @@ async def test_the_planner_is_told_which_pairs_cannot_be_joined(
     await _execute(context, run_id)
 
     prompt = fake_llm.calls_for("sql")[0].prompt
-    # The pair is named and the instruction is there. **What is asserted is the
-    # honest claim**: the catalog records no link, which is knowledge, rather
-    # than the database forbidding one, which would be a rule nobody wrote.
+    # The pair is named and the instruction is there.
     assert "records no link" in prompt
     assert "not a prohibition" in prompt
     assert "products" in prompt
 
 
 def test_a_refusal_reports_what_is_known_and_never_a_rule() -> None:
-    """The sentence a person reads must not invent a prohibition.
-
-    On a customer database that declares no keys at all, the old wording was
-    false twice over: it said the database had no link where the link joins
-    112,327 of 112,327 rows, and it said the pair *cannot* be combined where the
-    truth is that this platform cannot verify the join. A refusal that reports a
-    rule the platform invented sounds like diligence, which is what makes it
-    worse than an ordinary wrong answer (B-133, B-119).
-    """
+    """The sentence a person reads must not invent a prohibition."""
     sentence = CapabilityGap(left="public.dim_outlet", right="public.fact_sale").sentence()
 
     assert "public.dim_outlet" in sentence and "public.fact_sale" in sentence
     # What it may say: the catalog's own knowledge, and the consequence.
     assert "records no link" in sentence
     assert "rather than a rule" in sentence
-    # What it may never say: that the database forbids it, or that no link
-    # exists in the data. Neither is knowable from a missing constraint.
+    # What it may never say: that the database forbids it, or that no link exists in the data.
     for forbidden in ("prohibit", "cannot be combined", "has no link", "there is no foreign key"):
         assert forbidden not in sentence, f"the refusal claims more than it knows: {forbidden!r}"

@@ -1,15 +1,4 @@
-"""A second question in a thread is answered knowing the first (**D-029**, B-064).
-
-The unit tests next door prove the prompt renders a thread correctly and the
-runs suite proves the right turns are loaded. This file is the join between
-them, and it exists because B-064 was never a wrong *value* anywhere — every
-component did exactly what it was written to do, and the wiring between them
-carried nothing. A test on either half alone would still be green today.
-
-So the assertions here are on what actually reached a model, read out of the
-FakeLLM's own prompt text, and on the trace, which is the only place a person
-could see that a run had context at all.
-"""
+"""A second question in a thread is answered knowing the first (D-029, B-064)."""
 
 from __future__ import annotations
 
@@ -100,8 +89,7 @@ def _prompts(fake_llm: FakeLLM, role: str) -> tuple[str, ...]:
 async def test_the_planner_is_shown_the_question_this_one_follows(
     context: ToolContext, fake_llm: FakeLLM
 ) -> None:
-    """The defect exactly as the owner hit it: a question, then *"check again"*,
-    answered as though nothing had been asked."""
+    """The defect exactly as the owner hit it: a question, then "check again"."""
     await _ask_and_answer(context, "How many shops are there?", "There are 3 shops.")
     fake_llm.script(_plan("SELECT count(*) AS n FROM shops"), role="sql")
     fake_llm.script(_reflect(), role="plan")
@@ -120,9 +108,7 @@ async def test_the_planner_is_shown_the_question_this_one_follows(
 async def test_the_critic_judges_a_follow_up_in_its_thread(
     context: ToolContext, fake_llm: FakeLLM
 ) -> None:
-    """A critic asked whether a draft answers *"check again"*, with no idea what
-    was being checked, will say it does not — and blocking a correct answer is
-    this component's characteristic failure (standing note 5)."""
+    """A critic asked whether a draft answers "check again", with no idea what was being checked."""
     await _ask_and_answer(context, "How many shops are there?", "There are 3 shops.")
     fake_llm.script(_plan("SELECT count(*) AS n FROM shops"), role="sql")
     fake_llm.script(_reflect(), role="plan")
@@ -138,8 +124,7 @@ async def test_the_critic_judges_a_follow_up_in_its_thread(
 async def test_the_reflection_is_shown_the_thread_too(
     context: ToolContext, fake_llm: FakeLLM
 ) -> None:
-    """ "Is the question now answered" cannot be judged from *"check again"*
-    alone."""
+    """ "Is the question now answered" cannot be judged from "check again" alone."""
     await _ask_and_answer(context, "How many shops are there?", "There are 3 shops.")
     fake_llm.script(_plan("SELECT count(*) AS n FROM shops"), role="sql")
     fake_llm.script(_reflect(), role="plan")
@@ -155,10 +140,7 @@ async def test_the_reflection_is_shown_the_thread_too(
 async def test_the_composer_writes_its_answer_knowing_the_thread(
     context: ToolContext, fake_llm: FakeLLM
 ) -> None:
-    """The call that produces the words a person reads. Without the thread it
-    answers *"check again"* rather than the thing being checked again — and
-    every prompt in this run that carries the question now carries the thread
-    with it, so there is no fourth place for one to be missing."""
+    """The call that produces the words a person reads."""
     await _ask_and_answer(context, "How many shops are there?", "There are 3 shops.")
     fake_llm.script(_plan("SELECT count(*) AS n FROM shops"), role="sql")
     fake_llm.script(_reflect(), role="plan")
@@ -174,8 +156,7 @@ async def test_the_composer_writes_its_answer_knowing_the_thread(
 async def test_the_trace_records_how_much_context_the_run_was_given(
     context: ToolContext, fake_llm: FakeLLM
 ) -> None:
-    """A follow-up answered from a thread is a different act from one answered
-    cold, and nothing else in the record would say which happened."""
+    """A follow-up answered from a thread is a different act from one answered cold."""
     await _ask_and_answer(context, "How many shops are there?", "There are 3 shops.")
     fake_llm.script(_plan("SELECT count(*) AS n FROM shops"), role="sql")
     fake_llm.script(_reflect(), role="plan")
@@ -193,10 +174,7 @@ async def test_the_trace_records_how_much_context_the_run_was_given(
 async def test_a_follow_up_with_no_nouns_still_finds_the_tables(
     context: ToolContext, fake_llm: FakeLLM
 ) -> None:
-    """*"check again"* names no table, so searching it alone returns nothing and
-    the planner is asked to write SQL against an empty catalog — which is
-    **B-041**, the defect that cost the M7 gate. The thread is the fallback, and
-    the trace says when it was used."""
+    """ "check again" names no table, so searching it alone returns nothing and the planner is..."""
     await _ask_and_answer(context, "How many shops are there?", "There are 3 shops.")
     fake_llm.script(_plan("SELECT count(*) AS n FROM shops"), role="sql")
     fake_llm.script(_reflect(), role="plan")
@@ -215,9 +193,7 @@ async def test_a_follow_up_with_no_nouns_still_finds_the_tables(
 async def test_a_question_with_words_of_its_own_is_not_pulled_back_to_the_last_one(
     context: ToolContext, fake_llm: FakeLLM
 ) -> None:
-    """The other half of the fallback, and the one that keeps it honest: the
-    strict search keeps every promise it made, and the thread is consulted only
-    when it matched nothing."""
+    """The other half of the fallback, and the one that keeps it honest."""
     await _ask_and_answer(context, "How many shops are there?", "There are 3 shops.")
     fake_llm.script(_plan("SELECT count(*) AS n FROM shops"), role="sql")
     fake_llm.script(_reflect(), role="plan")

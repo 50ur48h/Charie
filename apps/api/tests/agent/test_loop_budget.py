@@ -1,10 +1,4 @@
-"""What a run may spend, and what happens when it has spent it (architecture 4.4).
-
-No database and no model: these are the numbers the controller enforces, and the
-point of enforcing them in the controller is that they can be checked exactly
-like this. If any of these ever needs a fixture, something has moved into the
-prompt that should not have.
-"""
+"""What a run may spend, and what happens when it has spent it (architecture 4.4)."""
 
 from __future__ import annotations
 
@@ -21,19 +15,7 @@ from charie.agent.budget import (
 
 
 def test_the_defaults_are_the_numbers_the_architecture_names() -> None:
-    """4.4 gives five figures. A drift here is a change to the product's cost
-    profile, so it should have to be made deliberately rather than by editing a
-    constant that nothing checks.
-
-    `llm_calls` moved from 20 to 24 in WP9.1 (**D-028**) — the move D-024 said
-    would be needed the day a stage was added to the loop. This test is what made
-    it deliberate rather than incidental, which is what it is for.
-
-    **Every figure moved in WP13.30** (**D-068**), on a measurement: a three-part
-    question stopped at `iterations 8/8` with 30 of its 240 seconds unspent. All
-    five move together on purpose — raising `iterations` alone would have shifted
-    the failure to the call ceiling, which is D-024's mistake exactly.
-    """
+    """4.4 gives five figures. A drift here is a change to the product's cost profile."""
     budget = Budget()
 
     assert (budget.iterations, budget.queries, budget.llm_calls) == (12, 14, 32)
@@ -44,14 +26,7 @@ def test_the_defaults_are_the_numbers_the_architecture_names() -> None:
 
 
 def test_the_call_ceiling_fits_the_run_that_spends_the_most() -> None:
-    """The two ceilings have to agree, and this is the arithmetic that says so.
-
-    D-024 exists because they once did not: three model calls per iteration would
-    have needed 26 against a ceiling of 20, and the loop would have been cut short
-    by its own accounting rather than by its iteration budget. Written as a sum
-    rather than as a number so that adding a stage fails *here*, with the
-    arithmetic in front of whoever added it.
-    """
+    """The two ceilings have to agree, and this is the arithmetic that says so."""
     per_iteration = 2  # plan, then reflect
     composes = 2  # the second is the critic's one bounded re-entry
     critics = 2  # one verdict per composed draft
@@ -75,11 +50,7 @@ def test_an_organization_may_lower_a_ceiling_freely() -> None:
 
 
 def test_raising_a_ceiling_is_clamped_rather_than_refused() -> None:
-    """The whole point of a hard cap is that no configuration turns it off.
-
-    Clamped rather than rejected, because refusing would fail a run over a
-    configuration value, and a bounded run is what was wanted either way.
-    """
+    """The whole point of a hard cap is that no configuration turns it off."""
     budget = Budget.from_overrides({"iterations": 10_000, "wall_seconds": 99_999})
 
     assert budget.iterations == MAX_OVERRIDES["iterations"]
@@ -87,8 +58,7 @@ def test_raising_a_ceiling_is_clamped_rather_than_refused() -> None:
 
 
 def test_a_typo_in_configuration_does_not_stop_a_run() -> None:
-    """Unknown keys and unusable values are ignored, not raised on: this is
-    configuration, and one bad field must not take the whole loop with it."""
+    """Unknown keys and unusable values are ignored, not raised on: this is configuration."""
     budget = Budget.from_overrides(
         {"iterations": "lots", "quries": 4, "queries": 0, "llm_calls": -3, "tokens": True}
     )
@@ -101,9 +71,7 @@ def test_nothing_configured_is_the_default() -> None:
     assert Budget.from_overrides({}) == Budget()
 
 
-# ---------------------------------------------------------------------------
-# Spending it
-# ---------------------------------------------------------------------------
+# --- Spending it ---
 
 
 def test_a_fresh_run_has_not_exhausted_anything() -> None:
@@ -118,9 +86,7 @@ def _stopped_by(state: BudgetState) -> str | None:
 
 
 def test_iterations_stop_the_run_on_their_own() -> None:
-    """Each dimension is checked separately because each is a different way to
-    run away: iterations bound thinking, queries bound reading, calls and tokens
-    bound spending, and wall time bounds the person waiting."""
+    """Each dimension is checked separately because each is a different way to run away."""
     state = BudgetState(budget=Budget())
     for _ in range(DEFAULT_ITERATIONS):
         state.spend_iteration()
@@ -145,8 +111,7 @@ def test_model_calls_stop_the_run_on_their_own() -> None:
 
 
 def test_tokens_stop_the_run_even_when_few_calls_were_made() -> None:
-    """One enormous call can exhaust the reading budget without going near the
-    call ceiling, which is why both exist."""
+    """One enormous call can exhaust the reading budget without going near the call ceiling."""
     state = BudgetState(budget=Budget())
     state.spend_llm(DEFAULT_TOKENS)
 
@@ -155,8 +120,7 @@ def test_tokens_stop_the_run_even_when_few_calls_were_made() -> None:
 
 
 def test_time_is_reported_before_any_other_ceiling() -> None:
-    """Deliberate ordering: wall clock is the one the person waiting feels, so
-    when several are reached at once that is the one worth naming."""
+    """Deliberate ordering: wall clock is the one the person waiting feels."""
     state = BudgetState(budget=Budget())
     for _ in range(DEFAULT_ITERATIONS):
         state.spend_iteration()
@@ -168,8 +132,7 @@ def test_time_is_reported_before_any_other_ceiling() -> None:
 
 
 def test_exhaustion_reads_as_something_a_person_asked_for() -> None:
-    """The caveat on a partial answer is read by whoever asked the question, so
-    it says the search stopped — not that `llm_calls` reached its ceiling."""
+    """The caveat on a partial answer is read by whoever asked the question."""
     state = BudgetState(budget=Budget())
     for _ in range(DEFAULT_LLM_CALLS):
         state.spend_llm()
@@ -182,8 +145,7 @@ def test_exhaustion_reads_as_something_a_person_asked_for() -> None:
 
 
 def test_a_model_call_spends_its_tokens_too() -> None:
-    """Counted together because they are always spent together, and forgetting
-    the second is how a token ceiling silently stops being one."""
+    """Counted together because they are always spent together."""
     state = BudgetState(budget=Budget())
 
     state.spend_llm(1_200)
@@ -193,8 +155,7 @@ def test_a_model_call_spends_its_tokens_too() -> None:
 
 
 def test_a_warning_fires_once_per_dimension() -> None:
-    """A trace should show the run tightening. A warning repeated every
-    iteration is noise nobody reads by the third one."""
+    """A trace should show the run tightening."""
     state = BudgetState(budget=Budget(iterations=4))
     for _ in range(3):
         state.spend_iteration()
@@ -211,8 +172,7 @@ def test_a_run_well_inside_its_budget_warns_about_nothing() -> None:
 
 
 def test_the_allowance_is_recorded_with_what_was_spent() -> None:
-    """`agent_runs.budget` keeps the ceilings this run was given, because a cap
-    changed afterwards would make an old run's caveat unexplainable."""
+    """`agent_runs.budget` keeps the ceilings this run was given."""
     state = BudgetState(budget=Budget(iterations=5))
     state.spend_iteration()
     state.spend_query()

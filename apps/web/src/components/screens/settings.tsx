@@ -1,21 +1,6 @@
 "use client";
 
-/**
- * Everything that is not chat (WP13.1b).
- *
- * The admin screens moved here rather than onto the org's front page, because
- * the front page is now the chat. Nothing about who may do what changed: each
- * destination gates itself, `useOrgRole` fails closed, and the API refuses and
- * audits regardless of what this renders (B-008).
- *
- * **The unbuilt sections are shown as unbuilt.** System instructions, tone and
- * preferences are named with a "Coming soon" badge and no controls at all —
- * deliberately not a disabled select or a dead toggle. A control that looks
- * operable and does nothing is a promise the product does not keep, which is the
- * same defect as a badge reading *answered* on a refusal (B-133): the interface
- * asserting something the system cannot back. An honest gap is cheaper than a
- * convincing lie, and these are coming next.
- */
+/** Everything that is not chat (WP13.1b). */
 
 import {
   BookOpen,
@@ -291,9 +276,7 @@ export function Settings({ orgId }: { orgId: string }) {
 
   const [me, setMe] = useState<Me | null>(null);
   const [active, setActive] = useState<ActiveDataSource | null>(null);
-  //: Null while unknown. The switch defaults to *visible* (D-066), so rendering
-  //: a control that reads "hidden" before the answer arrives would misreport
-  //: the state of the thing it exists to report.
+  // : Null while unknown. The switch defaults to visible (D-066), so rendering.
   const [showCost, setShowCost] = useState<boolean | null>(null);
   const [savingCost, setSavingCost] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -406,8 +389,7 @@ export function Settings({ orgId }: { orgId: string }) {
           </dl>
         )}
 
-        {/* Every destination gates itself; these links decide what to render,
-            not what is allowed. A Reader sees the one that is theirs. */}
+        {/* Every destination gates itself; these links decide what to render. */}
         <div className="mt-5 grid gap-2.5 border-t border-border-soft pt-5 sm:grid-cols-3">
           <Destination href={`/orgs/${orgId}/settings/members`} icon={<Users />} title="Members">
             People and their roles
@@ -425,9 +407,7 @@ export function Settings({ orgId }: { orgId: string }) {
         </div>
       </Card>
 
-      {/* **D-066.** Not a permission — off hides spend from everyone, Admins
-          included — and enforced by the API rather than by this screen, so the
-          numbers are not in the response for a reader to find. */}
+      {/* *D-066.** Not a permission — off hides spend from everyone, Admins included. */}
       <Card
         title="Spend"
         subtitle="Whether every answer shows what it cost and how many tokens it used."

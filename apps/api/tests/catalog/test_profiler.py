@@ -1,15 +1,4 @@
-"""Profiling a real database, and the promise that governs it.
-
-The load-bearing test here is
-``test_no_raw_personal_data_ever_reaches_the_platform_database``: it profiles a
-table of email addresses and then reads the platform database *as text*, whole,
-looking for any of them. Masking that happens on the way in is the only kind
-that is true, and this is how that is checked rather than asserted.
-
-The rest is the budget. A profiler without one is a tool that reads somebody's
-production database until something gives, so "it stopped" is tested as
-carefully as "it worked".
-"""
+"""Profiling a real database, and the promise that governs it."""
 
 from __future__ import annotations
 
@@ -28,8 +17,7 @@ from charie.secrets.local import LocalSecretsProvider
 from charie.tenancy import session as session_module
 from customer_db import CustomerDatabase
 
-#: Addresses the fixture inserts. Not a pattern — the literal strings, because
-#: the test that matters greps the platform database for exactly these.
+#: Addresses the fixture inserts.
 PLANTED = (
     "ada@example.com",
     "grace@example.com",
@@ -115,11 +103,7 @@ async def _column(
 
 
 async def _whole_platform_database_as_text(url: URL, org_id: uuid.UUID) -> str:
-    """Every catalog row this organization owns, rendered as one string.
-
-    Deliberately blunt. A test that looked only at the columns it expected to
-    hold a leak would pass while a leak sat in a column nobody thought about.
-    """
+    """Every catalog row this organization owns, rendered as one string."""
     engine = create_async_engine(url)
     try:
         async with engine.begin() as connection:
@@ -143,20 +127,13 @@ async def _whole_platform_database_as_text(url: URL, org_id: uuid.UUID) -> str:
         await engine.dispose()
 
 
-# ---------------------------------------------------------------------------
-# The promise
-# ---------------------------------------------------------------------------
+# --- The promise ---
 
 
 async def test_no_raw_personal_data_ever_reaches_the_platform_database(
     platform: URL, migrated_database: URL, isolated_customer_database: CustomerDatabase
 ) -> None:
-    """Architecture M4: samples are masked *at write time*.
-
-    A value hidden by a query later has already been stored, backed up and
-    replicated. So this profiles a table of real-shaped addresses and then reads
-    everything this organization owns, looking for any of them.
-    """
+    """Architecture M4: samples are masked at write time."""
     org_id, user_id, source_id = await _discovered(migrated_database, isolated_customer_database)
 
     outcome = await profiler.profile(org_id=org_id, actor_user_id=user_id, data_source_id=source_id)
@@ -167,8 +144,7 @@ async def test_no_raw_personal_data_ever_reaches_the_platform_database(
     dumped = await _whole_platform_database_as_text(platform, org_id)
     for planted in PLANTED:
         assert planted not in dumped, f"{planted} reached the platform database in the clear"
-    # And the masked form did arrive, so this is not passing because nothing was
-    # profiled at all.
+    # And the masked form did arrive, so this is not passing because nothing was profiled at all.
     assert "a***@e***.com" in dumped
 
 
@@ -205,9 +181,7 @@ async def test_a_harmless_column_is_left_alone(
     }
 
 
-# ---------------------------------------------------------------------------
-# The statistics
-# ---------------------------------------------------------------------------
+# --- The statistics ---
 
 
 async def test_the_profile_describes_the_sample_it_saw(
@@ -239,19 +213,13 @@ async def test_a_snapshot_records_that_it_was_profiled(
     assert before.snapshot.id == after.snapshot.id, "profiling does not build a new snapshot"
 
 
-# ---------------------------------------------------------------------------
-# The budget
-# ---------------------------------------------------------------------------
+# --- The budget ---
 
 
 async def test_a_wall_clock_of_nothing_stops_before_the_first_table(
     platform: URL, migrated_database: URL, isolated_customer_database: CustomerDatabase
 ) -> None:
-    """The budget is checked *before* each table, so zero means zero — not one.
-
-    Written as an extreme because the alternative is a test that takes five
-    minutes to prove a five-minute budget.
-    """
+    """The budget is checked before each table, so zero means zero — not one."""
     org_id, user_id, source_id = await _discovered(migrated_database, isolated_customer_database)
 
     outcome = await profiler.profile(
@@ -322,19 +290,13 @@ async def test_profiling_a_source_with_no_catalog_says_what_to_do(
     assert "Refresh it before profiling" in outcome.detail
 
 
-# ---------------------------------------------------------------------------
-# Policies, and the refresh that must not undo them
-# ---------------------------------------------------------------------------
+# --- Policies, and the refresh that must not undo them ---
 
 
 async def test_an_admins_decision_survives_the_next_refresh(
     platform: URL, migrated_database: URL, isolated_customer_database: CustomerDatabase
 ) -> None:
-    """The reason policies are stored by name (DECISIONS D-013).
-
-    A refresh that reset somebody's decision would be a leak caused by a routine
-    operation — and it would be invisible, because nothing failed.
-    """
+    """The reason policies are stored by name (DECISIONS D-013)."""
     org_id, user_id, source_id = await _discovered(migrated_database, isolated_customer_database)
     await profiler.profile(org_id=org_id, actor_user_id=user_id, data_source_id=source_id)
 
@@ -414,13 +376,7 @@ def test_effective_policy_prefers_a_person_over_a_default() -> None:
 async def test_the_row_count_comes_from_the_engine_not_from_the_sample(
     platform: URL, migrated_database: URL, isolated_customer_database: CustomerDatabase
 ) -> None:
-    """A table of 72,000 rows profiled from a cap of 5,000 must not be described
-    as having about 5,000 rows.
-
-    Found by reading a card built from the real pizza database, which said
-    exactly that. It is not a floor or an approximation — it is wrong, and a
-    number in a card is read by something that cannot tell.
-    """
+    """A table of 72,000 rows profiled from a cap of 5."""
     org_id, user_id, source_id = await _discovered(migrated_database, isolated_customer_database)
 
     await profiler.profile(
@@ -435,9 +391,7 @@ async def test_the_row_count_comes_from_the_engine_not_from_the_sample(
     email = next(column for column in people.columns if column.name == "email")
 
     assert email.sample_rows == 2, "the cap applied"
-    # Nothing has analysed this fixture, so the engine's answer is "unknown" —
-    # which stays unknown. PostgreSQL spells it -1, and clamping that to 0 would
-    # have a card state that a four-row table is empty.
+    # Nothing has analysed this fixture, so the engine's answer is "unknown" — which stays unknown.
     assert people.row_estimate is None
 
     # Once the engine does know, the profile takes its word and not the sample's.
@@ -460,19 +414,11 @@ async def test_the_row_count_comes_from_the_engine_not_from_the_sample(
     assert people.row_estimate == 4, "four rows in the table, two in the sample"
 
 
-# ---------------------------------------------------------------------------
-# No figure in a card may come from a sample (B-051)
-# ---------------------------------------------------------------------------
+# --- No figure in a card may come from a sample (B-051) ---
 
 
 def test_the_code_that_sees_the_sample_cannot_produce_a_range() -> None:
-    """**The guard, stated structurally rather than as a convention.**
-
-    `profile_column` is handed the sampled values. It has no code path from them
-    to `min_val`/`max_val` — a range arrives from the engine or not at all — so
-    it *could not* publish a sampled range if someone wanted it to. That is a
-    stronger thing to be able to say than "we remember not to".
-    """
+    """The guard, stated structurally rather than as a convention."""
     profile = profiler.profile_column(
         name="order_date",
         data_type="date",
@@ -501,9 +447,7 @@ def test_a_range_given_by_the_engine_is_the_one_recorded() -> None:
 
 
 def test_only_types_worth_a_range_are_asked_for_one() -> None:
-    """An aggregate over free text costs a scan and buys nothing: "email runs
-    from a*** to z***" was never information. Those columns get no range rather
-    than a sampled one."""
+    """An aggregate over free text costs a scan and buys nothing."""
     assert profiler.wants_range("date") is True
     assert profiler.wants_range("timestamp with time zone") is True
     assert profiler.wants_range("numeric(10,2)") is True
@@ -516,19 +460,7 @@ def test_only_types_worth_a_range_are_asked_for_one() -> None:
 async def test_a_card_shows_the_columns_true_range_not_the_samples(
     platform: URL, migrated_database: URL, isolated_customer_database: CustomerDatabase
 ) -> None:
-    """**B-051 in miniature, over the card a reader actually sees.**
-
-    `pg_sample` returns the *first* n rows — it must not sort a production
-    table — so with a cap of 2 the sample sees shops opened in 2020 and 2021 and
-    never the one opened in 2024. On the live demo catalog this exact shape
-    recorded `orders.order_date` as ending sixteen months early, and the agent
-    then refused an answerable question on the strength of it: a wrong refusal
-    wearing an honest one's clothes.
-
-    Asserted through `build_card` rather than through the profile row, because
-    the card is what a model and a person are given, and a figure that is wrong
-    only once it is rendered is still wrong.
-    """
+    """B-051 in miniature, over the card a reader actually sees."""
     org_id, user_id, source_id = await _discovered(migrated_database, isolated_customer_database)
 
     await profiler.profile(
@@ -548,33 +480,14 @@ async def test_a_card_shows_the_columns_true_range_not_the_samples(
     card = shops.card_text or ""
     stated = next(line for line in card.splitlines() if line.strip().startswith("- opened_on"))
 
-    # The stated range is the engine's. `2021-02-02` may still appear on this
-    # line as a labelled example — that is the other test's business, and it is
-    # honest because a sampled example really is an example.
+    # The stated range is the engine's.
     assert "range 2020-01-01 to 2024-05-05" in stated
 
 
 async def test_a_card_labels_every_figure_it_cannot_stand_behind(
     platform: URL, migrated_database: URL, isolated_customer_database: CustomerDatabase
 ) -> None:
-    """The other half of B-051's rule, and the half the card already got right.
-
-    A figure a card states **as a fact about the column** must come from the
-    engine. A figure that can only come from the sample is allowed only when the
-    card *says so* — the distinct count and the value list both do, and both are
-    honest because a sampled value really is a sampled value.
-
-    The failure this pins is the middle case: a sample-derived number presented
-    bare, as `range 2020-01-01 to 2021-02-02` was. Whoever adds the next figure
-    has to choose a side, and this test is where that choice is recorded.
-
-    **B-092 made the saying-so stronger rather than weaker.** The line now names
-    how far the profile looked and says the rows it read are the table's first,
-    because "in sample" was true and uninformative: five values found in five
-    thousand rows of a fifty-thousand-row table is a much weaker claim than five
-    found in five thousand of five thousand, and the card stated both the same
-    way.
-    """
+    """The other half of B-051's rule, and the half the card already got right."""
     org_id, user_id, source_id = await _discovered(migrated_database, isolated_customer_database)
 
     await profiler.profile(

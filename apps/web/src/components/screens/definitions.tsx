@@ -1,57 +1,6 @@
 "use client";
 
-/**
- * The semantic layer for one data source (plan WP10.2d, **B-059**, **D-033**).
- *
- * This is the screen where **prose becomes a constraint**, and everything about
- * it follows from that one sentence.
- *
- *   1. **An Admin sees the whole review, and nobody else sees any of it**
- *      (B-008). Every route behind this screen is Admin, because an accepted
- *      definition constrains generated SQL. An unknown role fails closed, which
- *      costs an Admin one page load — the cheaper mistake, since the other way
- *      round offers buttons that earn a 403 and teach people the product is
- *      broken. Whether a Reader should see the *list* is B-082, open.
- *   2. **A proposal shows where it came from.** The first question anybody
- *      reviewing an imported sentence has is *who wrote this*, and the answer is
- *      the customer's own table — named on the card, from the provenance the
- *      import recorded. A proposal whose origin cannot be shown is one nobody
- *      can responsibly accept.
- *   3. **The screen says what accepting will do, before it is done.** Accepted
- *      with filters, a definition **binds**: the critic blocks a query that
- *      ignores them. Accepted without, it **informs** and is checked by nothing,
- *      and an answer resting on it carries a limitation saying so. Those are
- *      different acts with different consequences and one button, so the button
- *      says which one it is about to perform. This is the disclosure D-033 asks
- *      for, at the moment a person can still change their mind.
- *   4. **`binds` comes from the API.** Not inferred here from an empty filter
- *      array — the distinction is too important to be re-derived by every screen
- *      that shows it, and re-derived means eventually derived wrongly.
- *   5. **A decision can be revised** (**B-088**). Accepting used to be final:
- *      no edit, no un-accept, and the only way to correct a filter was deleting
- *      the row in `psql`. The likeliest moment to get a filter wrong is the
- *      first time you write one, which is exactly when the product locked you
- *      out. Editing sends **only what changed**, because the API reads an absent
- *      field as *leave it alone* — resending a description nobody touched is how
- *      quietly loses a sentence. Retiring keeps what the
- *      definition said, so an answer checked against it last month is still
- *      explainable this month, and it asks twice because it changes what the
- *      platform enforces.
- *   6. **A refusal appears where the action was.** This screen is long — an
- *      import form, a review queue and every definition in force — and it used
- *      to put every error in one region at the top. A save refused from the
- *      editor at the bottom then looked like nothing happening at all: the API
- *      had named the column it could not find, and the sentence was a screen
- *      away. Found by the owner on the manual walk. Errors still share one
- *      state, so the same sentence is never on the page twice; what moved is
- *      *where* it renders.
- *   7. **What is out of force is still visible** (**B-094**). Retiring used to
- *      make a definition vanish from every view, and nothing could bring one
- *      back — so an Admin could neither see that anything was recoverable nor
- *      recover it. The owner hit that on their first real use, one verb after
- *      B-088. **Out of force** lists them and offers a single **Reinstate**;
- *      being listed puts nothing back into force, and the card says so.
- */
+/** The semantic layer for one data source (plan WP10.2d, B-059, D-033). */
 
 import {
   Archive,
@@ -91,13 +40,7 @@ import {
 import { useSession } from "@/lib/auth/session";
 import { cn } from "@/lib/utils";
 
-/**
- * The operators the critic can check, in the API's own order.
- *
- * Mirrored for the picker only. The set is closed on the API side because an
- * operator the critic cannot check is one the product would claim to enforce
- * and would not; offering a wider list here would just produce 400s.
- */
+/** The operators the critic can check, in the API's own order. */
 const OPERATORS = ["in", "not_in", "eq", "ne", "gt", "gte", "lt", "lte"] as const;
 
 const READABLE: Record<string, string> = {
@@ -117,25 +60,14 @@ export function describeFilter(filter: RequiredFilter): string {
   return `${filter.table}.${filter.column} ${readable} ${filter.values.join(", ")}`;
 }
 
-/**
- * Where an imported proposal came from, in one line.
- *
- * Returns null when there is nothing to say, so the card can leave the line out
- * rather than print "Imported from undefined" — a definition typed by hand has
- * no provenance and that is not a defect.
- */
+/** Where an imported proposal came from, in one line. */
 export function describeProvenance(provenance: Record<string, unknown>): string | null {
   const table = provenance.table;
   if (typeof table !== "string" || table.length === 0) return null;
   return `Imported from ${table}`;
 }
 
-/**
- * What accepting this proposal, right now, would mean.
- *
- * The sentence changes with the staged filters because the two outcomes are
- * genuinely different, and the moment to say so is before the click.
- */
+/** What accepting this proposal, right now, would mean. */
 export function acceptanceSummary(filters: RequiredFilter[]): string {
   if (filters.length === 0) {
     return (
@@ -179,13 +111,7 @@ export const EMPTY_WRITTEN: Written = {
   filters: [],
 };
 
-/**
- * The body a written definition sends, with empty optional fields omitted.
- *
- * **Omission rather than empty string**, for `create`'s own reason: the API
- * treats `expression: ""` as a formula that is the empty string, and `caveat:
- * ""` as a caveat nobody can read. Neither is what an untouched field means.
- */
+/** The body a written definition sends, with empty optional fields omitted. */
 export function bodyFrom(written: Written) {
   const expression = written.expression.trim();
   const caveat = written.caveat.trim();
@@ -226,29 +152,8 @@ function sameFilters(left: RequiredFilter[], right: RequiredFilter[]): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
-/**
- * The fields this edit actually changes, and nothing else.
- *
- * **The omission is the contract, not an optimisation.** The API reads an absent
- * field as *leave it alone* and a present one as *replace it*, so sending the
- * whole form back would make every save a rewrite of fields nobody touched —
- * and `expression` is the one place where `null` and absent differ, since a
- * metric with no formula is a real thing to say.
- */
-/**
- * What the badge should say about what this definition actually guarantees.
- *
- * **Three states, because there are three** (**B-171**). `prose only` means the
- * critic checks nothing. `enforced` means it checks something that separates
- * rows. In between sits a definition whose filters are checked and cannot
- * exclude anything — `edible_waste` was exactly that when MiseQ v6.7 made
- * `edible_flag` constant — and calling it `enforced` states a guarantee it is
- * not delivering.
- *
- * The absent field reads as "not currently excluding nothing", which is the
- * safe direction: an older API that does not send it leaves the badge exactly
- * as it was rather than labelling every definition as hollow.
- */
+/** The fields this edit actually changes, and nothing else. */
+/** What the badge should say about what this definition actually guarantees. */
 export function badgeLabel(definition: SemanticDefinition): string {
   if (!definition.binds) return "prose only";
   const hollow = definition.excluding_nothing ?? [];
@@ -289,14 +194,7 @@ export function changesFrom(definition: SemanticDefinition, draft: Draft) {
   return changes;
 }
 
-/**
- * What saving this edit will do, said before the click, as accepting does.
- *
- * **Written in the conditional**, and that is not fussiness: the first draft
- * opened with *"Saved, …"*, which reads as a confirmation, and on the manual
- * walk it sat above an editor whose save had just been refused. A line that
- * describes a consequence must not be mistakable for a receipt.
- */
+/** What saving this edit will do, said before the click, as accepting does. */
 export function editSummary(definition: SemanticDefinition, draft: Draft): string {
   const changes = changesFrom(definition, draft);
   if (Object.keys(changes).length === 0) return "Nothing has changed yet.";
@@ -332,10 +230,7 @@ export function describeVersion(version: DefinitionVersion): string {
   return `v${version.version} — ${what[version.change] ?? version.change}, ${filters}`;
 }
 
-// ---------------------------------------------------------------------------
-// Presentation. Everything below this line and above `Definitions` draws; none
-// of it decides anything.
-// ---------------------------------------------------------------------------
+// --- Presentation ---
 
 /** A refusal, in the API's own words, beside the action that earned it. */
 function Failure({ children }: { children: string }) {
@@ -358,12 +253,7 @@ function Notice({ children }: { children: string }) {
   );
 }
 
-/**
- * What accepting, saving or reinstating will do, said before the click.
- *
- * The two outcomes are genuinely different, so they do not look the same.
- * "Binds" is the stronger claim and carries the stronger colour.
- */
+/** What accepting, saving or reinstating will do, said before the click. */
 function Consequence({ binds, children }: { binds: boolean; children: ReactNode }) {
   return (
     <div
@@ -382,11 +272,7 @@ function Consequence({ binds, children }: { binds: boolean; children: ReactNode 
   );
 }
 
-/**
- * The one field on a definition that reaches whoever reads the answer, so it
- * is set apart from the prose rather than sitting inside it. Warm rather than
- * red: a caveat is what makes a number usable, not a warning that it is broken.
- */
+/** The one field on a definition that reaches whoever reads the answer. */
 function Caveat({ label, children }: { label: string; children: ReactNode }) {
   return (
     <p className="flex items-start gap-2.5 rounded-md bg-warn-soft px-3.5 py-2.5 text-[13.5px] leading-relaxed text-text-2">
@@ -408,10 +294,7 @@ function Formula({ children }: { children: string }) {
   );
 }
 
-/**
- * The filters are the half a check can act on, so they are set apart from the
- * sentence rather than run together with it.
- */
+/** The filters are the half a check can act on. */
 function FilterList({
   filters,
   onRemove,
@@ -521,10 +404,7 @@ function OperatorSelect({
   );
 }
 
-/**
- * One filter being written. `prefixed` names every field "Filter …", for the
- * card that sits on a screen which already has a filter editor of its own.
- */
+/** One filter being written. `prefixed` names every field "Filter …". */
 function FilterFields({
   value,
   onChange,
@@ -640,42 +520,28 @@ export function Definitions({
   const isAdmin = role === "admin";
 
   const [definitions, setDefinitions] = useState<SemanticDefinition[] | null>(null);
-  //: What has been taken out of force. Loaded with the rest rather than behind
-  //: a click, because the defect B-094 records is that nobody could *see* there
-  //: was anything to bring back (the card hides itself when there is nothing).
+  // : What has been taken out of force.
   const [retired, setRetired] = useState<SemanticDefinition[]>([]);
   const [proposals, setProposals] = useState<DefinitionProposal[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  //: Which card the current error belongs to, or null for one that belongs to
-  //: the screen. The message renders there rather than at the top, because an
-  //: editor at the bottom of a long page is where the person is looking.
+  // : Which card the current error belongs to, or null for one that belongs to : the screen.
   const [errorAt, setErrorAt] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  //: Where the notice belongs, for the reason `errorAt` exists: the screen had
-  //: one render site for every success message, so accepting a proposal at the
-  //: bottom of the page reported it under the import form at the top. Taken
-  //: from whatever anchor `run` was given, so the existing callers — which
-  //: pass none — keep landing exactly where they did.
+  // : Where the notice belongs, for the reason `errorAt` exists: the screen had.
   const [noticeAt, setNoticeAt] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  //: Filters staged against one proposal, by proposal id. Kept here rather than
-  //: inside the card so that a re-render after accepting cannot resurrect them.
+  // : Filters staged against one proposal, by proposal id.
   const [staged, setStaged] = useState<Record<string, RequiredFilter[]>>({});
-  //: What an Admin says people actually call this metric, by proposal id.
-  //: An imported definition answers only to its key and to the label its own
-  //: table carried, and nobody asks a question in those words (B-085).
+  // : What an Admin says people actually call this metric, by proposal id..
   const [alsoCalled, setAlsoCalled] = useState<Record<string, string>>({});
   const [draft, setDraft] = useState<Record<string, RequiredFilter>>({});
 
-  //: Which definition in force is being edited, and what has been typed into it
-  //: (B-088). One at a time: two open editors is two ways to lose an edit, and
-  //: the thing being changed is what the platform enforces on generated SQL.
+  // : Which definition in force is being edited, and what has been typed into it : (B-088).
   const [editing, setEditing] = useState<string | null>(null);
   const [edit, setEdit] = useState<Draft | null>(null);
   const [editFilter, setEditFilter] = useState<RequiredFilter>(EMPTY_FILTER);
-  //: Retiring takes a metric out of force, so it is asked twice. The second
-  //: click is the confirmation; anything else cancels it.
+  // : Retiring takes a metric out of force, so it is asked twice.
   const [retiring, setRetiring] = useState<string | null>(null);
   //: Loaded on demand, because most visits to this screen are not audits.
   const [history, setHistory] = useState<Record<string, DefinitionVersion[]>>({});
@@ -684,20 +550,12 @@ export function Definitions({
   const [nameColumn, setNameColumn] = useState("");
   const [descriptionColumn, setDescriptionColumn] = useState("");
   const [expressionColumn, setExpressionColumn] = useState("");
-  //: The column holding what people actually call each metric. Optional, and
-  //: the most valuable optional field on this form: a definition is matched to
-  //: a question by name and synonym, so an import that carries no synonyms
-  //: produces metrics no question can reach (B-085, B-087).
+  // : The column holding what people actually call each metric.
   const [synonymsColumn, setSynonymsColumn] = useState("");
-  //: The column saying what an answer using each metric has to disclose. The
-  //: only imported field that reaches the reader rather than the prompt.
+  // : The column saying what an answer using each metric has to disclose.
   const [caveatColumn, setCaveatColumn] = useState("");
 
-  //: Writing one by hand (**B-169**). `createDefinition` existed on the client
-  //: from the beginning and no screen ever called it, so the only ways to get a
-  //: definition into a source were to import a table that already held one or
-  //: to spend a bearer token from a script. Somebody trying the product on
-  //: their own data has neither.
+  // : Writing one by hand (B-169).
   const [written, setWritten] = useState<Written>(EMPTY_WRITTEN);
   const [writtenFilter, setWrittenFilter] = useState<RequiredFilter>(EMPTY_FILTER);
 
@@ -713,10 +571,7 @@ export function Definitions({
   }, [api, orgId, dataSourceId]);
 
   useEffect(() => {
-    // Nothing is fetched for a role the API would refuse. A 403 in the console
-    // for a screen that never offered the action is noise, and the audit row it
-    // writes is a denial nobody attempted. Nothing is *set* either — the
-    // non-admin render never reads these lists.
+    // Nothing is fetched for a role the API would refuse.
     if (!isAdmin) return;
     // Guarded so a slow response cannot write into an unmounted screen.
     let active = true;
@@ -751,8 +606,7 @@ export function Definitions({
       await action();
       await load();
     } catch (cause) {
-      // The API's own message, which names the column a filter got wrong. A
-      // generic "that did not work" would send an Admin back to guess.
+      // The API's own message, which names the column a filter got wrong.
       setError(cause instanceof Error ? cause.message : "That did not work");
       setErrorAt(anchor);
     } finally {
@@ -765,9 +619,7 @@ export function Definitions({
       const created = await api.createDefinition(orgId, dataSourceId, bodyFrom(written));
       setWritten(EMPTY_WRITTEN);
       setWrittenFilter(EMPTY_FILTER);
-      // Says which of the two it is, because they are different objects: one
-      // constrains generated SQL and the other is guidance the critic ignores
-      // (D-033). An Admin who meant to write a rule should find out now.
+      // Says which of the two it is, because they are different objects.
       setNotice(
         created.binds
           ? `${created.name} is in force: a query that ignores its filters is blocked.`
@@ -786,9 +638,7 @@ export function Definitions({
         ...(synonymsColumn.trim() ? { synonyms_column: synonymsColumn.trim() } : {}),
         ...(caveatColumn.trim() ? { caveat_column: caveatColumn.trim() } : {}),
       });
-      // An import that proposed nothing succeeded — every name was already
-      // known. Saying so is the difference between "done" and "did my mapping
-      // fail?", and an empty list alone answers neither.
+      // An import that proposed nothing succeeded — every name was already known.
       setNotice(
         created.length === 0
           ? "Nothing new: every metric in that table is already known here."
@@ -822,8 +672,7 @@ export function Definitions({
       .filter((word) => word.length > 0);
     await run(async () => {
       await api.acceptProposal(orgId, dataSourceId, proposal.id, filters, words);
-      // Cleared inside the action, so it only happens on success: a rejected
-      // filter leaves the Admin's work on screen to correct rather than retype.
+      // Cleared inside the action, so it only happens on success.
       setStaged((current) => {
         const next = { ...current };
         delete next[proposal.id];
@@ -859,12 +708,9 @@ export function Definitions({
     }
     await run(async () => {
       const saved = await api.updateDefinition(orgId, dataSourceId, definition.id, changes);
-      // Closed inside the action, so it only happens on success: a filter the
-      // catalog refused leaves the Admin's work on screen to correct rather
-      // than retype, which is the whole reason this screen exists.
+      // Closed inside the action, so it only happens on success.
       stopEditing();
-      // Reloaded by `run`, so a stale history would be the one thing on screen
-      // that had not caught up.
+      // Reloaded by `run`, so a stale history would be the one thing on screen that had not...
       setHistory((current) => {
         const next = { ...current };
         delete next[definition.id];
@@ -935,15 +781,10 @@ export function Definitions({
 
   return (
     <div className="grid grid-cols-[minmax(0,1fr)] gap-5">
-      {/* One error *state* for the whole screen, so the same sentence is never
-          on the page twice — but it renders beside the action that earned it.
-          A save refused from the editor at the bottom of this page used to put
-          its message up here, where nobody editing was looking. */}
+      {/* One error state for the whole screen, so the same sentence is never on the page twice. */}
       {error && errorAt === null ? <Failure>{error}</Failure> : null}
 
-      {/* The inbox "Questions for you" in the sidebar opens on (B-059). First on
-          the page because nothing in it constrains anything until an Admin
-          answers, and an answer is the one thing only this screen can give. */}
+      {/* The inbox "Questions for you" in the sidebar opens on (B-059). */}
       <Card
         id="questions"
         className="scroll-mt-6"
@@ -992,8 +833,7 @@ export function Definitions({
                   </div>
 
                   <div className="mt-4 grid gap-4 rounded-md bg-surface-2/60 p-3 sm:p-4">
-                    {/* Starts from the names the import found, so what the
-                        database said is what an Admin edits rather than retypes. */}
+                    {/* Starts from the names the import found. */}
                     <Input
                       label="Also called"
                       value={alsoCalled[proposal.id] ?? proposal.synonyms.join(", ")}
@@ -1091,16 +931,9 @@ export function Definitions({
                       ) : null}
                     </div>
                     <div className="flex flex-wrap items-center gap-1.5">
-                      {/* The version is next to the badge because they answer
-                          one question together: what is in force, and which
-                          version of it. */}
+                      {/* The version is next to the badge because they answer one question... */}
                       <Badge tone="neutral">v{definition.version}</Badge>
-                      {/* **B-171.** Three states, not two. A definition whose
-                          filters cannot separate one row from another is still
-                          checked by the critic — so it is not prose — but
-                          saying only "enforced" claims a guarantee it is not
-                          currently delivering, and an overstated badge is the
-                          thing this screen exists to avoid. */}
+                      {/* *B-171.** Three states, not two. */}
                       <Badge tone={badgeTone(definition)}>{badgeLabel(definition)}</Badge>
                     </div>
                   </div>
@@ -1119,8 +952,7 @@ export function Definitions({
                           placeholder="sum(orders.total_amount)"
                           onChange={(event) => setEdit({ ...edit, expression: event.target.value })}
                         />
-                        {/* Not a formula and not a synonym: the sentence every
-                            answer using this metric carries. Empty clears it. */}
+                        {/* Not a formula and not a synonym. */}
                         <Input
                           label="Answers must say (optional)"
                           value={edit.caveat}
@@ -1171,9 +1003,7 @@ export function Definitions({
                         {editSummary(definition, edit)}
                       </Consequence>
 
-                      {/* Beside the button that earned it. The 400 names the
-                          column the catalog does not have, and it is written to
-                          be repaired from — which needs it to be read. */}
+                      {/* Beside the button that earned it. */}
                       {errorAt === definition.id && error ? <Failure>{error}</Failure> : null}
 
                       <div className="flex flex-wrap items-center gap-2">
@@ -1191,19 +1021,14 @@ export function Definitions({
                         {definition.description}
                       </p>
                       {definition.expression ? <Formula>{definition.expression}</Formula> : null}
-                      {/* Above the filters on purpose. The filters say what the
-                          platform enforces; this says what the answer has to
-                          admit, and it is the half a reader of the answer sees. */}
+                      {/* Above the filters on purpose. */}
                       {definition.caveat ? (
                         <Caveat label="Answers must say:">{definition.caveat}</Caveat>
                       ) : null}
                       {definition.required_filters.length > 0 ? (
                         <>
                           <FilterList filters={definition.required_filters} />
-                          {/* Names the column, because "excluding nothing" on
-                              its own leaves an Admin to guess which of several
-                              filters is hollow — and the answer is a property
-                              of the data today, not of the definition. */}
+                          {/* Names the column, because "excluding nothing" on its own... */}
                           {(definition.excluding_nothing ?? []).length > 0 ? (
                             <Caveat label="Currently excluding nothing:">
                               {definition.excluding_nothing?.join(", ")} holds a single value that
@@ -1234,8 +1059,7 @@ export function Definitions({
                           <HistoryIcon />
                           {versions ? "Hide history" : "History"}
                         </Button>
-                        {/* Asked twice, because it changes what the platform
-                            enforces on every query that follows. */}
+                        {/* Asked twice, because it changes what the platform enforces on... */}
                         {retiring === definition.id ? (
                           <div className="flex animate-fade-up flex-wrap items-center gap-2 rounded-md bg-bad-soft/70 py-1 pr-1 pl-3 sm:ml-auto">
                             <span className="text-[12.5px] text-bad-ink">
@@ -1290,9 +1114,7 @@ export function Definitions({
         )}
       </Card>
 
-      {/* Hidden when there is nothing out of force, so an ordinary organization
-          never sees it — but present the moment there is something to bring
-          back, which is the half of B-094 that made a mis-click permanent. */}
+      {/* Hidden when there is nothing out of force, so an ordinary organization never sees it. */}
       {retired.length > 0 ? (
         <Card
           title="Out of force"
@@ -1377,9 +1199,7 @@ export function Definitions({
           >
             <div className="grid gap-4">
               <div className="grid gap-4 sm:grid-cols-2">
-                {/* "Metric table", not "Table": the filter editor below has a
-                    Table field of its own, and two controls with one name is
-                    how somebody types a column into the wrong box. */}
+                {/* "Metric table", not "Table": the filter editor below has a Table field... */}
                 <Input
                   label="Metric table"
                   value={table}
@@ -1404,21 +1224,14 @@ export function Definitions({
                   placeholder="calculation"
                   onChange={(event) => setExpressionColumn(event.target.value)}
                 />
-                {/* Worth more than it looks. A definition is found by name and
-                    synonym, so a metric imported without the words people use
-                    is one no question reaches — it binds nothing however
-                    carefully its filters are written (B-085). Most metric
-                    tables already have this column. */}
+                {/* Worth more than it looks. A definition is found by name and synonym. */}
                 <Input
                   label="Names column (optional)"
                   value={synonymsColumn}
                   placeholder="metric_name — what people call it"
                   onChange={(event) => setSynonymsColumn(event.target.value)}
                 />
-                {/* The customer's own limits on what each metric may be used to
-                    claim. Where they exist they are usually the most carefully
-                    written column in the table, and until now there was nowhere
-                    to put them. */}
+                {/* The customer's own limits on what each metric may be used to claim. */}
                 <Input
                   label="Caveat column (optional)"
                   value={caveatColumn}
@@ -1443,11 +1256,7 @@ export function Definitions({
             </div>
           </Card>
 
-          {/* **B-169.** `createDefinition` was on the API client from the start
-              and no screen called it, so a source whose warehouse has no metric
-              table — which is most of them, and every one somebody is trying
-              the product on for the first time — could not be given a
-              definition at all without a bearer token and a script. */}
+          {/* *B-169.** `createDefinition` was on the API client from the start and no... */}
           <Card
             title="Write one by hand"
             subtitle="For a database that does not already carry its definitions. Unlike an import, this takes effect as soon as you save it."
@@ -1460,10 +1269,7 @@ export function Definitions({
                   placeholder="net_revenue"
                   onChange={(event) => setWritten({ ...written, name: event.target.value })}
                 />
-                {/* The same warning the import form carries, and it matters
-                    more here: an imported definition at least answers to the
-                    label its own table gave it, while a hand-written one
-                    answers to nothing but what is typed in this box (B-085). */}
+                {/* The same warning the import form carries, and it matters more here. */}
                 <Input
                   label="Also called"
                   value={written.synonyms}
@@ -1511,10 +1317,7 @@ export function Definitions({
                   </Consequence>
                 )}
 
-                {/* Prefixed, for the reason the import form gives above: this
-                    card puts a second filter editor on a screen that already
-                    has one, and two controls with one name is how a column
-                    ends up in the wrong box. */}
+                {/* Prefixed, for the reason the import form gives above. */}
                 <FilterFields
                   prefixed
                   value={writtenFilter}

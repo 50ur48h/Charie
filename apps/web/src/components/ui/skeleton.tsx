@@ -1,10 +1,4 @@
-/**
- * What a list looks like before its rows arrive (docs/design.md, *Waiting*).
- *
- * It claims the shape and nothing else. Prefer too few rows, and never use it
- * as an empty state: `null` means *not asked yet* and `[]` means *nothing*.
- * The rows are `aria-hidden`, with a single `role="status"` label above them.
- */
+/** What a list looks like before its rows arrive (docs/design.md, Waiting). */
 
 import { cn } from "@/lib/utils";
 

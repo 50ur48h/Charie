@@ -1,19 +1,4 @@
 # The golden questions against real models (plan §4.1, WP9.2b).
-#
-# The CI job runs these with the FakeLLM: the SQL comes from `golden.yaml`, so
-# what it proves is that the catalog, the DAL, the critic and the composer hold.
-# It cannot say whether a *real* model, shown a real catalog, writes SQL that is
-# right — and that is a different question, worth money, and worth asking on a
-# schedule rather than on every push.
-#
-# **Deliberately not a merge blocker.** A model provider having a bad night is
-# not a reason to stop shipping, and a required check that fails for reasons
-# nobody controls is a check people learn to rerun without reading. This one
-# reports; a person decides.
-#
-# Two ceilings, because this spends real money unattended: `EVALS_TOKEN_BUDGET`
-# stops a run that has gone wrong, and the concurrency group stops two nights
-# overlapping if one is slow.
 
 name: nightly-evals
 
@@ -38,8 +23,7 @@ permissions:
 jobs:
   evals:
     runs-on: ubuntu-latest
-    # Long enough for twenty real investigations, short enough that a wedged run
-    # does not bill until someone notices in the morning.
+    # Long enough for twenty real investigations.
     timeout-minutes: 45
     env:
       DATABASE_URL: postgresql+asyncpg://postgres:test@localhost:5432/charie
@@ -57,8 +41,7 @@ jobs:
       LOCAL_SECRETS_PATH: ${{ github.workspace }}/ops/.secrets/evals.json
       # What makes this run different from the required check.
       EVALS_LIVE: "1"
-      # A hard ceiling on the whole suite. Not a suggestion to a model: the
-      # harness stops when it is reached.
+      # A hard ceiling on the whole suite.
       EVALS_TOKEN_BUDGET: "400000"
       LLM_PROVIDERS: ${{ vars.LLM_PROVIDERS }}
       LLM_MODELS: ${{ vars.LLM_MODELS }}
@@ -121,9 +104,7 @@ jobs:
         run: |
           make evals ARGS="${{ inputs.only && format('--only {0}', inputs.only) || '' }}" \
             | tee /tmp/evals.log
-      # Written whether the run passed or failed: a failing night is exactly the
-      # one whose summary someone needs to read, and a summary that only appears
-      # on success is a summary nobody reads.
+      # Written whether the run passed or failed.
       - name: Summary
         if: always()
         run: |

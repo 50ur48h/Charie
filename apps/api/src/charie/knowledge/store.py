@@ -1,23 +1,4 @@
-"""Where an uploaded document's original bytes go (architecture 5.5, 9.1).
-
-Deliberately its own store rather than a widening of `dal/artifacts.py`, and the
-reason is scope of review rather than taste. That interface is inside the
-security boundary — AGENTS.md requires human review on every `dal/` change — and
-its `put(org_id, execution_id, payload)` shape is a *query result's* shape.
-Reaching into it so a knowledge feature can save a `.md` file would change a
-signature the executor depends on, in a package whose review bar exists for
-different reasons.
-
-What is **not** duplicated is the property that matters. Both stores refuse a
-reference that does not begin with the caller's own organization, and both
-re-resolve the path afterwards so a reference carrying `..` cannot climb out of
-the root even though its prefix looks right. That check is copied here on
-purpose: a store whose keys carry the tenant is only isolated if something
-checks them, and "the other store checks" is not a property this one has.
-
-Phase 12 puts both behind Blob (`{org_id}/docs/…`, per 9.1), which is where the
-two should converge — **B-072**.
-"""
+"""Where an uploaded document's original bytes go (architecture 5.5, 9.1)."""
 
 from __future__ import annotations
 
@@ -27,9 +8,7 @@ from typing import Protocol
 
 __all__ = ["DocumentStore", "LocalDocumentStore", "StoredDocumentError", "extension_for"]
 
-#: What each accepted format is saved as. The original's extension is kept so a
-#: later download hands back something a person's machine can open, and so the
-#: bytes on disk are recognisable to whoever is debugging an ingest.
+#: What each accepted format is saved as.
 _EXTENSIONS = {
     "text/markdown": ".md",
     "text/plain": ".txt",
@@ -82,8 +61,7 @@ class LocalDocumentStore:
         prefix = f"{org_id}/"
         if not reference.startswith(prefix):
             raise StoredDocumentError("That document belongs to another organization.")
-        # Resolved and re-checked, so a reference carrying `..` cannot climb out
-        # of the root even though the prefix looks right.
+        # Resolved and re-checked, so a reference carrying `..` cannot climb out of the root...
         candidate = (self._root / reference).resolve()
         root = self._root.resolve()
         if not candidate.is_relative_to(root):

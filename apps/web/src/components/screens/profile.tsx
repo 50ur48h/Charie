@@ -1,12 +1,6 @@
 "use client";
 
-/**
- * The bootstrap screen on the front door: who you are, the organizations you
- * belong to, and the one place an organization can be created.
- *
- * It is every first login, so it says what to do next rather than presenting
- * an empty list.
- */
+/** The bootstrap screen on the front door: who you are, the organizations you belong to. */
 
 import { LogOut, Plus } from "lucide-react";
 import Link from "next/link";
@@ -23,10 +17,7 @@ import { createApi, type Me } from "@/lib/api-client";
 import { emailIsUnknown, personLabel } from "@/lib/identity";
 import { useSession } from "@/lib/auth/session";
 
-/**
- * Who is signed in: an avatar, the best name we have for them, and the subject
- * the product actually authorizes against.
- */
+/** Who is signed in: an avatar, the best name we have for them. */
 export function Identity({ me, compact = false }: { me: Me; compact?: boolean }) {
   const name = me.name?.trim();
   const primary = name || (compact ? me.email?.split("@")[0] || me.subject : personLabel(me, me.subject));
@@ -49,8 +40,7 @@ export function Identity({ me, compact = false }: { me: Me; compact?: boolean })
             {me.subject}
           </code>
         </p>}
-        {/* Said once, quietly: a missing email claim is a configuration fact,
-            not a fault of the person reading it. */}
+        {/* Said once, quietly: a missing email claim is a configuration fact. */}
         {!compact && emailIsUnknown(me) && (
           <p className="mt-1 text-[12.5px] leading-snug text-muted-foreground">
             Your sign-in did not include an email address, so we do not have one.
@@ -116,8 +106,7 @@ export function Profile() {
         <h1 className="font-serif text-[28px] leading-tight font-semibold tracking-[-0.01em] text-text">
           Welcome to Charie
         </h1>
-        {/* Said only once we know: "you have none" while the answer is still
-            in flight would be the empty-state-as-loading-state mistake. */}
+        {/* Said only once we know: "you have none" while the answer is still in flight... */}
         {me && (
           <p className="mx-auto max-w-[46ch] text-[14.5px] leading-relaxed text-pretty text-muted-foreground">
             {orgs.length === 0

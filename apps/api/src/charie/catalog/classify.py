@@ -1,25 +1,4 @@
-"""Which columns hold personal data, and what a stored sample may look like.
-
-Deterministic rules, in this order (architecture Part 5.2): the column's *name*,
-then the *shape of its values* in the sample. An optional cheap-LLM pass may
-suggest more in a later phase; it may never quietly un-suggest, because the
-direction that matters is one-way.
-
-Two decisions are worth stating plainly.
-
-**Suspicion is enough to mask.** A column the rules suspect defaults to
-``mask``, before anyone has looked at it. The cost of masking a harmless column
-is that someone clicks Allow; the cost of the other mistake is a customer's
-personal data sitting in our database in the clear. Those are not comparable,
-so they are not traded off.
-
-**Masking happens at write time, not at read time.** Everything in this module
-exists to be called *before* a value reaches ``catalog_columns``. A raw email
-address that arrives in the platform database and is hidden by a query later has
-already been stored, backed up, and replicated — architecture M4 asks for the
-sample to be masked as it is written, and that is the only version that is
-actually true.
-"""
+"""Which columns hold personal data, and what a stored sample may look like."""
 
 from __future__ import annotations
 
@@ -36,14 +15,10 @@ __all__ = [
     "semantic_role_of",
 ]
 
-#: How much of a sample has to look like a thing before the column *is* that
-#: thing. Deliberately not 1.0: real columns hold nulls, blanks and the odd
-#: "n/a", and a rule that only fires on perfect data never fires.
+#: How much of a sample has to look like a thing before the column is that thing.
 _SHAPE_THRESHOLD = 0.6
 
-#: Names that are evidence on their own. Word-boundary matched, so `email` fires
-#: on `customer_email` and `email_address` but not on `emailed_at_least_once`…
-#: which it would, and that is the acceptable direction of error.
+#: Names that are evidence on their own.
 SENSITIVE_NAME_PATTERNS: tuple[tuple[str, str], ...] = (
     (r"e[-_]?mail", "email"),
     (r"phone|mobile|telephone|msisdn", "phone"),
@@ -58,10 +33,7 @@ SENSITIVE_NAME_PATTERNS: tuple[tuple[str, str], ...] = (
 )
 
 _EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[a-z]{2,}$", re.IGNORECASE)
-#: At least nine digits, because eight is a date. `2025-02-01` matched a looser
-#: pattern and every date column in the pizza database came back "suspected" —
-#: found by profiling a real one, not by this file's own corpus, which is why
-#: `test_a_date_is_not_a_phone_number` now exists.
+#: At least nine digits, because eight is a date.
 _PHONE = re.compile(r"^\+?(?=(?:\D*\d){9,})[\d\s().-]{9,20}$")
 _ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}([T ]|$)")
 _DIGITS = re.compile(r"\D")
@@ -85,11 +57,7 @@ _NUMBER_TYPES = (
 
 @dataclass(frozen=True, slots=True)
 class Verdict:
-    """What the rules concluded about one column.
-
-    ``kind`` names *why* — "email", "payment", "credential" — which is what an
-    Admin needs in order to disagree with it.
-    """
+    """What the rules concluded about one column."""
 
     sensitivity: str
     kind: str | None
@@ -135,12 +103,7 @@ def name_verdict(column_name: str) -> str | None:
 
 
 def is_textual(data_type: str) -> bool:
-    """Is this a column whose values are worth pattern-matching?
-
-    Value shapes are a heuristic about *text*. A date column holds dates and a
-    numeric column holds numbers; asking whether those look like a phone number
-    is asking a question with no useful answer, and getting a wrong one.
-    """
+    """Is this a column whose values are worth pattern-matching?"""
     lowered = data_type.lower()
     return not any(marker in lowered for marker in (*_TIME_TYPES, *_NUMBER_TYPES))
 
@@ -148,8 +111,7 @@ def is_textual(data_type: str) -> bool:
 def shape_verdict(values: Sequence[str]) -> str | None:
     """What the sampled values look like, if they agree on anything."""
     if any(_ISO_DATE.match(value.strip()) for value in values if value.strip()):
-        # A belt for the braces above: even a text column full of ISO dates is a
-        # date column, whatever its declared type says.
+        # A belt for the braces above: even a text column full of ISO dates is a date column.
         return None
     if _looks_like(values, _EMAIL):
         return "email"
@@ -175,8 +137,7 @@ def semantic_role_of(*, name: str, data_type: str, is_pk: bool, distinct: int, s
         return "measure"
     if "bool" in lowered_type or lowered_type == "bit":
         return "dimension"
-    # A text column with few distinct values is a category; one with many is
-    # free text, and calling that a dimension would invite grouping by it.
+    # A text column with few distinct values is a category; one with many is free text.
     if sampled and distinct <= max(50, sampled // 20):
         return "dimension"
     return "other"
@@ -191,12 +152,7 @@ def classify_column(
     distinct: int,
     sampled: int,
 ) -> Verdict:
-    """Name first, then shape. Either is enough to suspect.
-
-    A primary key is never suspected on its name alone — `id` matches nothing
-    here, but a table keyed on `national_id` would, and masking a join key would
-    break the catalog for no gain. Its *values* can still condemn it.
-    """
+    """Name first, then shape. Either is enough to suspect."""
     role = semantic_role_of(
         name=name, data_type=data_type, is_pk=is_pk, distinct=distinct, sampled=sampled
     )
@@ -207,12 +163,7 @@ def classify_column(
 
 
 def mask_value(value: str, kind: str | None = None) -> str:
-    """A rendering that keeps the shape and loses the content.
-
-    Format-preserving where it is cheap, because a masked sample still has to be
-    useful: `a***@e***.com` tells a person the column holds addresses at this
-    domain shape, which is the entire reason a sample is shown at all.
-    """
+    """A rendering that keeps the shape and loses the content."""
     if not value:
         return value
     if kind == "email" and "@" in value:

@@ -1,18 +1,4 @@
-"""data_sources learns whether its credentials were proven read-only
-
-WP3.2. Registration in WP3.1 could honestly say only "we stored this"; with a
-connector there is something to record: whether the address answered, whether
-the credentials worked, and whether the engine's own privilege catalog says they
-cannot write (architecture M3, Part 7.5).
-
-``readonly_verified`` defaults to **false**, and every path that fails to prove
-otherwise leaves it false. An unverified data source is the safe default state,
-not an error state.
-
-Revision ID: 0006
-Revises: 0005
-Create Date: 2026-08-12
-"""
+"""data_sources learns whether its credentials were proven read-only"""
 
 from __future__ import annotations
 

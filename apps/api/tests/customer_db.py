@@ -1,14 +1,4 @@
-"""A stand-in for a customer's database, shared by the tests that need one.
-
-Deliberately *not* the pizza fixture: connector tests must not depend on
-``make seed`` having been run, or they would run only on a developer's machine
-with a compose stack up. This builds a small database with a foreign key,
-comments, a view and a genuinely read-only login, on the same PostgreSQL server
-the rest of the suite already needs.
-
-It lives beside ``conftest.py`` rather than inside it so that more than one test
-module can import the type without importing a conftest.
-"""
+"""A stand-in for a customer's database, shared by the tests that need one."""
 
 from __future__ import annotations
 
@@ -19,14 +9,11 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from charie.connectors.postgres import PostgresConnector
 
-#: Cluster-wide, so it is created idempotently and never dropped — another test
-#: database on the same server may still be using it.
+#: Cluster-wide, so it is created idempotently and never dropped.
 READER_ROLE = "charie_connector_reader"
 READER_LOGIN = "connector-test-only"
 
-#: This server is on the test machine and serves no certificate, so it is exactly
-#: the case the policy calls local (B-013). Tests that care about the mode itself
-#: pass their own.
+#: This server is on the test machine and serves no certificate.
 LOCAL_TLS_MODE = "prefer"
 
 SCHEMA = """
@@ -169,10 +156,7 @@ async def build(url: URL) -> CustomerDatabase:
     return CustomerDatabase(url=url, reader_username=READER_ROLE, reader_password=READER_LOGIN)
 
 
-#: A customer database that declares **nothing** — no primary keys, no foreign
-#: keys — which is the shape most of them arrive in and the one that made the
-#: product refuse every real question (B-145). Modelled on `miseq`, including
-#: both of the traps that dataset supplied.
+#: A customer database that declares nothing — no primary keys, no foreign keys.
 UNDECLARED_SCHEMA = """
 CREATE TABLE dim_outlet (
     outlet_key  integer NOT NULL,

@@ -1,10 +1,4 @@
-"""Retrying, without a clock and without a random number.
-
-``with_retries`` takes ``sleep`` and ``jitter`` as parameters precisely so this
-file can exercise the real backoff arithmetic deterministically. A retry policy
-tested against ``time.sleep`` is one that never runs in CI, which is how they
-come to be wrong.
-"""
+"""Retrying, without a clock and without a random number."""
 
 from __future__ import annotations
 
@@ -59,8 +53,7 @@ async def test_a_retryable_failure_is_retried_up_to_the_policy() -> None:
 
 
 async def test_a_non_retryable_failure_is_raised_at_once() -> None:
-    """A 400 is a request this code built wrongly. Three attempts is three times
-    the latency and the same error."""
+    """A 400 is a request this code built wrongly."""
     calls = 0
 
     async def operation() -> str:
@@ -77,8 +70,7 @@ async def test_a_non_retryable_failure_is_raised_at_once() -> None:
 
 
 async def test_exhausting_the_attempts_raises_the_last_failure() -> None:
-    """The last one, not the first: it is the error that actually ended the
-    sequence, and it is what the fallback above sees."""
+    """The last one, not the first: it is the error that actually ended the sequence."""
     attempt = 0
 
     async def operation() -> str:
@@ -105,14 +97,12 @@ async def test_backoff_grows_and_is_capped() -> None:
             jitter=lambda: 0.5,
         )
 
-    # jitter of 0.5 makes the factor exactly 1.0, so these are the raw delays:
-    # 1, 2, 4, then capped at 4.
+    # jitter of 0.5 makes the factor exactly 1.0, so these are the raw delays: 1, 2, 4.
     assert sleep.waits == [1.0, 2.0, 4.0, 4.0]
 
 
 def test_jitter_spreads_the_wait_around_the_exponential() -> None:
-    """Full-width jitter, because the failure being guarded against is every
-    caller in a fleet retrying in lockstep after one shared 429."""
+    """Full-width jitter, because the failure being guarded against is every caller in a..."""
     policy = RetryPolicy(base_delay=2.0)
 
     assert policy.delay_for(1, jitter=0.0) == 1.0

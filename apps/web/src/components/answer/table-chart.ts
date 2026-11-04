@@ -1,14 +1,4 @@
-/**
- * A picture of an answer's own table, when the table is one a chart can show
- * honestly.
- *
- * The server draws a chart only when the model asks for one, and most answers
- * arrive as a table. A table of a period against a number, or of things against
- * a change, is a chart the reader would draw for themselves — so this builds the
- * same closed-vocabulary spec the server would (`agent/charts.py`) from the
- * table's own cells. Nothing is computed or invented: every value plotted is a
- * value printed in the table beside it, and the table stays one click away.
- */
+/** A picture of an answer's own table, when the table is one a chart can show honestly. */
 
 import { isDeltaColumn, looksNumeric, numberIn } from "./cells";
 
@@ -47,8 +37,7 @@ function unitsOf(cells: string[]): { prefix: string; suffix: string } {
   return { prefix: currency.length > 1 ? `${currency} ` : currency, suffix };
 }
 
-/** Repeated measure labels identify comparable columns, without mixing orders
- * into sales or gross sales into net sales on the same axis. */
+/** Repeated measure labels identify comparable columns. */
 function measureOf(header: string): string | null {
   return /\b(net sales|gross sales|total sales|sales|revenue|order count|orders|average order value|average order|profit|units|quantity)\s*$/i
     .exec(header.trim())?.[1]?.toLowerCase() ?? null;
@@ -64,8 +53,7 @@ export function deriveChart(columns: string[], rows: string[][]): DerivedChart |
     return cells.length === rows.length && cells.every(looksNumeric);
   });
 
-  // The thing each row is about: a period if there is one, else the first
-  // column of words.
+  // The thing each row is about: a period if there is one, else the first column of words.
   const periodIndex = columns.findIndex((_, index) =>
     !numeric[index] && cellsOf(index).every((cell) => periodOf(cell) !== null),
   );
@@ -76,8 +64,7 @@ export function deriveChart(columns: string[], rows: string[][]): DerivedChart |
   const labels = cellsOf(labelIndex);
   if (new Set(labels).size !== labels.length) return null;
 
-  // What to plot: a change column if there is one (the design's diverging
-  // bars), otherwise the last figure — usually the one the table builds to.
+  // What to plot: a change column if there is one (the design's diverging bars).
   const candidates = columns
     .map((header, index) => ({ header, index }))
     .filter(({ index }) => index !== labelIndex && numeric[index])

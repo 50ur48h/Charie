@@ -1,13 +1,4 @@
-"""The front door: resolve, call, meter, parse, repair once.
-
-The property that matters most here is the one the DAL's front door has for
-customer data — **there is no path that spends tokens without leaving a row**.
-So every test that makes a call also counts the ledger, including the ones about
-failures and the ones about repairs, where it would be easiest to lose a row.
-
-Against a real platform database for the same reason ``tests/dal`` is: the
-guarantee is "a row exists", and only a database can answer that.
-"""
+"""The front door: resolve, call, meter, parse, repair once."""
 
 from __future__ import annotations
 
@@ -87,16 +78,13 @@ async def _ledger(url: URL, org_id: uuid.UUID) -> list[dict[str, object]]:
         await engine.dispose()
 
 
-# ---------------------------------------------------------------------------
-# Resolution and metering
-# ---------------------------------------------------------------------------
+# --- Resolution and metering ---
 
 
 async def test_the_role_picks_the_model_and_the_call_is_metered(
     platform: URL, migrated_database: URL, fake_llm: FakeLLM
 ) -> None:
-    """No call site names a model: ``plan`` is strong, so the strong model is
-    what the provider is asked for and what the ledger records."""
+    """No call site names a model: ``plan`` is strong."""
     org_id = await _org(migrated_database)
     fake_llm.script("about 400 orders")
 
@@ -132,8 +120,7 @@ async def test_a_cheap_role_is_billed_against_the_small_model(
 async def test_the_run_and_the_actor_reach_the_row(
     platform: URL, migrated_database: URL, fake_llm: FakeLLM
 ) -> None:
-    """ "What did this run cost" is a question about a run, so the run is on the
-    row rather than inferred from a time window."""
+    """ "What did this run cost" is a question about a run."""
     org_id = await _org(migrated_database)
     run_id = await seed_run(migrated_database, org_id)
     fake_llm.script("ok")
@@ -153,8 +140,7 @@ async def test_the_run_and_the_actor_reach_the_row(
 async def test_a_provider_failure_is_metered_and_re_raised(
     platform: URL, migrated_database: URL, fake_llm: FakeLLM
 ) -> None:
-    """The caller gets the same error it would have got without any of this, and
-    the ledger has the row either way — the DAL's rule, applied to tokens."""
+    """The caller gets the same error it would have got without any of this."""
     org_id = await _org(migrated_database)
     fake_llm.script(raises=LLMError("the provider returned 503", retryable=True))
 
@@ -163,9 +149,7 @@ async def test_a_provider_failure_is_metered_and_re_raised(
             role="sql", org_id=org_id, messages=QUESTION, settings=build_settings()
         )
 
-    # Three rows, not one: architecture 8.5 retries a 503 before giving up, and
-    # every attempt is a real call that has to be visible. A single row here
-    # would mean two attempts went unrecorded.
+    # Three rows, not one: architecture 8.5 retries a 503 before giving up.
     rows = await _ledger(platform, org_id)
     assert len(rows) == 3
     assert all(row["status"] == "error" for row in rows)
@@ -176,8 +160,7 @@ async def test_a_provider_failure_is_metered_and_re_raised(
 async def test_an_unresolvable_role_never_reaches_a_provider(
     platform: URL, migrated_database: URL, fake_llm: FakeLLM
 ) -> None:
-    """Configuration failures are not calls: nothing was spent, so nothing is
-    recorded, and the fake can prove it was never asked."""
+    """Configuration failures are not calls: nothing was spent, so nothing is recorded."""
     org_id = await _org(migrated_database)
 
     with pytest.raises(registry.ProviderNotConfiguredError):
@@ -192,9 +175,7 @@ async def test_an_unresolvable_role_never_reaches_a_provider(
     assert await _ledger(platform, org_id) == []
 
 
-# ---------------------------------------------------------------------------
-# Structured output
-# ---------------------------------------------------------------------------
+# --- Structured output ---
 
 
 async def test_a_schema_returns_a_typed_object(
@@ -215,8 +196,7 @@ async def test_a_schema_returns_a_typed_object(
 async def test_the_schema_instruction_goes_after_the_platform_rules(
     platform: URL, migrated_database: URL, fake_llm: FakeLLM
 ) -> None:
-    """Instruction layers are ordered and L0 wins every conflict (arch 4.8), so
-    a formatting instruction must not be placed above the platform's rules."""
+    """Instruction layers are ordered and L0 wins every conflict (arch 4.8)."""
     org_id = await _org(migrated_database)
     fake_llm.script_json(Plan(steps=["a"]))
 
@@ -246,8 +226,7 @@ async def test_no_schema_means_no_json_instruction(
 async def test_a_provider_with_native_schema_support_is_not_given_the_instruction(
     platform: URL, migrated_database: URL
 ) -> None:
-    """The prompt is a fallback for providers that cannot constrain decoding.
-    Sending it to one that can wastes tokens on every structured call."""
+    """The prompt is a fallback for providers that cannot constrain decoding."""
 
     class Native(FakeLLM):
         def capabilities(self) -> ProviderCaps:
@@ -264,18 +243,14 @@ async def test_a_provider_with_native_schema_support_is_not_given_the_instructio
         registry.clear_provider_cache()
 
     assert list(native.last_call().request.messages) == QUESTION
-    # Validated anyway: "supports JSON schema" means different things on
-    # different APIs, and the type of ``parsed`` must not depend on which
-    # provider answered.
+    # Validated anyway: "supports JSON schema" means different things on different APIs.
     assert completion.parsed_as(Plan).steps == ["a"]
 
 
 async def test_an_unparseable_reply_is_repaired_once_and_both_calls_are_metered(
     platform: URL, migrated_database: URL, fake_llm: FakeLLM
 ) -> None:
-    """A repair is a second real call: two provider calls, two ledger rows, and
-    the second flagged so "how often does the model ignore the schema" is a
-    GROUP BY rather than a guess."""
+    """A repair is a second real call: two provider calls, two ledger rows."""
     org_id = await _org(migrated_database)
     fake_llm.script("I think three steps", times=1).script_json(Plan(steps=["a", "b"]))
 
@@ -304,16 +279,14 @@ async def test_the_repair_shows_the_model_its_own_reply_and_the_problem(
     repair = fake_llm.calls[1].request.messages
     assert repair[-2] == Message(role="assistant", content="I think three steps")
     assert "no JSON object" in repair[-1].content
-    # The original question survives the repair: a second answer to a different
-    # question would be indistinguishable from a correct one.
+    # The original question survives the repair.
     assert repair[0].content == "platform rules"
 
 
 async def test_two_bad_replies_fail_with_both_complaints(
     platform: URL, migrated_database: URL, fake_llm: FakeLLM
 ) -> None:
-    """The pair is the diagnosis: the same complaint twice means the schema is
-    wrong for the task, two different ones mean the model is guessing."""
+    """The pair is the diagnosis: the same complaint twice means the schema is wrong for the..."""
     org_id = await _org(migrated_database)
     fake_llm.script("no json at all", times=1).script('{"steps": "not a list"}')
 
@@ -332,8 +305,7 @@ async def test_two_bad_replies_fail_with_both_complaints(
 async def test_the_repair_is_never_a_loop(
     platform: URL, migrated_database: URL, fake_llm: FakeLLM
 ) -> None:
-    """Once, not until it works. A model that cannot follow a schema twice will
-    not follow it on the fifth attempt, and each attempt is real money."""
+    """Once, not until it works."""
     org_id = await _org(migrated_database)
     fake_llm.script("never json")
 
@@ -351,8 +323,7 @@ async def test_a_failure_during_the_repair_is_metered_too(
     org_id = await _org(migrated_database)
     fake_llm.script("not json", times=1).script(raises=LLMError("429", retryable=True))
 
-    # One attempt per pass, so this test stays about the repair pairing rather
-    # than about how many times a 429 is retried (test_retry.py owns that).
+    # One attempt per pass, so this test stays about the repair pairing rather than about how...
     with pytest.raises(LLMError, match="429"):
         await service.complete(
             role="plan",
@@ -370,8 +341,7 @@ async def test_a_failure_during_the_repair_is_metered_too(
 async def test_parsed_as_refuses_the_wrong_schema(
     platform: URL, migrated_database: URL, fake_llm: FakeLLM
 ) -> None:
-    """Callers ask for the schema they passed; the check lives in one place
-    rather than as an unchecked cast at every call site."""
+    """Callers ask for the schema they passed."""
 
     class Other(BaseModel):
         verdict: str

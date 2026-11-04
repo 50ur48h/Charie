@@ -1,18 +1,4 @@
-# Builds Charie's container images and pushes them to GitHub Container Registry:
-#
-#   ghcr.io/<owner>/charie-api   ghcr.io/<owner>/charie-web
-#
-# Run it from the Actions tab ("publish-images" → "Run workflow").
-#
-# flavor=testing    A private test deploy with simple sign-in: the API image is the
-#                   `dev` target (dev token issuer, encrypted-file secrets) and the
-#                   web image allows dev sign-in. Tags: `testing`, `testing-<sha>`.
-#                   Not for real customer data.
-# flavor=production The `prod` targets: Microsoft Entra sign-in and Key Vault
-#                   secrets. Tags: `latest`, `<sha>`.
-#
-# The web image bakes NEXT_PUBLIC_API_URL into the browser bundle, so build it once
-# the API has its public URL (images=web).
+# Builds Charie's container images and pushes them to GitHub Container Registry.
 name: publish-images
 
 on:

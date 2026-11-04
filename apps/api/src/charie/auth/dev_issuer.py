@@ -1,19 +1,4 @@
-"""A local OIDC issuer, so the stack runs without an Entra tenant.
-
-This module is **development scaffolding and a liability in production**. Three
-independent things keep it out of a real deployment, because one would be a
-convention rather than a control:
-
-1. It is only imported and mounted when ``AUTH_MODE=dev`` (``main.py``).
-2. Importing it raises unless the settings genuinely say development.
-3. The Dockerfile's ``prod`` target deletes this file from the image, so even a
-   misconfigured container has nothing to import.
-
-It deliberately mints tokens through a real JWKS and real RS256 signatures rather
-than short-circuiting validation. The token path exercised locally is therefore
-the same code that will face Entra: a dev mode that bypasses the validator would
-leave the validator untested until production.
-"""
+"""A local OIDC issuer, so the stack runs without an Entra tenant."""
 
 from __future__ import annotations
 
@@ -35,12 +20,7 @@ router = APIRouter(prefix="/dev", tags=["dev"])
 
 
 class DevIssuer:
-    """Signs tokens with a keypair generated fresh for each process.
-
-    Not persisted anywhere: restarting the API invalidates previously issued dev
-    tokens, which is the correct property for a credential that must never be
-    depended upon.
-    """
+    """Signs tokens with a keypair generated fresh for each process."""
 
     def __init__(self, issuer: str, audience: str) -> None:
         self._issuer = issuer
@@ -104,13 +84,7 @@ def guard_development_only(settings: Settings) -> None:
 
 
 def _issuer(request: Request) -> DevIssuer:
-    """The one issuer built for this application.
-
-    Read from application state rather than constructed per request: a new
-    keypair per call would publish a JWKS that cannot verify the token minted a
-    moment earlier, and every dev login would fail for a reason no one enjoys
-    debugging.
-    """
+    """The one issuer built for this application."""
     issuer = getattr(request.app.state, "dev_issuer", None)
     if not isinstance(issuer, DevIssuer):
         raise RuntimeError("The dev issuer is not mounted on this application")

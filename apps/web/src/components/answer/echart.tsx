@@ -1,13 +1,6 @@
 "use client";
 
-/**
- * One ECharts drawing, sized to its container and redrawn when the palette or
- * light/dark changes.
- *
- * Drawn as SVG: crisp at any zoom, selectable text, and it renders where there
- * is no canvas. Exporting a PNG uses a short-lived canvas instance instead,
- * because an SVG chart cannot rasterise itself.
- */
+/** One ECharts drawing, sized to its container and redrawn when the palette or light/dark... */
 
 import { useEffect, useRef, useState } from "react";
 
@@ -58,8 +51,7 @@ export function EChart({
         if (typeof ResizeObserver !== "undefined") {
           observer = new ResizeObserver(() => {
             const next = element.clientWidth;
-            // Crossing into or out of the compact layout redraws; otherwise
-            // the same drawing is simply resized.
+            // Crossing into or out of the compact layout redraws.
             if ((next < NARROW) !== (width < NARROW)) {
               const redrawn = makeOption(next);
               if (redrawn) instance.setOption(redrawn, { notMerge: true });
@@ -70,8 +62,7 @@ export function EChart({
           observer.observe(element);
         }
       } catch {
-        // The server already validated the spec, so this is a renderer
-        // problem; the numbers are still under the answer's evidence.
+        // The server already validated the spec, so this is a renderer problem.
         if (!disposed) setFailed(true);
       }
     })();

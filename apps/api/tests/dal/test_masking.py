@@ -1,10 +1,4 @@
-"""What comes back, and what is left of it (architecture Part 7.6).
-
-The property under test is one sentence: **a value from a masked column cannot
-be read out of a result**. Everything here is a way that could fail — through
-the column itself, through an expression built from it, through an alias, or
-through a second column that happens to share its name.
-"""
+"""What comes back, and what is left of it (architecture Part 7.6)."""
 
 from __future__ import annotations
 
@@ -55,8 +49,7 @@ def test_a_phone_keeps_its_last_four() -> None:
 
 
 def test_auto_reads_the_shape_off_the_value() -> None:
-    """The default. There is no stored "this column holds emails" to consult:
-    `semantic_role` says how a column is used in analysis, not what it holds."""
+    """The default. There is no stored "this column holds emails" to consult."""
     assert mask_value(PLANTED, "auto") == "a***@l***.com"
     assert mask_value("+44 20 7946 0958", "auto") == "***0958"
     assert mask_value("Ada Lovelace", "auto") == REDACTED
@@ -75,8 +68,7 @@ def test_a_value_that_is_not_text_is_redacted_rather_than_reshaped() -> None:
 
 
 def test_null_stays_null() -> None:
-    """ "This customer has no email" is not a secret about the customer, and a
-    mask in place of NULL invents a value that was never there."""
+    """ "This customer has no email" is not a secret about the customer."""
     assert mask_value(None, "email") is None
 
 
@@ -102,8 +94,7 @@ def test_an_allowed_column_beside_it_is_untouched(either: SourcePolicy) -> None:
 
 
 def test_an_expression_over_a_masked_column_is_masked(either: SourcePolicy) -> None:
-    """`UPPER(email)` spells the address out just as well as `email` does — and
-    its shape is no longer known, so it is redacted rather than reshaped."""
+    """`UPPER(email)` spells the address out just as well as `email` does."""
     rows = masked("SELECT UPPER(email) AS shout FROM customers", either, (PLANTED.upper(),))
 
     assert rows == ((REDACTED,),)
@@ -116,9 +107,7 @@ def test_an_alias_does_not_get_a_value_past_it(either: SourcePolicy) -> None:
 
 
 def test_a_count_over_a_masked_column_is_a_number(either: SourcePolicy) -> None:
-    """The distinction that makes `mask` more useful than `deny`: aggregates are
-    the intended use, and masking a COUNT would replace a number nobody needs
-    protecting with a string nobody can use."""
+    """The distinction that makes `mask` more useful than `deny`."""
     rows = masked("SELECT COUNT(email) AS n FROM customers", either, (42,))
 
     assert rows == ((42,),)
@@ -132,8 +121,7 @@ def test_max_over_a_masked_column_is_masked(either: SourcePolicy) -> None:
 
 
 def test_two_columns_of_the_same_name_are_masked_by_position(either: SourcePolicy) -> None:
-    """`SELECT c.city, c.email` returns two strings; matching on names would be
-    ambiguous the moment two tables share one."""
+    """`SELECT c.city, c.email` returns two strings."""
     rows = masked(
         "SELECT c.email, s.full_name FROM customers c, public.staff s",
         either,
@@ -146,8 +134,7 @@ def test_two_columns_of_the_same_name_are_masked_by_position(either: SourcePolic
 def test_a_masked_column_used_only_in_a_predicate_returns_nothing_to_mask(
     either: SourcePolicy,
 ) -> None:
-    """It never reaches the result, so there is no cell to mask — and the run is
-    still recorded as having touched something sensitive."""
+    """It never reaches the result, so there is no cell to mask."""
     validated = validate(
         "SELECT city FROM customers WHERE email LIKE '%@example.com'", source=either, max_rows=100
     )
@@ -170,9 +157,7 @@ def test_the_masked_columns_are_named_for_the_audit_row(either: SourcePolicy) ->
 def test_a_result_that_does_not_match_its_description_is_masked_entirely(
     either: SourcePolicy,
 ) -> None:
-    """Fails closed. If the engine returned a different number of columns than
-    the statement described, the answer to "which one held the address" is
-    unknown, and the safe reading of unknown is "all of them"."""
+    """Fails closed."""
     validated = validate("SELECT city FROM customers", source=either, max_rows=100)
     result = mask_frame(
         frame(("city", "email"), ("London", PLANTED)),
@@ -185,8 +170,7 @@ def test_a_result_that_does_not_match_its_description_is_masked_entirely(
 
 
 def test_an_admins_choice_of_mask_wins_over_the_inferred_one() -> None:
-    """`mask_type` is stored when an Admin decides one and was being dropped on
-    the way out of the catalog until this WP; the DAL now honours it."""
+    """`mask_type` is stored when an Admin decides one and was being dropped on the way out..."""
     catalog = build_catalog()
     customers = next(table for table in catalog.tables if table.table_name == "customers")
     email = next(column for column in customers.columns if column.name == "email")

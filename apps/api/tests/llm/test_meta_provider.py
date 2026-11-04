@@ -1,19 +1,4 @@
-"""The Meta provider, and proof that configuring it is what reaches it.
-
-The unit half is short because the protocol is ``test_openai_provider.py``'s:
-Meta's Model API speaks the same Responses dialect, and those tests already pin
-the request we build and every awkward reply. What is Meta's own is the endpoint,
-the key and the name, so that is what these assert — and above all that one
-vendor's key is never sent to the other.
-
-The front-door half is the one that earns its keep. A provider that is correct
-when handed straight to a test can still be unreachable from configuration —
-registered under a name nothing resolves, or answering under a name the ledger
-then misfiles. So it starts where a deployment does, at ``LLM_PROVIDERS=meta``,
-and ends where the product looks, at a ``usage_ledger`` row. Only the network is
-replaced: the provider builds its own client from Meta's real base URL, because
-that default is part of what is under test.
-"""
+"""The Meta provider, and proof that configuring it is what reaches it."""
 
 from __future__ import annotations
 
@@ -42,8 +27,7 @@ QUESTION = [Message(role="system", content="platform rules"), Message(role="user
 
 WONDER = "muse-wonder-1.0"
 
-#: The shape of a Meta reply, from dev.meta.ai/docs/protocols/responses: the
-#: same `output` items and `usage` counts as OpenAI's, cached share included.
+#: The shape of a Meta reply, from dev.meta.ai/docs/protocols/responses.
 META_REPLY: dict[str, Any] = {
     "model": WONDER,
     "status": "completed",
@@ -78,9 +62,7 @@ def meta_settings(**overrides: object) -> Settings:
     return build_settings(**values)
 
 
-# ---------------------------------------------------------------------------
-# The provider
-# ---------------------------------------------------------------------------
+# --- The provider ---
 
 
 def test_no_key_fails_with_the_fix_in_the_message() -> None:
@@ -94,9 +76,7 @@ def test_no_key_fails_with_the_fix_in_the_message() -> None:
 
 
 def test_an_openai_key_is_never_borrowed_for_meta() -> None:
-    """Two vendors' keys in one .env is the ordinary case once both exist. A
-    provider that fell back to the other's variable would send a spending
-    credential to a third party, so the absence of its own key is a refusal."""
+    """Two vendors' keys in one .env is the ordinary case once both exist."""
     with pytest.raises(LLMError, match="META_API_KEY"):
         MetaProvider(settings=build_settings(openai_api_key=SecretStr("sk-openai-test")))
 
@@ -120,9 +100,7 @@ def test_the_endpoint_is_meta_s_documented_one() -> None:
 
 
 async def test_every_call_carries_the_configured_reasoning_effort() -> None:
-    """Measured on a real key before this existed: with no effort sent, Muse
-    Wonder spent 798 of an 800-token cap reasoning and returned no text at all.
-    The cap counts reasoning, so the effort is what leaves room for an answer."""
+    """Measured on a real key before this existed: with no effort sent."""
     seen: dict[str, Any] = {}
 
     def answer(request: httpx.Request) -> httpx.Response:
@@ -147,15 +125,12 @@ def test_the_default_effort_is_the_one_that_was_measured_to_fit() -> None:
 
 
 def test_an_effort_meta_refuses_is_refused_at_configuration() -> None:
-    """``none`` is a value Meta's documentation lists and Muse Wonder answers
-    with a 400. Refused at boot, by name, rather than on the first question."""
+    """``none`` is a value Meta's documentation lists and Muse Wonder answers with a 400."""
     with pytest.raises(ValidationError, match="meta_reasoning_effort"):
         build_settings(meta_reasoning_effort="none")
 
 
-# ---------------------------------------------------------------------------
-# From configuration to the ledger
-# ---------------------------------------------------------------------------
+# --- From configuration to the ledger ---
 
 
 @pytest.fixture
@@ -232,22 +207,10 @@ async def test_llm_providers_meta_reaches_meta_and_the_ledger_names_it(
     meta_wire: list[httpx.Request],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """``LLM_PROVIDERS=meta`` → registry → Meta's endpoint → a ledger row.
-
-    Marked ``live_provider`` because the front door obtains a non-stub provider,
-    which the session guard otherwise refuses (B-040). No money is at risk: every
-    client built during the test answers from ``meta_wire`` and nothing leaves
-    the process.
-
-    Both keys are configured on purpose, so the header assertion also proves
-    which one travels.
-    """
+    """``LLM_PROVIDERS=meta`` → registry → Meta's endpoint → a ledger row."""
     org_id = await _org(migrated_database)
     settings = meta_settings(openai_api_key=SecretStr("sk-openai-test"))
-    # The registry's factory builds the provider from process settings, exactly
-    # as a deployment does — which on a developer's machine means their .env and
-    # their real key. Pointed at this test's settings, so what is asserted below
-    # is the fixture's key and the result is the same on CI as locally.
+    # The registry's factory builds the provider from process settings.
     monkeypatch.setattr(meta_module, "get_settings", lambda: settings)
 
     registry.clear_provider_cache()
@@ -282,6 +245,5 @@ async def test_llm_providers_meta_reaches_meta_and_the_ledger_names_it(
         500,
         600,
     )
-    # 1000 x $4 + 500 x $20 per million. The cached share is recorded and not yet
-    # discounted, as D-067 decided for every provider.
+    # 1000 x $4 + 500 x $20 per million.
     assert row["cost_usd"] == Decimal("0.014")

@@ -1,8 +1,4 @@
-"""Which backend a deployment gets, and which one it is refused.
-
-DECISIONS D-001 promises that a production image cannot fall back to the
-development backend. That promise is worth exactly as much as this file.
-"""
+"""Which backend a deployment gets, and which one it is refused."""
 
 from __future__ import annotations
 
@@ -49,15 +45,7 @@ def test_a_production_process_refuses_to_boot_with_it() -> None:
 
 
 def test_key_vault_now_exists_and_says_what_it_still_needs() -> None:
-    """This test used to assert the placeholder that said *"arrives in WP12.2"*.
-
-    WP12.2 is where it arrived, so the old assertion would now pass only if the
-    backend were still missing. Replaced rather than deleted: what is worth
-    holding is that choosing this backend without configuring it refuses at build
-    time and names the variable, instead of constructing a client that fails
-    later on a request path. The provider's own behaviour is in
-    `tests/secrets/test_keyvault.py`.
-    """
+    """This test used to assert the placeholder that said "arrives in WP12.2"."""
     with pytest.raises(RuntimeError, match="KEY_VAULT_URL"):
         build_secrets_provider(_settings(secrets_backend="keyvault"))
 

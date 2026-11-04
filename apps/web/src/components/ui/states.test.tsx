@@ -6,21 +6,13 @@ import { EmptyState } from "./empty-state";
 import { Pending } from "./pending";
 import { SkeletonList } from "./skeleton";
 
-/**
- * The three waiting/empty primitives (D-049).
- *
- * What is asserted here is the **rules**, not the pixels: a skeleton announces
- * itself once rather than per row, an empty state carries exactly one action,
- * and a pending word is a live region. Those are the parts a future change can
- * break without anything looking wrong.
- */
+/** The three waiting/empty primitives (D-049). */
 
 describe("<SkeletonList />", () => {
   it("announces itself once, not once per row", () => {
     render(<SkeletonList rows={5} label="Loading members" />);
 
-    // One label for the whole thing. Eight anonymous boxes read out in sequence
-    // is worse than silence.
+    // One label for the whole thing.
     expect(screen.getByRole("status")).toHaveTextContent("Loading members");
     expect(screen.getAllByRole("status")).toHaveLength(1);
   });
@@ -51,11 +43,7 @@ describe("<EmptyState />", () => {
   });
 
   it("can carry a sentence instead of a control, for someone who may not act", () => {
-    /**
-     * B-008's rule at the primitive: a Reader is told **who** can act rather
-     * than shown a control the API would refuse. Never a disabled button —
-     * that looks operable and is not.
-     */
+    /** B-008's rule at the primitive: a Reader is told who can act rather than shown a... */
     render(
       <EmptyState title="No databases registered" action={<span>An Admin can register one.</span>}>
         Once one is registered, this organization can ask questions of it.

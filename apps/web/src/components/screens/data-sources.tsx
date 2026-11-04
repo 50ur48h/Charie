@@ -1,26 +1,6 @@
 "use client";
 
-/**
- * Registering the databases an organization wants analysed (plan WP3.4).
- *
- * This is the one screen in the product where a customer's database password is
- * typed, so three rules shape it rather than decorate it:
- *
- *   1. The password is a `type="password"` field, it travels in a POST body,
- *      and it is cleared the moment the submit resolves — including when the
- *      submit failed. A field that keeps its value after an error is friendlier
- *      and leaves a credential sitting in a live component for as long as the
- *      tab is open, which is the trade this screen declines.
- *   2. Nothing reads it back. The API has no field that could return one, so
- *      what a registered source shows is `username_last4` and `host_display`.
- *   3. A Reader is not shown controls they cannot use (B-008). The API refuses
- *      and audits them anyway; offering the button teaches people the product
- *      is broken rather than that they lack permission.
- *
- * The result of a test is rendered as three separate facts, because merging
- * them would be a lie: *reachable* is not *read-only*, and *encrypted* is not
- * *verified* — `require` encrypts without checking any certificate (B-013).
- */
+/** Registering the databases an organization wants analysed (plan WP3.4). */
 
 import {
   BookMarked,
@@ -208,8 +188,7 @@ function Choice({
 function Result({ result }: { result: TestResult }) {
   const proven = result.readonly_verified;
   return (
-    // A failed check is a normal outcome with a next step, not an alarm: the
-    // same layout as a pass, tinted differently.
+    // A failed check is a normal outcome with a next step, not an alarm: the same layout as a pass.
     <div
       className={cn(
         "animate-fade-up rounded-md px-4 py-3.5 text-[13.5px]",
@@ -261,22 +240,16 @@ export function DataSources({ orgId, role }: { orgId: string; role: string | nul
   const session = useSession();
   const api = useMemo(() => createApi(session.getToken), [session.getToken]);
 
-  // Unknown role means no admin controls. Failing closed costs an Admin one
-  // page load; failing open shows buttons to people the API will refuse.
+  // Unknown role means no admin controls.
   const isAdmin = role === "admin";
-  // Reading a database into the catalog is Contributor work: it changes nothing
-  // in the customer's database and nothing about who may see what.
+  // Reading a database into the catalog is Contributor work.
   const canRefresh = isAdmin || role === "contributor";
 
   const [sources, setSources] = useState<DataSource[] | null>(null);
-  //: Which database this organization answers questions from (D-045). `null` is
-  //: "not loaded yet"; a loaded value with a null id is "no Admin has chosen",
-  //: and the two are different claims — the second is worth telling a person.
+  // : Which database this organization answers questions from (D-045).
   const [active, setActive] = useState<ActiveDataSource | null>(null);
   const [error, setError] = useState<string | null>(null);
-  //: Where the current error belongs: a source's id, "register", or null for
-  //: one that belongs to the whole screen. It renders beside the action that
-  //: earned it, so a refused registration is read next to the form.
+  // : Where the current error belongs: a source's id, "register", or null for.
   const [errorAt, setErrorAt] = useState<string | null>(null);
   const [results, setResults] = useState<Record<string, TestResult>>({});
   const [catalogNotes, setCatalogNotes] = useState<Record<string, string>>({});
@@ -295,9 +268,7 @@ export function DataSources({ orgId, role }: { orgId: string; role: string | nul
   }, [api, orgId]);
 
   useEffect(() => {
-    // Guarded so a slow response cannot write into an unmounted screen. Named
-    // `alive` rather than `active`, which is now the chosen data source above —
-    // two things called `active` in one component is a bug waiting for a reader.
+    // Guarded so a slow response cannot write into an unmounted screen.
     let alive = true;
     void (async () => {
       try {
@@ -317,14 +288,7 @@ export function DataSources({ orgId, role }: { orgId: string; role: string | nul
     };
   }, [api, orgId]);
 
-  /**
-   * What is happening, and to which source, while a one-shot request is out.
-   *
-   * These operations report nothing while they run — they are single requests
-   * that return once — so what is shown is a word and an indeterminate bar, and
-   * then the API's own result sentence. Giving them steps would mean writing
-   * the steps here, which is what D-048 refuses.
-   */
+  /** What is happening, and to which source, while a one-shot request is out. */
   const [pending, setPending] = useState<{ id: string; what: string } | null>(null);
 
   const run = async (
@@ -340,8 +304,7 @@ export function DataSources({ orgId, role }: { orgId: string; role: string | nul
       await action();
       await load();
     } catch (cause) {
-      // The API's own words. "TLS mode 'prefer' allows an unencrypted
-      // connection…" names the fix; "422" does not.
+      // The API's own words. "TLS mode 'prefer' allows an unencrypted connection…" names the fix.
       setError(cause instanceof Error ? cause.message : "That did not work");
       setErrorAt(anchor);
     } finally {
@@ -368,8 +331,7 @@ export function DataSources({ orgId, role }: { orgId: string; role: string | nul
           });
           setDraft(EMPTY);
         } finally {
-          // Whatever happened. A rejected registration is exactly when a person
-          // walks away from the tab, and the password should not still be here.
+          // Whatever happened.
           setDraft((current) => ({ ...current, password: "" }));
         }
       },
@@ -435,8 +397,7 @@ export function DataSources({ orgId, role }: { orgId: string; role: string | nul
   const remove = (source: DataSource) =>
     void run(() => api.removeDataSource(orgId, source.id), undefined, source.id);
 
-  //: `null` while still loading, so nothing claims "no database is chosen"
-  //: before the answer has arrived.
+  // : `null` while still loading, so nothing claims "no database is chosen".
   const chosenId = active?.data_source_id ?? null;
 
   const failure = (message: string) => (
@@ -447,9 +408,7 @@ export function DataSources({ orgId, role }: { orgId: string; role: string | nul
 
   return (
     <div className="grid grid-cols-[minmax(0,1fr)] gap-5">
-      {/* Which database answers questions, said once at the top rather than
-          inferred from a badge further down. A member cannot change it and
-          still needs to know what their answers are drawn from. */}
+      {/* Which database answers questions. */}
       {active !== null &&
         (chosenId === null ? (
           <Callout tone="warn" icon={<TriangleAlert />}>
@@ -488,8 +447,7 @@ export function DataSources({ orgId, role }: { orgId: string; role: string | nul
         <EmptyState
           icon={<Database />}
           title="No databases registered"
-          /* The Reader gets the sentence, not a control the API would refuse
-             (B-008). Never a disabled button: it looks operable and is not. */
+          /* The Reader gets the sentence, not a control the API would refuse (B-008). */
           action={isAdmin ? undefined : <span>An Admin can register one.</span>}
         >
           {isAdmin
@@ -538,9 +496,7 @@ export function DataSources({ orgId, role }: { orgId: string; role: string | nul
                               Catalog
                             </Link>
                           </Button>
-                          {/* Admin only, because everything behind it is: an
-                              accepted definition constrains the SQL this
-                              platform will run. */}
+                          {/* Admin only, because everything behind it is. */}
                           {isAdmin && (
                             <Button asChild variant="ghost" size="sm">
                               <Link href={`/orgs/${orgId}/data-sources/${source.id}/definitions`}>
@@ -560,14 +516,11 @@ export function DataSources({ orgId, role }: { orgId: string; role: string | nul
                       <Badge tone={STATUS_TONES[source.status] ?? "neutral"}>
                         {statusWord(source)}
                       </Badge>
-                      {/* The mode, not a tick: `require` encrypts and verifies
-                          nothing, and a green shield would say otherwise. */}
+                      {/* The mode, not a tick: `require` encrypts and verifies nothing. */}
                       <Badge tone={source.tls_mode === "prefer" ? "peach" : "lilac"}>
                         TLS: {source.tls_mode}
                       </Badge>
-                      {/* A word, not a colour: design.md forbids colour carrying
-                          meaning alone, and this is the one badge here that says
-                          what the product will actually do. */}
+                      {/* A word, not a colour: design.md forbids colour carrying meaning alone. */}
                       {chosen && (
                         <Badge tone="mint">
                           <MessageSquareText aria-hidden="true" className="size-3" />
@@ -619,10 +572,7 @@ export function DataSources({ orgId, role }: { orgId: string; role: string | nul
 
                 {(canRefresh || isAdmin) && (
                   <div className="flex flex-wrap items-center gap-2 border-t border-border-soft bg-surface-2/40 px-5 py-3 sm:px-6">
-                    {/* The choice D-045 moved here. Offered only on a source
-                        that is not already the chosen one, so the control's
-                        word always matches what pressing it does — and the
-                        chosen source gets the honest opposite instead. */}
+                    {/* The choice D-045 moved here. */}
                     {isAdmin &&
                       (chosen ? (
                         <Button size="sm" disabled={busy} onClick={() => choose(null, source)}>

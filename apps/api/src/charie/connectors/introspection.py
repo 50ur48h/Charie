@@ -1,40 +1,4 @@
-"""The only SQL this product runs before the DAL exists.
-
-Almost every statement here is a constant, and the values that vary are bound
-parameters — schema names, passed to the driver and never interpolated — so
-there is no path from a request to the text of a query.
-
-The exception is the sampling pair at the bottom of the file (WP4.2), which
-interpolates *identifiers*, because no dialect can bind one: `SELECT * FROM $1`
-is not a thing. Those two functions carry their own rules, written out where
-they are defined. They are the only place in this module where a statement is
-assembled, and keeping them here rather than in the profiler is deliberate: the
-quoting is then subject to the same review as everything else that may declare
-SQL runnable.
-
-That is why this module holds a ``PolicyGrant``: it is a validator in the sense
-that matters, by construction rather than by inspection. The DAL's real
-validator joins it in Phase 5 (architecture Part 7.5), and these templates keep
-running exactly as they do now.
-
-Metadata comes from ``pg_catalog`` and from ``sys.*`` rather than from
-``information_schema``: those views are faster, they carry comments and primary
-keys without extra joins, and they do not hide objects behind privilege filters
-in ways that vary by version.
-
-**Both dialects live in this one module, and that is the point.** The grant is
-held by a module name, so a second introspection module would mean a third entry
-on ``SANCTIONED_VALIDATORS`` — widening the list of things allowed to declare SQL
-runnable in order to add a *file*. One module keeps that list at two names, and
-keeps "every statement this product runs before Phase 5" a single thing to read.
-
-The two halves differ in one visible way. Postgres filters by schema in SQL with
-a bound array; T-SQL has no array parameter, and building an ``IN`` list would
-mean interpolating names into a statement, which nothing here will do. So the
-T-SQL metadata templates take no parameters at all and the SQL Server connector
-filters in Python. Slightly more data crosses the wire, and no *name* is ever
-put into a metadata statement.
-"""
+"""The only SQL this product runs before the DAL exists."""
 
 from __future__ import annotations
 
@@ -76,14 +40,10 @@ _GRANT = PolicyGrant(__name__)
 
 POSTGRES = "postgres"
 
-#: sqlglot's name for the SQL Server dialect, and the one Phase 5 will transpile
-#: to. "mssql" is the *engine* in `data_sources`; "tsql" is the language.
+#: sqlglot's name for the SQL Server dialect, and the one Phase 5 will transpile to.
 TSQL = "tsql"
 
-#: Written out rather than built from a constant: every statement in this module
-#: is a literal a reader can check against the engine's documentation, and an
-#: f-string in a SQL context is the habit this codebase refuses even when the
-#: interpolated value is its own.
+#: Written out rather than built from a constant.
 _PG_SCHEMAS = """
 SELECT n.nspname AS schema_name
 FROM pg_namespace n
@@ -156,9 +116,7 @@ WHERE con.contype = 'f'
 ORDER BY fn.nspname, fc.relname, con.conname
 """
 
-#: One row of privilege facts about the credentials we were given. Nothing here
-#: writes, and nothing here trusts our own session settings: it asks the
-#: database what this *role* is allowed to do (architecture Part 7.5).
+#: One row of privilege facts about the credentials we were given.
 _PG_READONLY_EVIDENCE = """
 SELECT current_user AS role_name,
        version() AS server_version,
@@ -183,9 +141,7 @@ SELECT current_user AS role_name,
              OR has_table_privilege(c.oid, 'TRUNCATE'))) AS writable_tables
 """
 
-#: Whether *this* connection is encrypted, according to the server rather than
-#: according to the driver we configured (B-013). Restricted to our own backend,
-#: which every role may see regardless of privileges.
+#: Whether this connection is encrypted.
 _PG_TLS_STATUS = """
 SELECT s.ssl AS encrypted,
        s.version AS tls_version,
@@ -194,24 +150,15 @@ FROM pg_stat_ssl s
 WHERE s.pid = pg_backend_pid()
 """
 
-#: A fixed name, so the probe below needs no interpolation of any kind. It is
-#: created inside a transaction that is always rolled back, and in practice it
-#: is never created at all — that is the point of running it.
+#: A fixed name, so the probe below needs no interpolation of any kind.
 READONLY_PROBE_TABLE = "charie_readonly_probe"
 
 _PG_WRITE_PROBE = f"CREATE TABLE {READONLY_PROBE_TABLE} (probe integer)"
 
 
-# ---------------------------------------------------------------------------
-# SQL Server (WP3.3)
-#
-# No parameters anywhere: see the module docstring. Every filter that Postgres
-# expresses with a bound array is done by the connector afterwards.
-# ---------------------------------------------------------------------------
+# --- SQL Server (WP3.3) ---
 
-#: The schemas SQL Server creates for its own fixed database roles. They are
-#: never a customer's data, and listing them would put twelve empty names in
-#: front of every user of the catalog browser.
+#: The schemas SQL Server creates for its own fixed database roles.
 _TSQL_SCHEMAS = """
 SELECT s.name AS schema_name
 FROM sys.schemas s
@@ -223,8 +170,7 @@ WHERE s.name NOT IN (
 ORDER BY s.name
 """
 
-#: MS_Description is the convention SSMS writes table and column comments under,
-#: and the only thing resembling COMMENT ON in this engine.
+#: MS_Description is the convention SSMS writes table and column comments under.
 _TSQL_TABLES = """
 SELECT SCHEMA_NAME(o.schema_id) AS schema_name,
        o.name AS table_name,
@@ -243,10 +189,7 @@ WHERE o.type IN ('U', 'V')
 ORDER BY schema_name, table_name
 """
 
-#: The type is assembled to read like a declaration — `varchar(50)`, not
-#: `varchar` with a length hidden in another column — because that string is what
-#: Phase 4's catalog shows and what Phase 5 reasons about. nvarchar and nchar
-#: store max_length in bytes, hence the halving; -1 means (max).
+#: The type is assembled to read like a declaration — `varchar(50)`.
 _TSQL_COLUMNS = """
 SELECT SCHEMA_NAME(o.schema_id) AS schema_name,
        o.name AS table_name,
@@ -288,9 +231,7 @@ WHERE o.type IN ('U', 'V')
 ORDER BY schema_name, table_name, ordinal
 """
 
-#: One row per key *column*, in key order. Postgres aggregates into arrays with
-#: array_agg; T-SQL's equivalents are version-dependent and the connector has to
-#: group the rows anyway, so this returns the rows and lets it.
+#: One row per key column, in key order.
 _TSQL_FOREIGN_KEYS = """
 SELECT fk.name AS constraint_name,
        SCHEMA_NAME(pt.schema_id) AS from_schema,
@@ -311,16 +252,7 @@ JOIN sys.columns rc ON rc.object_id = fkc.referenced_object_id
 ORDER BY from_schema, from_table, constraint_name, key_ordinal
 """
 
-#: The same question the Postgres template asks, in this engine's vocabulary:
-#: what may this *login* do, according to the server rather than to us.
-#:
-#: The product version is assembled rather than taken from @@VERSION, which also
-#: names the host operating system and build — detail that would end up in an
-#: API response for no benefit.
-#:
-#: COALESCE around every membership test: IS_ROLEMEMBER and IS_SRVROLEMEMBER
-#: return NULL for a role that does not exist or a principal they cannot resolve,
-#: and NULL read as "not a member" is exactly the wrong way round.
+#: The same question the Postgres template asks, in this engine's vocabulary.
 _TSQL_READONLY_EVIDENCE = """
 SELECT USER_NAME() AS role_name,
        CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(128)) AS product_version,
@@ -347,10 +279,7 @@ SELECT USER_NAME() AS role_name,
                     'OBJECT', 'ALTER') = 1)) AS writable_tables
 """
 
-#: Unlike pg_stat_ssl, this view needs VIEW SERVER STATE — a permission a
-#: genuinely read-only login will not have. The connector treats an error here as
-#: "the server would not say" and falls back to what the driver was told to
-#: demand, which it labels as such.
+#: Unlike pg_stat_ssl, this view needs VIEW SERVER STATE.
 _TSQL_TLS_STATUS = """
 SELECT c.encrypt_option
 FROM sys.dm_exec_connections c
@@ -395,13 +324,7 @@ def pg_tls_status() -> ValidatedQuery:
 
 
 def pg_write_probe_sql() -> str:
-    """The one statement in this codebase that *tries* to write, and must fail.
-
-    Returned as text rather than as a ``ValidatedQuery`` on purpose: it is not a
-    query, it is an experiment, and the connector runs it through a separate path
-    that always rolls back. Giving it the validated type would make the type mean
-    two different things.
-    """
+    """The one statement in this codebase that tries to write, and must fail."""
     return _PG_WRITE_PROBE
 
 
@@ -438,29 +361,7 @@ def tsql_write_probe_sql() -> str:
     return _TSQL_WRITE_PROBE
 
 
-# ---------------------------------------------------------------------------
-# Sampling, for the profiler (WP4.2)
-#
-# The one place in this module where a statement is not a constant, and the
-# reason is unavoidable: an identifier cannot be a bound parameter in any SQL
-# dialect. `SELECT * FROM $1` is not a thing.
-#
-# So the rules are tighter here than anywhere else, and they are three:
-#
-#   1. The identifiers come from the *engine's own catalog*, read by the
-#      templates above. They are not user input and never have been — the only
-#      thing a person chooses is which data source to profile.
-#   2. Every one is quoted by the function below, which doubles the closing
-#      quote character. That is the complete escaping rule for a quoted
-#      identifier in both dialects, and `test_a_hostile_identifier_is_quoted`
-#      holds it to that with names built to break out.
-#   3. Row limits stay bound parameters, because they can be.
-#
-# The alternative — reading pg_stats and DBCC SHOW_STATISTICS instead of
-# sampling — needs no identifiers at all, and was rejected: those are whatever
-# ANALYZE last left behind, they need privileges a read-only login does not
-# have on SQL Server, and architecture Part 5.2 asks for a sample.
-# ---------------------------------------------------------------------------
+# --- Sampling, for the profiler (WP4.2) ---
 
 
 def quote_pg(identifier: str) -> str:
@@ -486,16 +387,7 @@ def _stats_projection(quote: Callable[[str], str], columns: Sequence[str]) -> st
 
 
 def pg_column_stats(schema: str, table: str, columns: Sequence[str]) -> ValidatedQuery:
-    """Exact row, non-null and distinct counts for every column, in one scan.
-
-    Used by relationship inference (D-050), which cannot work from the
-    profiler's sample: that reads the *first* n rows and counts distinct values
-    within them, which is a floor rather than a fact. Uniqueness is a claim about
-    every row, so it takes a query that reads every row.
-
-    One statement per table rather than one per column, because the scan is the
-    cost and a wide aggregate pays it once.
-    """
+    """Exact row, non-null and distinct counts for every column, in one scan."""
     relation = f"{quote_pg(schema)}.{quote_pg(table)}"
     projection = _stats_projection(quote_pg, columns)
     return ValidatedQuery(
@@ -525,24 +417,7 @@ def _orphan_sql(
     parent_table: str,
     parent_column: str,
 ) -> str:
-    """How many of the child's **distinct** values the parent does not contain.
-
-    **`NOT EXISTS`, never `NOT IN`.** `NOT IN` against a subquery holding a
-    single null is false for every row, so a parent column with one null would
-    report perfect containment for a child that has none — inventing a key out
-    of a null. The two spellings look equivalent and are not.
-
-    **Distinct, not every row, and it is the same claim.** Every non-null child
-    value has a match exactly when every *distinct* non-null child value does.
-    The cost is not the same: `fact_sale_line.outlet_key` is 471,786 rows and
-    **five** distinct values, so the row form asked the parent 471,786 questions
-    to learn what five answered. That is why the first live run measured ten
-    candidates in four minutes and never reached the join it was built for.
-
-    The count returned is therefore of unmatched *values*, not unmatched rows —
-    which is what "is this column contained in that one" actually asks. The row
-    count stands behind it in the evidence as `child_non_null`.
-    """
+    """How many of the child's distinct values the parent does not contain."""
     child = f"{quote(child_schema)}.{quote(child_table)}"
     parent = f"{quote(parent_schema)}.{quote(parent_table)}"
     c_col, p_col = quote(child_column), quote(parent_column)
@@ -605,13 +480,7 @@ def tsql_orphan_count(
 
 
 def pg_sample(schema: str, table: str, columns: Sequence[str], limit: int) -> ValidatedQuery:
-    """Up to ``limit`` rows of the named columns.
-
-    No ORDER BY: ordering a sample means sorting the table, which is the one
-    thing a bounded profile must not do to somebody's production database. The
-    consequence — that this is the *first* n rows rather than a random n — is
-    recorded honestly by the profiler rather than dressed up.
-    """
+    """Up to ``limit`` rows of the named columns."""
     projection = ", ".join(quote_pg(column) for column in columns)
     relation = f"{quote_pg(schema)}.{quote_pg(table)}"
     return ValidatedQuery(
@@ -623,18 +492,7 @@ def pg_sample(schema: str, table: str, columns: Sequence[str], limit: int) -> Va
 
 
 def pg_ranges(schema: str, table: str, columns: Sequence[str]) -> ValidatedQuery:
-    """The true low and high of each named column, from the engine (**B-051**).
-
-    One aggregate over the whole table, not over a sample. `pg_sample` returns
-    the *first* n rows by design — it must not sort somebody's production
-    table — so a range taken from it is the range of the oldest rows, and the
-    demo catalog duly recorded orders as ending sixteen months before they do.
-
-    One query per table rather than per column, so the cost is the same order as
-    the sample beside it. The caller bounds it with the connector's own timeout
-    and **omits the range when that runs out**: an absent figure is safe and a
-    wrong one is not.
-    """
+    """The true low and high of each named column, from the engine (B-051)."""
     projection = ", ".join(
         f"MIN({quote_pg(column)}), MAX({quote_pg(column)})" for column in columns
     )
@@ -671,13 +529,7 @@ def tsql_sample(schema: str, table: str, columns: Sequence[str], limit: int) -> 
     )
 
 
-#: Row counts as the engine already estimates them — no scan, and no identifier
-#: interpolation, because these ask about every table at once and the profiler
-#: looks up the one it wants.
-#:
-#: PostgreSQL writes ``reltuples = -1`` for a table that has never been analysed,
-#: meaning *unknown*. Clamping that to zero would turn "we do not know" into "it
-#: is empty", which a table card would then state as fact, so it stays NULL.
+#: Row counts as the engine already estimates them — no scan, and no identifier interpolation.
 _PG_ROW_ESTIMATES = """
 SELECT n.nspname AS schema_name,
        c.relname AS table_name,
@@ -688,8 +540,7 @@ WHERE c.relkind IN ('r', 'p', 'm')
   AND n.nspname = ANY($1::text[])
 """
 
-#: sys.partitions is visible to a login that may read the table, unlike
-#: dm_db_partition_stats, which needs VIEW DATABASE STATE.
+#: sys.partitions is visible to a login that may read the table, unlike dm_db_partition_stats.
 _TSQL_ROW_ESTIMATES = """
 SELECT SCHEMA_NAME(o.schema_id) AS schema_name,
        o.name AS table_name,

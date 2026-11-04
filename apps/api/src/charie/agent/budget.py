@@ -1,30 +1,4 @@
-"""What a run is allowed to spend, and who says so (architecture 4.4).
-
-Five ceilings, from 4.4's "loop-safety" paragraph: **8 iterations, 10 queries,
-20 LLM calls, 150k tokens, 240 seconds of wall clock**. They exist because an
-agent that can decide to keep going will, and the ways it goes wrong are not
-symmetrical — a loop that never ends costs money continuously and produces
-nothing, while a loop that stops early produces an answer with a caveat on it.
-
-**Budgets decrement in the controller, never in the prompt** (4.4, verbatim). A
-model told it has three calls left may believe it, forget it, or reason about it;
-none of those is a limit. Nothing here is ever rendered into a message — the loop
-asks this object whether it may continue, and the model is not consulted.
-
-**Exhaustion is an ending, not an error.** Reaching a ceiling means the run
-finalizes with what it has and says the budget stopped it — the same distinction
-WP7.2b drew between a refusal and a failure. `agent_runs` has carried a
-`budget_exhausted` status since revision 0012 for exactly this, and 10.3 has both
-`budget_warning` and `budget_exhausted` in its event vocabulary.
-
-**Overridable per organization, within reason.** 4.4 calls the defaults defaults,
-and 8.3 makes tiering and caps the cost levers. An override may *lower* a ceiling
-freely; raising one is allowed but bounded by `MAX_OVERRIDES`, so a
-misconfiguration cannot turn a bounded loop into an unbounded one. The store
-these overrides will come from is `agent_configs`, which does not exist yet
-(**B-038**); until it does they arrive as a mapping from configuration and the
-seam is the same.
-"""
+"""What a run is allowed to spend, and who says so (architecture 4.4)."""
 
 from __future__ import annotations
 
@@ -41,54 +15,17 @@ __all__ = [
 ]
 
 #: Architecture 4.4's defaults, named so the numbers are greppable from the doc.
-#:
-#: **Raised from 8 to 12 in WP13.30** (**D-068**), on a measurement rather than
-#: a feeling. A three-part question — revenue, waste, and a ranked action list —
-#: stopped at `iterations 8/8` with **30 seconds of its 240 still unspent**. Not
-#: time, and not the loop being wasteful: the loop's own work across the whole
-#: run was 0.5 seconds, and 72% of the wall clock was model latency.
-#:
-#: 12 is what that question needed, from the shape of what it did: one step per
-#: part, plus the steps it spent discovering that its results were truncated.
 DEFAULT_ITERATIONS = 12
 DEFAULT_QUERIES = 14
-#: Raised from 20 to 24 in WP9.1 (**D-028**), which is the move D-024 said would
-#: be needed the day a stage was added: *"if a stage is ever added to the loop …
-#: the iteration ceiling and the call ceiling stop fitting and one of them has to
-#: move."* The critic is that stage. The arithmetic, worst case:
-#:
-#:   12 iterations x 2 calls (plan + reflect)  24
-#:   compose, twice, because of the re-entry     2
-#:   critic,  twice, for the same reason         2
-#:   intake, when it is built (4.4 names it)     1
-#:                                              ---
-#:                                               29   against a ceiling of 32
-#:
-#: The three spare are the same headroom D-024 argued for and for the same
-#: reason: a run must be stopped by the ceiling that describes what it did — its
-#: iterations — and not by an accounting limit it hit first.
-#:
-#: **Raised with `iterations` in WP13.30, and it had to be** (D-068). Twelve
-#: iterations is 24 calls before a single compose, so leaving this at 24 would
-#: have moved the failure from the iteration ceiling to the call ceiling and
-#: fixed nothing — the exact mistake D-024 named and D-028 corrected once
-#: already. Every dimension that scales with iterations moves with it.
+#: Raised from 20 to 24 in WP9.1 (D-028).
+#: 29 against a ceiling of 32
 DEFAULT_LLM_CALLS = 32
-#: Scaled with the rest. The run that ran out spent 80,268 tokens over 17 calls;
-#: 29 calls at that rate is about 137,000, which 150,000 clears by too little to
-#: be a ceiling rather than a coin toss.
+#: Scaled with the rest. The run that ran out spent 80,268 tokens over 17 calls.
 DEFAULT_TOKENS = 225_000
-#: **Raised from 240 to 330 in the same change**, and for a reason worth stating
-#: plainly: the run above was at 210 seconds when its steps ran out, so 12 steps
-#: at the observed ~26 seconds each needs about 320. Raising `iterations` alone
-#: would have moved the failure from one ceiling to the other and looked like no
-#: fix at all — which is exactly what the 75% wall warning made it look like the
-#: first time (D-068).
+#: Raised from 240 to 330 in the same change, and for a reason worth stating plainly.
 DEFAULT_WALL_SECONDS = 330.0
 
-#: How far an organization may raise a ceiling. Lowering is unrestricted — a
-#: tenant that wants cheaper answers should get them — but raising is bounded,
-#: because the whole point of a hard cap is that no configuration turns it off.
+#: How far an organization may raise a ceiling.
 MAX_OVERRIDES: Mapping[str, float] = {
     "iterations": 24,
     "queries": 40,
@@ -97,20 +34,13 @@ MAX_OVERRIDES: Mapping[str, float] = {
     "wall_seconds": 900.0,
 }
 
-#: Fraction of a ceiling at which the trace says "getting close" (10.3's
-#: `budget_warning`). Emitted once per dimension: a warning that repeats every
-#: iteration is noise nobody reads by the third one.
+#: Fraction of a ceiling at which the trace says "getting close" (10.3's `budget_warning`).
 WARN_AT = 0.75
 
 
 @dataclass(frozen=True, slots=True)
 class Exhaustion:
-    """Which ceiling stopped the run, and how it reads to a person.
-
-    Carried rather than raised, because reaching a budget is a normal ending and
-    the loop finalizes on it — an exception would put an ordinary outcome on the
-    error path.
-    """
+    """Which ceiling stopped the run, and how it reads to a person."""
 
     dimension: str
     used: float
@@ -118,12 +48,7 @@ class Exhaustion:
 
     @property
     def reason(self) -> str:
-        """Plain words for the answer's caveat, not a metric name.
-
-        The person reading this asked a question and got a partial answer; what
-        they need to know is that the search stopped and why, not that
-        `llm_calls` reached 20.
-        """
+        """Plain words for the answer's caveat, not a metric name."""
         return {
             "iterations": "I reached the maximum number of research steps for one question.",
             "queries": "I reached the maximum number of queries I may run for one question.",
@@ -145,14 +70,7 @@ class Budget:
 
     @classmethod
     def from_overrides(cls, overrides: Mapping[str, object] | None) -> Budget:
-        """Defaults, adjusted by whatever an organization configured.
-
-        Unknown keys and unusable values are **ignored rather than raising**: this
-        is configuration, and a typo in one field must not stop a run that would
-        otherwise work. A value at or below the default is taken as given; one
-        above is clamped to `MAX_OVERRIDES` rather than refused, so the run
-        proceeds under a limit that still exists.
-        """
+        """Defaults, adjusted by whatever an organization configured."""
         if not overrides:
             return cls()
         values: dict[str, float] = {}
@@ -173,11 +91,7 @@ class Budget:
         )
 
     def as_json(self) -> dict[str, object]:
-        """What `agent_runs.budget` holds — the allowance this run was given.
-
-        Stored per run rather than looked up later, because a cap that changed
-        after the fact would make an old run's caveat unexplainable.
-        """
+        """What `agent_runs.budget` holds — the allowance this run was given."""
         return {
             "iterations": self.iterations,
             "queries": self.queries,
@@ -189,20 +103,14 @@ class Budget:
 
 @dataclass
 class BudgetState:
-    """What has been spent, and whether there is any left.
-
-    Mutable on purpose: this is the controller's counter, and one object is
-    incremented as the loop runs. It is checkpointed into `agent_runs.state` with
-    the rest of `ResearchState`, so an interrupted run can say how far it got.
-    """
+    """What has been spent, and whether there is any left."""
 
     budget: Budget = field(default_factory=Budget)
     iterations: int = 0
     queries: int = 0
     llm_calls: int = 0
     tokens: int = 0
-    #: Monotonic, because a wall-clock limit must not be moved by an NTP step or
-    #: a daylight-saving change mid-run.
+    #: Monotonic, because a wall-clock limit must not be moved by an NTP step or a...
     started_at: float = field(default_factory=time.monotonic)
     #: Dimensions already warned about, so the trace says it once.
     warned: set[str] = field(default_factory=set[str])
@@ -217,19 +125,12 @@ class BudgetState:
         self.queries += 1
 
     def spend_llm(self, tokens: int = 0) -> None:
-        """One model call and what it read. Counted together because they are
-        always spent together, and forgetting the second is how a token ceiling
-        silently stops being one."""
+        """One model call and what it read."""
         self.llm_calls += 1
         self.tokens += max(0, tokens)
 
     def exhausted(self, *, now: float | None = None) -> Exhaustion | None:
-        """The first ceiling reached, or None.
-
-        Checked **before** doing the next thing rather than after, so a run never
-        overshoots a cap it was told to respect. Order is deliberate: time first,
-        because it is the one the person waiting actually feels.
-        """
+        """The first ceiling reached, or None."""
         elapsed = self.elapsed(now=now)
         checks: tuple[tuple[str, float, float], ...] = (
             ("wall_seconds", elapsed, self.budget.wall_seconds),
@@ -244,11 +145,7 @@ class BudgetState:
         return None
 
     def approaching(self, *, now: float | None = None) -> str | None:
-        """A dimension newly past `WARN_AT`, once each.
-
-        For 10.3's `budget_warning`, which exists so a trace shows the run
-        tightening rather than stopping without warning.
-        """
+        """A dimension newly past `WARN_AT`, once each."""
         elapsed = self.elapsed(now=now)
         for dimension, used, limit in (
             ("wall_seconds", elapsed, self.budget.wall_seconds),

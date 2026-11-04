@@ -1,17 +1,4 @@
-"""Discovery against a real customer database (plan WP4.1).
-
-Two claims run through all of it. The catalog must describe the database
-*accurately* — every table, every column in its own order, and the joins that
-exist and only those. And a refresh that finds nothing must cost nothing, which
-is asserted at the row level rather than asserted about: the whole design of
-snapshots (DECISIONS D-012) turns on it being true.
-
-The fixture is ``isolated_customer_database``, not the seeded pizza one:
-catalog tests must not depend on ``make seed`` having been run, or they would
-run only on a developer's machine. Isolated because a crawl enumerates *every*
-table it can see, and the ordinary fixture shares a database with the platform's
-own schema.
-"""
+"""Discovery against a real customer database (plan WP4.1)."""
 
 from __future__ import annotations
 
@@ -57,13 +44,7 @@ async def platform(
 
 
 async def _org(migrated_database: URL) -> tuple[uuid.UUID, uuid.UUID]:
-    """An organization and the Admin who owns it, written straight in.
-
-    A real user rather than a null actor: registering and testing a data source
-    are things a person does, and the audit rows these tests provoke should name
-    one. Discovery itself accepts no actor — a scheduled refresh in a later phase
-    will have none — which is why only that call passes None.
-    """
+    """An organization and the Admin who owns it, written straight in."""
     org_id, user_id = uuid.uuid4(), uuid.uuid4()
     engine = create_async_engine(migrated_database)
     try:
@@ -93,12 +74,7 @@ async def _org(migrated_database: URL) -> tuple[uuid.UUID, uuid.UUID]:
 async def _registered(
     migrated_database: URL, customer: CustomerDatabase, *, verify: bool = True
 ) -> tuple[uuid.UUID, uuid.UUID]:
-    """An organization with the customer database registered, and verified.
-
-    Verification is not decoration here: discovery declines a data source whose
-    credentials were never proven read-only, so most of these tests would
-    otherwise be testing that refusal.
-    """
+    """An organization with the customer database registered, and verified."""
     org_id, user_id = await _org(migrated_database)
     view = await datasources.create_data_source(
         org_id=org_id,
@@ -150,9 +126,7 @@ async def _alter(customer: CustomerDatabase, statement: str) -> None:
         await engine.dispose()
 
 
-# ---------------------------------------------------------------------------
-# What a crawl finds
-# ---------------------------------------------------------------------------
+# --- What a crawl finds ---
 
 
 async def test_a_first_refresh_describes_the_whole_database(
@@ -207,12 +181,7 @@ async def test_columns_arrive_in_order_with_their_types_and_keys(
 async def test_the_declared_joins_are_recorded_and_the_absent_one_is_not(
     platform: URL, migrated_database: URL, isolated_customer_database: CustomerDatabase
 ) -> None:
-    """The assertion Phase 8 depends on, made at the catalog level.
-
-    An agent asked "which products sell best" must be told the question cannot
-    be answered here. That is only possible if the catalog records the absence
-    of a join faithfully instead of offering a plausible one.
-    """
+    """The assertion Phase 8 depends on, made at the catalog level."""
     org_id, data_source_id = await _registered(migrated_database, isolated_customer_database)
     await discovery.discover(org_id=org_id, actor_user_id=None, data_source_id=data_source_id)
 
@@ -232,19 +201,13 @@ async def test_the_declared_joins_are_recorded_and_the_absent_one_is_not(
     assert touching_products == [], "nothing links to products, and the catalog must say so"
 
 
-# ---------------------------------------------------------------------------
-# What a second crawl costs
-# ---------------------------------------------------------------------------
+# --- What a second crawl costs ---
 
 
 async def test_a_refresh_that_finds_no_change_writes_nothing(
     platform: URL, migrated_database: URL, isolated_customer_database: CustomerDatabase
 ) -> None:
-    """The property the whole snapshot design turns on (DECISIONS D-012).
-
-    Asserted by counting rows rather than by trusting the return value: "changed
-    is false" is what the code says, and the row counts are what happened.
-    """
+    """The property the whole snapshot design turns on (DECISIONS D-012)."""
     org_id, data_source_id = await _registered(migrated_database, isolated_customer_database)
     first = await discovery.discover(
         org_id=org_id, actor_user_id=None, data_source_id=data_source_id
@@ -284,8 +247,7 @@ async def test_a_changed_table_builds_a_new_snapshot_and_retires_the_old_one(
     shops = next(table for table in catalog.tables if table.table_name == "shops")
     assert "closed_on" in {column.name for column in shops.columns}
 
-    # The previous catalog is kept, not deleted: a run that started against it is
-    # entitled to finish against it.
+    # The previous catalog is kept, not deleted.
     engine = create_async_engine(platform)
     try:
         async with engine.begin() as connection:
@@ -306,8 +268,7 @@ async def test_a_changed_table_builds_a_new_snapshot_and_retires_the_old_one(
 async def test_a_dropped_table_counts_as_a_change(
     platform: URL, migrated_database: URL, isolated_customer_database: CustomerDatabase
 ) -> None:
-    """A hash comparison that only looked at tables it still finds would miss
-    this, and the catalog would keep describing something that is gone."""
+    """A hash comparison that only looked at tables it still finds would miss this."""
     org_id, data_source_id = await _registered(migrated_database, isolated_customer_database)
     await discovery.discover(org_id=org_id, actor_user_id=None, data_source_id=data_source_id)
 
@@ -321,9 +282,7 @@ async def test_a_dropped_table_counts_as_a_change(
     assert "products" not in {table.table_name for table in catalog.tables}
 
 
-# ---------------------------------------------------------------------------
-# What it refuses, and what it remembers
-# ---------------------------------------------------------------------------
+# --- What it refuses, and what it remembers ---
 
 
 async def test_an_unverified_data_source_is_declined_before_anything_is_opened(
@@ -346,13 +305,11 @@ async def test_an_unverified_data_source_is_declined_before_anything_is_opened(
 async def test_a_crawl_that_cannot_read_the_database_is_recorded_as_a_failure(
     platform: URL, migrated_database: URL, isolated_customer_database: CustomerDatabase
 ) -> None:
-    """ "The last refresh failed, and here is why" is a thing a screen must be
-    able to say — so a failure is a snapshot, not a lost exception."""
+    """ "The last refresh failed, and here is why" is a thing a screen must be able to say."""
     org_id, data_source_id = await _registered(migrated_database, isolated_customer_database)
     await discovery.discover(org_id=org_id, actor_user_id=None, data_source_id=data_source_id)
 
-    # Move it somewhere nothing answers, keeping the verification that lets
-    # discovery run at all.
+    # Move it somewhere nothing answers, keeping the verification that lets discovery run at all.
     engine = create_async_engine(migrated_database)
     try:
         async with engine.begin() as connection:
@@ -395,9 +352,7 @@ async def test_browsing_before_any_refresh_says_what_to_do(
         await browse.active_catalog(org_id, data_source_id)
 
 
-# ---------------------------------------------------------------------------
-# The hash itself
-# ---------------------------------------------------------------------------
+# --- The hash itself ---
 
 
 def _table(name: str = "orders", kind: str = "table", comment: str | None = None) -> TableRef:
@@ -426,8 +381,7 @@ def _column(
 
 
 def test_the_hash_does_not_depend_on_the_order_columns_arrive_in() -> None:
-    """Two crawls of one unchanged table must agree, and a driver is not obliged
-    to return rows in the same order twice."""
+    """Two crawls of one unchanged table must agree."""
     columns = [_column("id", ordinal=1), _column("total", ordinal=2, is_primary_key=False)]
 
     assert discovery.structural_hash(_table(), columns) == discovery.structural_hash(
@@ -461,28 +415,13 @@ def test_the_table_itself_is_in_the_hash() -> None:
     assert discovery.structural_hash(_table(comment="orders"), columns) != baseline
 
 
-# ---------------------------------------------------------------------------
-# Inference, on the path the product actually walks (D-050, B-145)
-# ---------------------------------------------------------------------------
+# --- Inference, on the path the product actually walks (D-050, B-145) ---
 
 
 async def test_an_undeclared_key_reaches_the_graph_the_planner_is_given(
     platform: URL, migrated_database: URL, undeclared_customer_database: CustomerDatabase
 ) -> None:
-    """**The reachability proof, not a proof that inference computes.**
-
-    `tests/catalog/test_inference.py` hands `infer_relationships` its arguments
-    directly, which is the one thing the product cannot do — and this repository
-    has shipped five capabilities that passed exactly that kind of test while
-    being reachable by nothing (AGENTS.md). So this asserts nothing about the
-    inference function. It calls `discover`, the way a refresh does, and then
-    asks `load_join_graph` — the function the runner calls before planning — and
-    the edge has to have survived every step in between: measurement, the
-    `kind="inferred"` write, the confidence filter, and the graph build.
-
-    If any link stops carrying it, this goes red rather than staying green over
-    a capability nothing reaches.
-    """
+    """The reachability proof, not a proof that inference computes."""
     org_id, data_source_id = await _registered(migrated_database, undeclared_customer_database)
 
     outcome = await discovery.discover(
@@ -503,14 +442,7 @@ async def test_an_undeclared_key_reaches_the_graph_the_planner_is_given(
 async def test_the_two_traps_do_not_become_joins(
     platform: URL, migrated_database: URL, undeclared_customer_database: CustomerDatabase
 ) -> None:
-    """Both halves of the owner's test, through the product's own path.
-
-    `map_item_key.item_key` and `dim_item.item_key` share a name and not one
-    value; `fact_sale.outlet_key` holds 1 to 5, which is inside `fact_transfer`'s
-    1 to 9 and inside every other dense range. An invented edge is worse than a
-    missing one — a missing edge refuses, an invented one answers, and the wrong
-    join returns a cartesian product rather than an error.
-    """
+    """Both halves of the owner's test, through the product's own path."""
     org_id, data_source_id = await _registered(migrated_database, undeclared_customer_database)
     await discovery.discover(org_id=org_id, actor_user_id=None, data_source_id=data_source_id)
 
@@ -524,12 +456,7 @@ async def test_the_two_traps_do_not_become_joins(
 async def test_the_stored_edge_carries_what_was_measured(
     platform: URL, migrated_database: URL, undeclared_customer_database: CustomerDatabase
 ) -> None:
-    """A wrong edge should be a question about numbers, not an argument.
-
-    `evidence` is written by discovery and read by nobody at runtime, which is
-    precisely the shape of B-100 and B-133 — so it is asserted here on the
-    stored row rather than on the value in flight.
-    """
+    """A wrong edge should be a question about numbers, not an argument."""
     org_id, data_source_id = await _registered(migrated_database, undeclared_customer_database)
     await discovery.discover(org_id=org_id, actor_user_id=None, data_source_id=data_source_id)
 

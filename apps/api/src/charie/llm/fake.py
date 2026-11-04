@@ -1,31 +1,4 @@
-"""A model that answers from a script, and remembers everything it was asked.
-
-This is the backbone of every agent test from Phase 7 and of the eval harness in
-Phase 9, which makes it the most-used module in this package and the one whose
-mistakes are hardest to see: a fake that is subtly non-deterministic turns a real
-regression into "the suite is flaky", and a fake whose failures are unhelpful
-turns a five-minute debug into an afternoon.
-
-So two rules shape it.
-
-**Determinism is structural, not a promise.** Nothing here reads a clock, a
-random number or the environment. The same requests in the same order always
-produce the same completions, and token counts come from the text rather than
-from a provider's arithmetic. A script with no ``times`` limit answers the same
-way however often it matches, so a retry cannot change an outcome.
-
-**Recording is the important half of the API** — the scripting half only has to
-be adequate. A test asserts on what the agent *asked*: that the SQL role saw the
-table card, that the critic was given the draft, that nothing was sent twice,
-that a repair carried the violation back. All of that reads ``calls``, so
-``RecordedCall`` keeps the whole request rather than a summary of it.
-
-**An unmatched request is a failure with an explanation.** The commonest way a
-test goes wrong here is a prompt that changed shape, so no script matched. That
-must not surface as a ``StopIteration`` or an empty string that fails three
-assertions later: it raises, naming the role, the model, what the scripts were
-looking for, and the tail of the prompt that arrived.
-"""
+"""A model that answers from a script, and remembers everything it was asked."""
 
 from __future__ import annotations
 
@@ -62,29 +35,16 @@ class NoScriptedResponseError(LLMError):
 
 @dataclass(frozen=True, slots=True)
 class Script:
-    """One scripted answer and the requests it applies to.
+    """One scripted answer and the requests it applies to."""
 
-    A script with no ``role`` and no ``contains`` matches everything, which is
-    the right default for a test that cares about one call. Both narrow it, and
-    they narrow it by *and*: role first because it is what a reader of the test
-    is thinking in, ``contains`` because prompt text is what distinguishes two
-    calls of the same role.
-    """
-
-    #: The reply text. A callable receives the request, for the rare case where a
-    #: fixed string cannot express the answer — it must stay a pure function of
-    #: the request, or determinism goes with it.
+    #: The reply text. A callable receives the request.
     respond: str | Callable[[LLMRequest], str] = ""
     role: Role | None = None
-    #: Matched against the whole prompt, case-sensitively. A substring rather than
-    #: a regex: tests are read far more often than they are written, and a
-    #: substring is the same thing to every reader.
+    #: Matched against the whole prompt, case-sensitively.
     contains: str | None = None
-    #: Raised instead of answering. For exercising retry, fallback and the
-    #: refusal paths — a provider that only ever succeeds tests half the system.
+    #: Raised instead of answering. For exercising retry, fallback and the refusal paths.
     raises: LLMError | None = None
-    #: How many times this script may match, or None for unlimited. Use it to
-    #: script a sequence: first call fails to follow the schema, second obeys.
+    #: How many times this script may match, or None for unlimited.
     times: int | None = None
     #: Overrides the token estimate, for tests about metering and cost.
     usage: Usage | None = None
@@ -98,12 +58,7 @@ class Script:
 
 @dataclass(frozen=True, slots=True)
 class RecordedCall:
-    """One call, kept whole.
-
-    The request rather than a summary: an assertion about a prompt is an
-    assertion about the exact text a real provider would have received, and a
-    summary is a second thing to keep in step with the first.
-    """
+    """One call, kept whole."""
 
     request: LLMRequest
     completion: Completion | None
@@ -132,16 +87,10 @@ class RecordedCall:
 
 @dataclass(eq=False)
 class FakeLLM:
-    """A provider whose answers are written in advance.
-
-    Satisfies ``LLMProvider`` in full, so anything that takes a provider takes
-    this one — including the metered front door, which is how tests get real
-    ``usage_ledger`` rows without a network.
-    """
+    """A provider whose answers are written in advance."""
 
     scripts: list[Script] = field(default_factory=list[Script])
-    #: Answered when no script matches. Left None on purpose: a fake that
-    #: cheerfully answers anything hides the prompt change that broke the test.
+    #: Answered when no script matches.
     default: str | None = None
     model_name: str = STUB_MODEL
 
@@ -183,12 +132,7 @@ class FakeLLM:
         contains: str | None = None,
         times: int | None = None,
     ) -> Self:
-        """Script a structured reply from an object rather than from a string.
-
-        Keeps the schema honest in the test itself: passing the pydantic model
-        the code expects means a test cannot script a shape the code could never
-        accept, which is the most convincing way for a fake to lie.
-        """
+        """Script a structured reply from an object rather than from a string."""
         text = (
             payload.model_dump_json()
             if isinstance(payload, BaseModel)
@@ -198,11 +142,7 @@ class FakeLLM:
 
     @classmethod
     def from_mapping(cls, entries: Sequence[Mapping[str, object]]) -> FakeLLM:
-        """Build from plain data — a fixture file in whatever format the caller
-        parsed. Deliberately format-agnostic: the eval harness of Phase 9 will
-        keep its scripts in YAML beside its cases, and this package should not
-        acquire a parser to accommodate that.
-        """
+        """Build from plain data — a fixture file in whatever format the caller parsed."""
         fake = cls()
         for entry in entries:
             respond = entry.get("respond", "")
@@ -229,11 +169,7 @@ class FakeLLM:
     def capabilities(self) -> ProviderCaps:
         return ProviderCaps(
             name="fake",
-            # False on purpose: the fake exercises the *harder* path, where the
-            # schema is rendered into the prompt and the reply has to be parsed
-            # and possibly repaired. A fake that claimed native structured output
-            # would leave the repair path — the one that actually goes wrong —
-            # untested in every suite that uses it.
+            # False on purpose: the fake exercises the harder path.
             supports_response_schema=False,
             is_stub=True,
         )
@@ -260,8 +196,7 @@ class FakeLLM:
                 output_tokens=estimate_tokens(text),
                 estimated=True,
             ),
-            # Fixed, not measured: a duration that varies is a duration a test
-            # cannot assert on, and this one never means anything anyway.
+            # Fixed, not measured: a duration that varies is a duration a test cannot assert on.
             latency_ms=0,
             finish_reason=script.finish_reason,
         )
@@ -269,9 +204,7 @@ class FakeLLM:
         return completion
 
     async def aclose(self) -> None:
-        """Nothing to close. Defined because the protocol says every caller owes
-        a provider this, and a fake that does not accept it would let a caller
-        forget."""
+        """Nothing to close. Defined because the protocol says every caller owes a provider this."""
 
     # -- recording ---------------------------------------------------------
 
@@ -314,11 +247,7 @@ class FakeLLM:
         return None
 
     def _unmatched_message(self, request: LLMRequest) -> str:
-        """The message a developer reads when a prompt changed shape.
-
-        It names what was asked and what was on offer, because "no scripted
-        response" on its own sends the reader to the wrong file.
-        """
+        """The message a developer reads when a prompt changed shape."""
         offers = (
             ", ".join(
                 f"[role={script.role or 'any'} contains={script.contains!r}]"

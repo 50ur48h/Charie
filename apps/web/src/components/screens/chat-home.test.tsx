@@ -126,12 +126,7 @@ describe("<ChatHome />", () => {
   });
 
   it("creates the thread, asks the question, then navigates to it", async () => {
-    /**
-     * **The reachability proof for the new home.** It asserts the three calls
-     * happen in order and that the person ends up in the thread — the whole
-     * flow the sidebar's "New chat" and the app's front door both lead to. A
-     * test of `send()` in isolation would prove none of it.
-     */
+    /** The reachability proof for the new home. */
     const calls = routeFetch();
 
     render(<ChatHome orgId="o1" />);
@@ -165,11 +160,7 @@ describe("<ChatHome />", () => {
   });
 
   it("keeps the draft and reuses the half-made thread when the question fails", async () => {
-    /**
-     * Navigating away on failure would throw away the text, which is the one
-     * thing a person cannot get back. And a retry must not leave a second empty
-     * chat behind, so the created thread is held and reused.
-     */
+    /** Navigating away on failure would throw away the text. */
     const calls = routeFetch({ askFails: true });
 
     render(<ChatHome orgId="o1" />);
@@ -192,13 +183,7 @@ describe("<ChatHome />", () => {
   });
 
   it("still asks when one database is registered and none is chosen", async () => {
-    /**
-     * **The screen must not refuse on the platform's behalf.** Gating purely on
-     * the Admin's choice told a lie: `resolve_data_source` resolves a single
-     * registered source perfectly well, so *"nothing to ask about"* would have
-     * been false, and the composer disabled for a question that would have been
-     * answered.
-     */
+    /** The screen must not refuse on the platform's behalf. */
     routeFetch({ chosen: NOTHING_CHOSEN, sources: [SOURCE] });
 
     render(<ChatHome orgId="o1" />);
@@ -208,15 +193,8 @@ describe("<ChatHome />", () => {
   });
 
   it("shows your question while it is sending, and takes it back if it fails", async () => {
-    /**
-     * **D-049.** Rendering the question immediately removes the blank moment
-     * between pressing Send and arriving in the thread — but anything shown
-     * before the server has confirmed it must look provisional, and must not
-     * harden into something that looks saved when the write did not happen.
-     */
+    /** D-049. */
     // The ask is held open, so the in-flight state can actually be observed.
-    // Against a stub that resolves in a microtask it exists for less than a
-    // frame, and asserting it would be a race rather than a check.
     let releaseAsk: ((value: Response) => void) | undefined;
     vi.stubGlobal(
       "fetch",
@@ -239,17 +217,14 @@ describe("<ChatHome />", () => {
     fireEvent.change(box, { target: { value: "how many orders are there?" } });
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
 
-    // Shown at once, said to be in flight rather than done, and the words are
-    // the ones the person typed.
+    // Shown at once, said to be in flight rather than done.
     expect(await screen.findByText("Sending your question…")).toBeInTheDocument();
     expect(screen.getAllByText("how many orders are there?").length).toBeGreaterThan(0);
 
     await waitFor(() => expect(releaseAsk).toBeDefined());
     releaseAsk?.(json({ detail: "the model is unavailable" }, 503));
 
-    // The send failed, so the provisional bubble goes and the reason takes its
-    // place. What must never happen is the question staying on screen looking
-    // stored when nothing stored it.
+    // The send failed, so the provisional bubble goes and the reason takes its place.
     expect(await screen.findByText(/the model is unavailable/)).toBeInTheDocument();
     expect(screen.queryByText("Sending your question…")).not.toBeInTheDocument();
     expect(box).toHaveValue("how many orders are there?");
@@ -285,8 +260,7 @@ describe("<ChatHome />", () => {
   });
 
   it("gives a Reader the same composer when a database is chosen", async () => {
-    // Architecture 6.2 grants asking to every role. A Reader who cannot ask is
-    // a broken product, not a tightened one.
+    // Architecture 6.2 grants asking to every role.
     role.value = "reader";
     routeFetch();
 

@@ -1,17 +1,6 @@
 "use client";
 
-/**
- * "How I worked this out" (design: `.a-sources`): the method, the definitions,
- * the findings and the queries behind them, and what it cost.
- *
- * **A citation opens.** Each finding lists the executions behind it, and each
- * one expands into the statement that ran and the rows it returned — the
- * product's central claim made checkable rather than asserted. A finding with a
- * single citation shows its query outright once the panel is open (D-047).
- *
- * The body stays mounted while closed (it only collapses), so opening it never
- * waits on a fetch it could have started earlier.
- */
+/** "How I worked this out" (design: `.a-sources`): the method, the definitions. */
 
 import { ChevronDown, ChevronRight, ListChecks } from "lucide-react";
 import { useState, type ReactNode } from "react";
@@ -59,13 +48,7 @@ function Citation({
   );
 }
 
-/**
- * The claims behind the reply, and the queries behind those.
- *
- * A single-shot run writes one finding whose statement *is* the answer, so the
- * statement is not repeated then. Cited findings are the evidence for this
- * answer; the rest are the investigation's working and live in the trace.
- */
+/** The claims behind the reply, and the queries behind those. */
 function Findings({
   orgId,
   runId,
@@ -119,12 +102,7 @@ function Findings({
   );
 }
 
-/**
- * What this organization's own definitions did to this answer (B-087).
- *
- * Silent when there was nothing to match; said when definitions existed and
- * the question reached none of them — the state nobody could otherwise see.
- */
+/** What this organization's own definitions did to this answer (B-087). */
 export function groundingLine(run: Run): string | null {
   const applied = run.definitions_applied ?? [];
   const available = run.definitions_available ?? 0;
@@ -133,13 +111,7 @@ export function groundingLine(run: Run): string | null {
   return null;
 }
 
-/**
- * What the question cost, beside the working that produced it.
- *
- * **Null means unpriced, never free**: a run holding a call the price table
- * does not cover reports no total rather than one that quietly omits it, and a
- * sub-cent run never reads as "$0.0000".
- */
+/** What the question cost, beside the working that produced it. */
 export function Cost({ run }: { run: Run }) {
   const usage = run.model_usage ?? {};
   const calls = usage.calls ?? 0;

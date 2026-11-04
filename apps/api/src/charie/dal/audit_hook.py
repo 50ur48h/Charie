@@ -1,32 +1,4 @@
-"""Recording what the DAL did (architecture Part 8.2, 10.1).
-
-Three kinds of thing happen when a statement is submitted, and all three are
-written down:
-
-* it **ran** — a row with what it read, how much came back, and how long;
-* it **failed** — the engine or the connection said no, and the sanitized reason;
-* it **was refused** — this service would not send it, with the violation code.
-
-The third is the one this module exists for. A query that never reached the
-database is invisible everywhere else: no engine log, no connection, no latency
-graph. If the only record of "something tried to read a denied column" is a log
-line that scrolled past, then the question architecture 8.2 promises to answer —
-*who accessed what, when, and was it sensitive* — has a hole in exactly the
-shape of an attack.
-
-Two rows are written per attempt, into two tables that answer different
-questions. ``query_executions`` is the operational record, read by an admin
-screen and by the agent's own trace. ``audit_log`` is the append-only trail the
-application role cannot rewrite, read when someone needs to be sure. They are
-written in one transaction: an action without a record, and a record of
-something that did not happen, are both worse than either alone.
-
-**Failing to record is not allowed to fail the query silently, or loudly.** If
-the platform database is unreachable, the answer the customer already has is
-still their answer — so this raises, and the caller decides. What the caller
-does not get is a way to skip it: ``dal.run`` is the entry point and it calls
-this on every path, including the ones that raise.
-"""
+"""Recording what the DAL did (architecture Part 8.2, 10.1)."""
 
 from __future__ import annotations
 
@@ -47,12 +19,10 @@ STATUS_OK = "ok"
 STATUS_ERROR = "error"
 STATUS_REFUSED = "refused"
 
-#: How many rows of a result are kept inline on the artifact row. The rest live
-#: in the store; this is what a screen or a critic reads without fetching a file.
+#: How many rows of a result are kept inline on the artifact row.
 SAMPLE_ROWS = 50
 
-#: What the audit trail calls each outcome. Prefixed like every other action, so
-#: `dal.*` is one filter.
+#: What the audit trail calls each outcome.
 ACTION_EXECUTED = "dal.query_executed"
 ACTION_FAILED = "dal.query_failed"
 ACTION_REFUSED = "dal.query_refused"
@@ -93,17 +63,14 @@ async def record_success(
             sensitive_accessed=execution.sensitive_accessed,
         )
         session.add(row)
-        # Flushed rather than committed: the artifact and the audit row need this
-        # row's id, and all three still land or fail together.
+        # Flushed rather than committed: the artifact and the audit row need this row's id.
         await session.flush()
 
         artifact = ResultArtifact(
             org_id=org_id,
             query_execution_id=row.id,
             summary=summarize(execution.frame),
-            # Already masked, and capped: the whole result is in the store, and
-            # a row in the platform database is not the place for a thousand of
-            # anything.
+            # Already masked, and capped: the whole result is in the store.
             sample_rows=[
                 [encodable(value) for value in sample]
                 for sample in execution.frame.rows[:SAMPLE_ROWS]
@@ -129,10 +96,7 @@ async def record_success(
         )
         recorded = Recorded(execution_id=row.id, artifact_id=artifact.id)
 
-    # Outside the transaction on purpose. A store that is slow or unreachable
-    # must not hold a database transaction open, and a result whose file failed
-    # to write is still a result that ran — the row says so, and `storage_ref`
-    # staying null says the copy is missing rather than pretending it is there.
+    # Outside the transaction on purpose.
     if store is not None:
         reference = await store.put(
             org_id=org_id, execution_id=recorded.execution_id, payload=encode(execution.frame)
@@ -156,12 +120,7 @@ async def record_failure(
     error: str,
     run_id: uuid.UUID | None = None,
 ) -> Recorded:
-    """A statement that was sent and did not come back.
-
-    ``error`` has been through the connector's sanitizer already — connectors
-    raise nothing else — so what is stored names what failed, never an address
-    or a credential.
-    """
+    """A statement that was sent and did not come back."""
     async with org_session(org_id) as session:
         row = QueryExecution(
             org_id=org_id,
@@ -195,14 +154,7 @@ async def record_refusal(
     violation: PolicyViolation,
     run_id: uuid.UUID | None = None,
 ) -> Recorded:
-    """A statement this service would not send.
-
-    The submitted SQL is stored rather than a canonical form, because there is
-    no canonical form — canonicalising is what it did not get to. It is safe to
-    store for the same reason the violation message is safe to show: it is the
-    model's own text, and the thing that made it dangerous is that it was never
-    run (architecture 7.4).
-    """
+    """A statement this service would not send."""
     async with org_session(org_id) as session:
         row = QueryExecution(
             org_id=org_id,
@@ -225,8 +177,7 @@ async def record_refusal(
             execution=row,
             details={
                 "code": str(violation.code),
-                # The identifier that was refused — a table, a column, a
-                # function. The attempted thing, never a value (plan §1.4).
+                # The identifier that was refused — a table, a column, a function.
                 "subject": violation.subject,
             },
         )
@@ -271,6 +222,5 @@ async def _attach_storage(org_id: uuid.UUID, execution_id: uuid.UUID, reference:
 
 
 def hash_sql(sql: str) -> str:
-    """The same short digest ``ValidatedQuery`` uses, for text that never became
-    one — a refused statement has no ValidatedQuery to ask."""
+    """The same short digest ``ValidatedQuery`` uses, for text that never became one."""
     return hashlib.sha256(sql.encode()).hexdigest()[:12]

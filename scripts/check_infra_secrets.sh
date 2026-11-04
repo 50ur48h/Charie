@@ -1,51 +1,18 @@
 #!/usr/bin/env bash
-#
 # No secret value may be written into a deployment template.
-#
-# A template is the one place in this repo where a leaked credential is both easy
-# to write and invisible in review: it looks like configuration, it sits beside a
-# hundred other assignments, and it reads as *correct* — the resource does need a
-# password. Worse, a value here is copied into the resource group's deployment
-# history, where it is readable by anyone with reader access and survives the
-# secret being rotated.
-#
-# So `infra/` carries no secret values. Key Vault is created empty and filled out
-# of band; Container Apps reference secrets by URI and read them with a managed
-# identity; the two parameters that would otherwise carry one — the Postgres
-# administrator password and the budget alert address — are read from the
-# environment at deploy time.
-#
-# **What this looks for is a quoted literal**, which is the thing that cannot be
-# right. `readEnvironmentVariable('POSTGRES_ADMIN_PASSWORD')` is the correct
-# pattern and must pass; `= 'hunter2'` must not. The first version of this check
-# lived inline in the workflow, where YAML escaping mangled the pattern into one
-# that matched any assignment at all — it failed the build on the correct code
-# and would have been "fixed" by loosening it. It is a file now, with a selftest,
-# like every other guard in this directory.
-#
-# Usage:
-#   bash scripts/check_infra_secrets.sh            # check infra/
-#   bash scripts/check_infra_secrets.sh --selftest # prove it still catches one
 
 set -euo pipefail
 
 INFRA_DIR=${INFRA_DIR:-infra}
 
-# A quoted literal assigned to something whose name says secret, or a quoted
-# email address. Anchored on `= '` so a function call — which is how a real value
-# arrives — cannot match.
+# A quoted literal assigned to something whose name says secret, or a quoted email address.
 readonly SECRET_ASSIGNMENT="=[[:space:]]*'[^']*'"
 readonly SECRET_NAMES='(password|passwd|secret|apikey|api_key|connectionstring|accountkey|sas|token)'
 
 # Hostnames that are part of Azure's own namespace rather than somebody's inbox.
 readonly ALLOWED='(example\.invalid|azurecr\.io|database\.azure\.com|blob\.core\.windows\.net|vaultcore\.azure\.net|aka\.ms)'
 
-# **A GUID is not a secret, and one of them is unavoidable here.** Azure's role
-# definition ids are GUIDs, and `roles.bicep` assigns them to variables named
-# `keyVaultSecretsUser` and the like — a name containing "secret" holding a
-# constant that is public, documented and identical in every tenant. Excluding
-# the *shape* is exact; excluding the file or relaxing the name pattern would
-# have been the loosening this guard's own header warns about.
+# A GUID is not a secret, and one of them is unavoidable here.
 readonly GUID="'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'\$"
 
 
@@ -71,10 +38,7 @@ scan() {
 
 selftest() {
   local passed=0 failed=0
-  # **Global, not local.** The EXIT trap runs after this function has returned,
-  # and under `set -u` a local would be unbound by then — which is exactly the
-  # principle used by the other guard self-tests. Written wrong
-  # here first, and caught by the selftest passing five cases and then exiting 1.
+  # Global, not local. The EXIT trap runs after this function has returned.
   dir=$(mktemp -d)
   trap 'rm -rf "$dir"' EXIT
 
@@ -101,15 +65,6 @@ ROLES
   fi
 
   # Each of these must be caught. A guard that cannot fail is decoration.
-  #
-  # **The values are deliberately low-entropy.** What this guard keys on is a
-  # quoted literal assigned to a secret-shaped *name*, so the realism of the
-  # value tests nothing — and a realistic one, which is what the first draft
-  # used, is a string the repository's own secret scanner then flags: one guard
-  # tripping another, and a fake credential in the history of a public
-  # repository forever. The role GUID above cannot be dulled the same
-  # way, because it has to be the real constant; that one is allowlisted in
-  # `.gitleaks.toml` by value, with a comment saying what it is.
   local case
   for case in \
     "param adminPassword = 'hunter2'" \

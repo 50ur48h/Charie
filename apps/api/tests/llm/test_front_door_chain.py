@@ -1,13 +1,4 @@
-"""The chain and the ceiling, seen from the front door.
-
-``test_fallback.py`` proves the walking logic and ``test_budget.py`` the
-arithmetic. This file proves they are actually wired into ``llm.complete`` — the
-gap where a correct component and a correct caller can still add up to nothing.
-
-The load-bearing assertion is on the ledger. A fallback that produced the right
-answer but only one row would have hidden which provider served it, and "which
-model answered" is the question the ledger exists to answer.
-"""
+"""The chain and the ceiling, seen from the front door."""
 
 from __future__ import annotations
 
@@ -34,8 +25,7 @@ TWO_PROVIDERS = {
     "backup": {"small": "backup-small", "mid": "backup-mid", "strong": "backup-strong"},
 }
 
-#: No waiting: the backoff arithmetic is tested in test_retry.py, and a suite
-#: that sleeps for real is a suite people stop running.
+#: No waiting: the backoff arithmetic is tested in test_retry.py.
 NO_WAIT = RetryPolicy(attempts=2, base_delay=0.0)
 
 
@@ -92,12 +82,7 @@ async def _ledger(url: URL, org_id: uuid.UUID) -> list[dict[str, object]]:
 async def test_a_rate_limited_primary_falls_back_and_the_ledger_shows_both(
     platform: URL, migrated_database: URL
 ) -> None:
-    """The gate's fallback criterion, end to end.
-
-    Two rows, not one: an `error` row naming the provider that refused and an
-    `ok` row naming the one that answered. A single success row would be a
-    fallback that happened invisibly, which is worse than one that did not.
-    """
+    """The gate's fallback criterion, end to end."""
     org_id = await _org(migrated_database)
     primary = FakeLLM().script(raises=LLMError("the provider returned 429", retryable=True))
     backup = FakeLLM().script("the backup answered")
@@ -130,8 +115,7 @@ async def test_a_rate_limited_primary_falls_back_and_the_ledger_shows_both(
 
 
 async def test_a_bad_request_does_not_walk_the_chain(platform: URL, migrated_database: URL) -> None:
-    """Non-retryable means our bug. Trying the backup would bill for a second
-    copy of the same error and bury the cause."""
+    """Non-retryable means our bug."""
     org_id = await _org(migrated_database)
     primary = FakeLLM().script(raises=LLMError("the provider returned 400", retryable=False))
     backup = FakeLLM().script("must not be reached")
@@ -158,8 +142,7 @@ async def test_a_bad_request_does_not_walk_the_chain(platform: URL, migrated_dat
 async def test_the_ceiling_stops_the_call_before_the_provider_is_asked(
     platform: URL, migrated_database: URL, fake_llm: FakeLLM
 ) -> None:
-    """Enforced *before* the call. A limit checked afterwards is a report, and
-    the tokens are already spent by the time it prints."""
+    """Enforced before the call. A limit checked afterwards is a report."""
     org_id = await _org(migrated_database)
     run_id = await seed_run(migrated_database, org_id)
     fake_llm.script("expensive", contains="ask")
@@ -179,7 +162,6 @@ async def test_the_ceiling_stops_the_call_before_the_provider_is_asked(
             role="plan", org_id=org_id, messages=QUESTION, run_id=run_id, settings=settings
         )
 
-    # The provider was never asked the second time, and nothing was recorded for
-    # a call that did not happen.
+    # The provider was never asked the second time.
     assert fake_llm.count() == calls_after_first
     assert len(await _ledger(platform, org_id)) == 1

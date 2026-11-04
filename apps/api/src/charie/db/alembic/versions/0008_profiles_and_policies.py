@@ -1,22 +1,4 @@
-"""column profiles, detected sensitivity, and the policies an Admin decides
-
-WP4.2, architecture Part 5.2 and 5.3. Two kinds of fact arrive here and they are
-stored differently on purpose (DECISIONS D-013):
-
-* **What the data looks like** — null fraction, distinct estimate, min and max,
-  top values, the semantic role, and the sensitivity a classifier *suspects*.
-  These describe one snapshot's sample of one column, so they live on
-  ``catalog_columns`` and are rebuilt whenever a snapshot is.
-* **What an Admin decided** — allow, mask or deny, and why. That is a judgement
-  about a column by name, not about a snapshot, and it must outlive every
-  re-discovery: a refresh that quietly reset somebody's masking decision would
-  be a data leak caused by a routine operation. So ``column_policies`` is keyed
-  by name and is never touched by discovery.
-
-Revision ID: 0008
-Revises: 0007
-Create Date: 2026-08-12
-"""
+"""column profiles, detected sensitivity, and the policies an Admin decides"""
 
 from __future__ import annotations
 
@@ -40,9 +22,7 @@ def upgrade() -> None:
     # -- what the profiler learned about one snapshot's columns ---------------
     op.add_column("catalog_columns", sa.Column("null_frac", sa.Float(), nullable=True))
     op.add_column("catalog_columns", sa.Column("distinct_est", sa.BigInteger(), nullable=True))
-    # Rendered as text: a min/max pair has to hold dates, numbers and strings,
-    # and one typed column per possibility would be four columns that are always
-    # three-quarters null.
+    # Rendered as text: a min/max pair has to hold dates, numbers and strings.
     op.add_column("catalog_columns", sa.Column("min_val", sa.Text(), nullable=True))
     op.add_column("catalog_columns", sa.Column("max_val", sa.Text(), nullable=True))
     op.add_column(

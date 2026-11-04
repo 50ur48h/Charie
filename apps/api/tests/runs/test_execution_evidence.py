@@ -1,23 +1,4 @@
-"""Resolving a citation into evidence (architecture 10.2, B-034).
-
-A finding carries ``query_executions.id`` values in ``support``. Until this
-route existed there was no way to resolve one over HTTP — a reference to
-evidence nobody could open, which looks like proof while being none.
-
-Two properties are what these tests are for, and they are different in kind.
-
-**What a reader is shown is safe.** The SQL is this service's own canonical
-statement, the rows come from ``result_artifacts.sample_rows`` which was masked
-on the way in (WP5.2b), and a refused execution — which never reached an
-engine — shows the code that refused it rather than an empty result that looks
-like "no rows found".
-
-**Who may see it is the run's rule, not a new one.** The execution is read
-*through* the run, so an id belonging to another run is not found rather than
-refused, and a colleague gets the same 404 the conversation itself gives them.
-Composing the existing check rather than writing a second one is deliberate: two
-rules about the same thing eventually disagree, and the disagreement is a leak.
-"""
+"""Resolving a citation into evidence (architecture 10.2, B-034)."""
 
 from __future__ import annotations
 
@@ -104,14 +85,7 @@ async def _run(api: Api, org_id: str, who: str = "alice", key: str = "send-1") -
 
 
 async def _record_success(org_id: str, run_id: str) -> str:
-    """One execution that ran, with the artifact the DAL writes beside it.
-
-    Written directly rather than through ``dal.run`` because these tests are
-    about the read path and want no customer database in the way. The columns
-    used are exactly the ones WP5.2b's recorder fills; the end-to-end agreement
-    between writer and reader is proved by ``test_single_shot_e2e.py``, which
-    goes through the real DAL against the seed data.
-    """
+    """One execution that ran, with the artifact the DAL writes beside it."""
     execution_id = uuid.uuid4()
     async with org_session(uuid.UUID(org_id)) as session:
         await session.execute(
@@ -170,9 +144,7 @@ async def _record_refusal(org_id: str, run_id: str) -> str:
     return str(execution_id)
 
 
-# ---------------------------------------------------------------------------
-# What a citation resolves to
-# ---------------------------------------------------------------------------
+# --- What a citation resolves to ---
 
 
 async def test_a_citation_resolves_to_the_query_behind_it(api: Api) -> None:
@@ -195,11 +167,7 @@ async def test_a_citation_resolves_to_the_query_behind_it(api: Api) -> None:
 
 
 async def test_the_rows_a_reader_is_shown_are_the_masked_ones(api: Api) -> None:
-    """Masked on the way in (D-013, WP5.2b), so there is nothing else to send.
-
-    This route has no unmasking path and could not grow one by accident: the
-    platform database holds no unmasked copy of these values at all.
-    """
+    """Masked on the way in (D-013, WP5.2b), so there is nothing else to send."""
     org_id = await _org(api)
     run_id = await _run(api, org_id)
     execution_id = await _record_success(org_id, run_id)
@@ -214,12 +182,7 @@ async def test_the_rows_a_reader_is_shown_are_the_masked_ones(api: Api) -> None:
 
 
 async def test_a_refused_query_says_what_refused_it(api: Api) -> None:
-    """Not an empty result — which would read as "your data has no answer".
-
-    A refusal reached no engine, so it has no rows, no duration and no artifact.
-    What it has is the code and the statement that earned it, and that is what a
-    person needs to understand why the answer stopped where it did.
-    """
+    """Not an empty result — which would read as "your data has no answer"."""
     org_id = await _org(api)
     run_id = await _run(api, org_id)
     execution_id = await _record_refusal(org_id, run_id)
@@ -236,18 +199,11 @@ async def test_a_refused_query_says_what_refused_it(api: Api) -> None:
     assert evidence["row_count"] is None
 
 
-# ---------------------------------------------------------------------------
-# Who may open it
-# ---------------------------------------------------------------------------
+# --- Who may open it ---
 
 
 async def test_an_execution_from_another_run_is_not_found(api: Api) -> None:
-    """Even your own. The run in the path is in the WHERE clause, not decoration.
-
-    Without it, any execution id in the organization would resolve through any
-    run the caller happens to own — which would make the ownership check on runs
-    decorative too.
-    """
+    """Even your own. The run in the path is in the WHERE clause, not decoration."""
     org_id = await _org(api)
     mine, other = await _run(api, org_id), await _run(api, org_id, key="send-2")
     execution_id = await _record_success(org_id, other)

@@ -1,8 +1,4 @@
-"""Rules 1-5: what shape of statement is allowed to exist at all.
-
-Everything here is decided before the catalog is consulted, and everything here
-is refused with a code the adversarial corpus (WP5.3) will name.
-"""
+"""Rules 1-5: what shape of statement is allowed to exist at all."""
 
 from __future__ import annotations
 
@@ -37,8 +33,7 @@ def test_a_trailing_semicolon_is_not_a_second_statement(either: SourcePolicy) ->
 
 
 def test_a_comment_cannot_hide_a_second_statement(either: SourcePolicy) -> None:
-    """`--` and `/* */` are the classic ways to make a splitter miscount. The
-    parser is the thing that counts here, so both are simply comments."""
+    """`--` and `/* */` are the classic ways to make a splitter miscount."""
     assert validate("SELECT id FROM orders -- ; DROP TABLE orders", source=either).sql
     assert validate("SELECT id FROM orders /* ; DROP TABLE orders */", source=either).sql
 
@@ -129,8 +124,7 @@ def test_explain_of_a_write_is_refused(either: SourcePolicy) -> None:
 
 
 def test_a_write_inside_a_cte_is_refused(pg: SourcePolicy) -> None:
-    """The case that makes a top-level type check worthless: this parses as a
-    SELECT, and PostgreSQL would execute the INSERT."""
+    """The case that makes a top-level type check worthless: this parses as a SELECT."""
     violation = refuse(
         "WITH moved AS (INSERT INTO orders (id) VALUES (1) RETURNING id) SELECT id FROM moved", pg
     )
@@ -166,8 +160,7 @@ def test_session_settings_cannot_be_changed(pg: SourcePolicy) -> None:
 
 
 def test_syntax_the_parser_does_not_understand_is_refused(pg: SourcePolicy) -> None:
-    """sqlglot turns what it cannot parse into a Command rather than an error.
-    Approving those would approve exactly the statements least understood."""
+    """sqlglot turns what it cannot parse into a Command rather than an error."""
     assert refuse("DO $$ BEGIN PERFORM 1; END $$", pg).code in {
         ViolationCode.WRITE_OPERATION,
         ViolationCode.STATEMENT_NOT_READ_ONLY,
@@ -226,8 +219,7 @@ def test_an_escape_hatch_function_is_refused(sql: str, engine: str) -> None:
 
 
 def test_a_function_nobody_can_vouch_for_is_refused(pg: SourcePolicy) -> None:
-    """Not on any deny list — that is the point. An unrecognised function is
-    refused for being unrecognised, so the list is a courtesy, not the guard."""
+    """Not on any deny list — that is the point."""
     violation = refuse("SELECT some_extension_fn(id) FROM orders", pg)
 
     assert violation.code is ViolationCode.UNKNOWN_FUNCTION
@@ -252,10 +244,7 @@ def test_a_table_function_is_refused(pg: SourcePolicy) -> None:
 
 
 def test_a_statement_too_deep_to_check_is_refused(either: SourcePolicy) -> None:
-    """Found while measuring coverage: 300 nested parentheses raised a raw
-    RecursionError out of the parser, which is a way past every rule below it
-    — none of them ever ran — and a way to take the process down from a text
-    box. It is now an ordinary refusal."""
+    """Found while measuring coverage."""
     nested = "SELECT id FROM orders WHERE id = " + "(" * 300 + "1" + ")" * 300
 
     violation = refuse(nested, either)
@@ -270,8 +259,7 @@ def test_a_statement_longer_than_the_limit_is_refused(either: SourcePolicy) -> N
 
 
 def test_parentheses_inside_a_literal_are_not_nesting(either: SourcePolicy) -> None:
-    """Depth is counted from tokens, not characters, so a string full of
-    brackets is a string."""
+    """Depth is counted from tokens, not characters, so a string full of brackets is a string."""
     result = validate("SELECT id FROM customers WHERE city = '" + "(" * 60 + "'", source=either)
 
     assert result.sql
@@ -301,8 +289,7 @@ def test_explain_with_nothing_after_it_is_refused(either: SourcePolicy) -> None:
 
 
 def test_an_unterminated_string_is_a_parse_error(either: SourcePolicy) -> None:
-    """The tokenizer fails before the parser does; both end in the same refusal
-    rather than in whatever exception the library felt like raising."""
+    """The tokenizer fails before the parser does."""
     assert refuse("SELECT 'unterminated FROM orders", either).code is ViolationCode.PARSE_ERROR
 
 
@@ -316,9 +303,7 @@ def test_a_qualified_unknown_table_names_both_parts(either: SourcePolicy) -> Non
 def test_a_recursion_failure_below_still_reaches_the_caller_as_a_refusal(
     either: SourcePolicy, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The two ceilings above catch the shapes that can be seen coming. This is
-    the backstop for the ones that cannot: whatever runs out of stack, a caller
-    of the DAL sees a violation, never an interpreter-level error."""
+    """The two ceilings above catch the shapes that can be seen coming."""
 
     def boom(sql: str, *, source: SourcePolicy, max_rows: int | None) -> object:
         raise RecursionError("maximum recursion depth exceeded")

@@ -1,15 +1,4 @@
-/**
- * How to name a person on screen when the identity provider was sparing.
- *
- * An access token carries an email claim only when the app registration asks for
- * one, so `email` can legitimately be null (backlog B-009). The old behaviour was
- * worse than a blank: the API invented `<subject>@unknown.invalid` and the screen
- * displayed it as if it were an address someone could write to.
- *
- * Order of preference: the email, then the display name, then the subject — which
- * is unfriendly but always present, and is the identity the product actually
- * authorizes against.
- */
+/** How to name a person on screen when the identity provider was sparing. */
 
 export interface Named {
   email: string | null;

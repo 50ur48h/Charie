@@ -1,36 +1,6 @@
 "use client";
 
-/**
- * How the answer was reached, as it is reached (plan WP8.3, architecture 10.3).
- *
- * The product's honesty claim, rendered. `agent_events` is append-only by grant
- * precisely so this can be shown as a record rather than as a story — what you
- * see here was written once, by the code that did the thing, and cannot have
- * been tidied up afterwards.
- *
- * **It subscribes rather than polls**, over the same events route asked for as
- * `text/event-stream`. Two consequences are the whole reason for it: a step
- * appears when it happens rather than up to a poll later, and **a refresh
- * replays the entire trace** — the reader resumes from `Last-Event-ID` and the
- * server answers from the durable rows. Nothing is held in memory that a reload
- * could lose.
- *
- * The stream is read with `fetch`, not `EventSource`, so the bearer token can go
- * in a header: `EventSource` cannot set headers, and the query string is where
- * this codebase has already refused to put a credential once.
- *
- * **Every event is shown, including the ones that are not progress.** A trace
- * that only listed successes would be advertising. A refused query, a duplicate
- * blocked, a budget warning and a capability gap are exactly what somebody
- * checking the agent's work needs to see, and they are the events most likely to
- * be quietly dropped by a UI written to look good.
- *
- * **Names are ours, not the model's.** 10.3's payloads are built for eyes, but
- * its *type names* are machine names; a person watching should read "Ran the query
- * against your database", not `query_executed`. Anything unrecognised falls back to the raw type
- * rather than being hidden — a trace that silently omits an event it does not
- * know about is worse than one that shows an ugly word.
- */
+/** How the answer was reached, as it is reached (plan WP8.3, architecture 10.3). */
 
 import { ChevronDown, Sparkles } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -39,26 +9,7 @@ import { createApi, type RunEvent } from "@/lib/api-client";
 import { useSession } from "@/lib/auth/session";
 import { cn } from "@/lib/utils";
 
-/**
- * What each step did, and where it matters, why — in words a person who has
- * never seen a database can read.
- *
- * **Built only from fields 10.3 already promises.** The temptation this creates
- * is to enrich a payload with the model's own reasoning so the prose reads
- * better, and that is the line: 10.3's payloads are *built for eyes*, never raw
- * reasoning and never an unmasked value. Every sentence below is assembled from
- * counts and short strings the event already carries — several of which nothing
- * has ever rendered, which is where most of the improvement comes from rather
- * than from new data.
- *
- * Each entry returns a **lead** and a **rest**. The lead is short and carries the
- * tone colour, exactly as the previous vocabulary did — design.md rule 4 keeps
- * colour a second cue, and a whole sentence set in green or red would make it the
- * first one. Read together they are one sentence.
- *
- * A field that is absent renders as nothing rather than as `undefined`: a payload
- * shape that changed should make the trace quieter, not wrong.
- */
+/** What each step did, and where it matters, why. */
 type Payload = Record<string, unknown>;
 
 interface Step {
@@ -86,9 +37,7 @@ function totalsOf(payload: Payload): Payload {
   return typeof value === "object" && value !== null ? (value as Payload) : {};
 }
 
-/** A nested object, or null. `null` is a value a payload deliberately carries —
- * `coverage: null` says the check did not run — so it must not read as an
- * empty object that then renders as though something happened. */
+/** A nested object, or null. `null` is a value a payload deliberately carries. */
 function nested(payload: Payload, key: string): Payload | null {
   const value = payload[key];
   return typeof value === "object" && value !== null && !Array.isArray(value)
@@ -115,13 +64,7 @@ export const STEP_SENTENCES: Record<string, (payload: Payload) => Step> = {
   }),
 
   context_selected: (payload) => {
-    // **This builder spends what the event already carries** (WP13.21). The
-    // payload has held `definitions_available`, `tables_found_via`,
-    // `tables_found_by`, `history_turns`, `restrictions` and `as_of` since long
-    // before it said any of them out loud — *what it considered* and *what it
-    // ruled out* were being discarded at render time. No new emit-time field is
-    // read here: the real *why a table won* is not in any payload, and the only
-    // way to produce it today would be to smuggle model reasoning into one.
+    // This builder spends what the event already carries (WP13.21).
     const tables = list(payload, "tables");
     const definitions = list(payload, "definitions_applied");
     const available = num(payload, "definitions_available");
@@ -131,9 +74,7 @@ export const STEP_SENTENCES: Record<string, (payload: Payload) => Step> = {
     const sentences: string[] = [];
 
     if (tables.length > 0) {
-      // **B-160.** How much of each the model actually saw, not just how many
-      // the search returned. A detail is a different thing from an outline, and
-      // "25 tables" said neither.
+      // B-160. How much of each the model actually saw, not just how many the search returned.
       const detail =
         inFull !== null && inOutline !== null && inOutline > 0
           ? ` — ${inFull} in full and ${inOutline} in outline`
@@ -159,9 +100,7 @@ export const STEP_SENTENCES: Record<string, (payload: Payload) => Step> = {
       );
     }
     if (available !== null && available > 0) {
-      // **B-087's finding, said out loud.** An empty list beside a non-zero
-      // count is the whole point: none of your definitions matched is a
-      // different fact from you have no definitions.
+      // B-087's finding, said out loud.
       sentences.push(
         definitions.length > 0
           ? `${definitions.length} of your ${available} definitions applied: ${joinNames(definitions, 2)}.`
@@ -197,10 +136,7 @@ export const STEP_SENTENCES: Record<string, (payload: Payload) => Step> = {
       );
     } else {
       sentences.push("— they can, so the numbers will line up row for row.");
-      // **What it ruled out**, which the payload has always carried and the
-      // sentence never spent. A pair that shares only a parent is the chasm
-      // trap (D-026), and naming it is the difference between "checked" and
-      // "checked, and here is what came back".
+      // What it ruled out, which the payload has always carried and the sentence never spent.
       if (blocked) {
         sentences.push(`Ruled out joining ${blocked}: the catalogue records no link.`);
       }
@@ -210,8 +146,7 @@ export const STEP_SENTENCES: Record<string, (payload: Payload) => Step> = {
         `${joinNames(comparable, 2)} can only be compared side by side, not joined row to row.`,
       );
     }
-    // Present even when null, which is how an abstention is told apart from a
-    // pass (B-157, D-059).
+    // Present even when null, which is how an abstention is told apart from a pass (B-157, D-059).
     if ("available_period" in payload) {
       sentences.push(
         period
@@ -247,10 +182,7 @@ export const STEP_SENTENCES: Record<string, (payload: Payload) => Step> = {
       term ? `to see what "${term}" means here` : null,
       passages === null ? null : `found ${plural(passages, "passage", "passages")}`,
     ].filter((part): part is string => part !== null);
-    // **Empty means empty, not a full stop.** Joining and appending "." wrote a
-    // bare "." when the payload carried neither field — which is precisely the
-    // "quieter, not wrong" rule this module states, broken by the code that
-    // states it.
+    // Empty means empty, not a full stop.
     return {
       lead: "Looked the wording up in your own documents",
       rest: parts.length > 0 ? `${parts.join(", ")}.` : "",
@@ -352,11 +284,7 @@ export const STEP_SENTENCES: Record<string, (payload: Payload) => Step> = {
         ? ` with ${plural(limitations, "caveat", "caveats")} attached`
         : "";
     const parts = [`from what the queries returned${caveats}.`];
-    // **The period check says which of three things happened, including that it
-    // could not look** (B-157, D-059). A run where it abstained has to read
-    // differently from one where it ran and passed — otherwise the absence of a
-    // caveat means two different things and nobody can tell which. That is the
-    // whole reason the payload carries a reason beside the status.
+    // The period check says which of three things happened, including that it could not look.
     const coverage = nested(payload, "coverage");
     if (coverage) {
       const answered = str(coverage, "answered");
@@ -397,27 +325,13 @@ export const STEP_SENTENCES: Record<string, (payload: Payload) => Step> = {
   },
 };
 
-/**
- * The sentence for one event.
- *
- * An unrecognised type falls back to its raw name rather than being hidden, for
- * the reason the module docstring gives: a trace that silently omits a step is
- * worse than an ugly one. `test_trace_vocabulary.py` is what keeps that fallback
- * for events from a newer server rather than for events this repository added
- * and forgot.
- */
+/** The sentence for one event. */
 export function sentence(event: RunEvent): Step {
   const build = STEP_SENTENCES[event.type];
   return build ? build(event.payload as Payload) : { lead: event.type, rest: "" };
 }
 
-/**
- * Which events are worth colouring, and why — never colour for interest.
- *
- * Text colour rather than a badge: a row of badges made the trace read as a list
- * of labels, and design.md's rule 4 puts the step word above its decoration. The
- * word is always there, so colour is a second cue and never the only one.
- */
+/** Which events are worth colouring, and why — never colour for interest. */
 const TONE_CLASS: Record<string, string | undefined> = {
   sql_rejected: "text-warn-ink",
   budget_warning: "text-warn-ink",
@@ -425,18 +339,10 @@ const TONE_CLASS: Record<string, string | undefined> = {
   error: "text-bad-ink",
 };
 
-/**
- * Subscribe to a run's trace, replaying whatever came before.
- *
- * Returns the events in order. The `EventSource` is closed when the run ends or
- * the component unmounts, because a page left open must not hold a stream on a
- * run that finished.
- */
+/** Subscribe to a run's trace, replaying whatever came before. */
 function useTrace(orgId: string, runId: string | null): RunEvent[] {
   const session = useSession();
-  // Keyed by run, so switching runs cannot show the previous one's trace and
-  // nothing has to be cleared in an effect — the stale buffer is simply not the
-  // one this render reads.
+  // Keyed by run, so switching runs cannot show the previous one's trace and nothing has to be...
   const [buffer, setBuffer] = useState<{ runId: string | null; events: RunEvent[] }>({
     runId: null,
     events: [],
@@ -462,9 +368,7 @@ function useTrace(orgId: string, runId: string | null): RunEvent[] {
         signal: controller.signal,
       })
       .catch(() => {
-        // A trace that will not load is not worth breaking the answer over: the
-        // run is unaffected by whether anyone is watching it, and the answer
-        // arrives through its own path.
+        // A trace that will not load is not worth breaking the answer over.
       });
 
     return () => controller.abort();
@@ -474,14 +378,7 @@ function useTrace(orgId: string, runId: string | null): RunEvent[] {
 }
 
 
-/**
- * How long the run took, in words, from something real.
- *
- * The run's own clock first; the first and last event otherwise. **If neither is
- * knowable it says `Thought` with no number** rather than inventing one — a
- * duration is a claim, and this component's whole premise is that it only
- * repeats claims the platform already made.
- */
+/** How long the run took, in words, from something real. */
 function tookFor(
   events: RunEvent[],
   startedAt: string | null | undefined,
@@ -511,16 +408,7 @@ function metaOf(events: RunEvent[]): string[] {
   ].filter((part): part is string => part !== null);
 }
 
-/**
- * The working state (docs/design.md, *The working state*), drawn as the Calm
- * design's thinking pill and timeline.
- *
- * **Every row here is one durable event, in the order it was written.** There is
- * no scripted sequence, no minimum display time and no step that appears because
- * somebody expected it to: if the stream stops, this stops. A progress display
- * that runs ahead of the work is the most convincing lie an interface can tell,
- * and this product's claim is that its account of itself is checkable.
- */
+/** The working state (docs/design.md, The working state). */
 export function Trace({
   orgId,
   runId,
@@ -538,9 +426,7 @@ export function Trace({
   finishedAt?: string | null | undefined;
 }) {
   const events = useTrace(orgId, runId);
-  // Open while the run is going and collapsed once it has finished — watching is
-  // the point during, the answer is the point after — but an explicit toggle
-  // wins from then on.
+  // Open while the run is going and collapsed once it has finished — watching is the point during.
   const [toggled, setToggled] = useState<boolean | null>(null);
   const open = toggled ?? (live || defaultOpen);
 
@@ -553,10 +439,7 @@ export function Trace({
 
   return (
     <div className="mb-4 font-sans">
-      {/* The button's name is the label alone, so "Thought for 19 seconds" is
-          what a screen reader hears and what a locator finds; the meta and
-          the current step are for the eye. `aria-live` announces the change
-          from thinking to thought without taking the text out of the name. */}
+      {/* The button's name is the label alone. */}
       <button
         type="button"
         aria-expanded={open}
@@ -594,8 +477,7 @@ export function Trace({
         />
       </button>
 
-      {/* A grid whose single row goes 0fr → 1fr animates a height nobody has
-          to measure; the steps stay mounted, so reopening is instant. */}
+      {/* A grid whose single row goes 0fr → 1fr animates a height nobody has to measure. */}
       <div
         className={cn(
           "grid transition-[grid-template-rows] duration-400 ease-[cubic-bezier(.2,.8,.2,1)]",
@@ -606,8 +488,7 @@ export function Trace({
           <ol className="mt-4 mb-1 ml-2.5">
             {events.map((event, index) => {
               const step = sentence(event);
-              // The last row pulses only while the run is still going; once it
-              // has settled every step finished.
+              // The last row pulses only while the run is still going.
               const active = live && index === events.length - 1;
               const last = index === events.length - 1;
               return (

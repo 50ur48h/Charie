@@ -67,13 +67,7 @@ async def test_a_hanging_address_times_out_and_says_so(monkeypatch: pytest.Monke
 
 @pytest.fixture
 async def closed_port() -> int:
-    """A port that was bound long enough to be sure it is free now.
-
-    Asking the operating system for a port and then releasing it is the only
-    reliable way to name a closed one: a hardcoded number is something a
-    developer's machine will eventually be running, and the neighbour of a live
-    port is a coin toss.
-    """
+    """A port that was bound long enough to be sure it is free now."""
     server = await asyncio.start_server(_ignore, HOST, 0)
     port = int(server.sockets[0].getsockname()[1])
     server.close()

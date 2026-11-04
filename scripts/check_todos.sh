@@ -1,9 +1,7 @@
 #!/usr/bin/env bash
-#
 # Every TODO in source must carry a backlog ID -- TODO(B-123) -- so deferred work
 # has a tracking reference instead of rotting in a comment. FIXME, HACK
 # and XXX are banned outright: file a backlog entry and write honest code.
-# Existing B-### references are retained as historical tracking identifiers.
 
 set -euo pipefail
 
@@ -24,9 +22,7 @@ flags=(
   --exclude-dir=__pycache__ --exclude-dir=.ruff_cache --exclude-dir=dist
 )
 
-# grep exits 0 with matches, 1 with none, and >1 on a real error. Collapsing all
-# three to "no matches" would turn a broken guard into a silent pass, which is
-# how a check like this stops protecting anything.
+# grep exits 0 with matches, 1 with none, and >1 on a real error.
 scan() {
   local output status
   set +e
@@ -40,9 +36,7 @@ scan() {
   printf '%s' "$output"
 }
 
-# Deliberately POSIX ERE rather than a -P lookahead: PCRE mode is unavailable in
-# some locales (notably Git Bash on Windows), and this must behave identically
-# for a developer and for CI.
+# Deliberately POSIX ERE rather than a -P lookahead: PCRE mode is unavailable in some locales.
 todos=$(scan "${flags[@]}" -E 'TODO' "${roots[@]}")
 orphans=""
 if [[ -n "$todos" ]]; then

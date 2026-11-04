@@ -1,28 +1,4 @@
-"""Every SECURITY DEFINER function in the database is one somebody declared.
-
-**An allowlist that nothing checks is a comment.** Revision 0028 creates five
-functions that run as the owner, which is how the application role reaches rows
-RLS would otherwise hide from it — the authorization bootstrap, and the two
-cross-organization reads. That is a deliberate, enumerable bypass, and it is only
-enumerable for as long as something counts.
-
-So this file is the counting. It asks the database what exists and fails on
-anything not named below, in the same idiom `TENANT_TABLES` uses: the list is the
-declaration, the test is what makes the declaration true.
-
-**What each test is actually guarding against** is worth saying, because a
-SECURITY DEFINER function is the sharpest object in this schema:
-
-* A sixth function added without review — the list catches it.
-* A function whose `search_path` is not pinned. This is the textbook PostgreSQL
-  privilege escalation: the caller prepends a schema they control, an unqualified
-  name inside the body resolves to *their* object, and it executes as the owner.
-* A function executable by `PUBLIC`, which is the default the moment it is
-  created. Granting to the application role without revoking from PUBLIC leaves
-  it open to every role on the server.
-* A function that writes. All five answer questions; none changes anything, and
-  both token flows do their writes inside `org_session` where RLS applies.
-"""
+"""Every SECURITY DEFINER function in the database is one somebody declared."""
 
 from __future__ import annotations
 
@@ -38,10 +14,7 @@ pytestmark = pytest.mark.asyncio
 
 APP_ROLE = "charie_app"
 
-#: **The declaration.** Every SECURITY DEFINER function this product is allowed to
-#: have, and one line each saying why it cannot be an ordinary query. Adding a
-#: function means adding a line here, in the same PR, with a reason a reviewer can
-#: weigh — which is the whole mechanism.
+#: The declaration. Every SECURITY DEFINER function this product is allowed to have.
 SECURITY_DEFINER_FUNCTIONS: dict[str, str] = {
     "auth_membership_role": (
         "Reads org_memberships before the organization is known. This is the "
@@ -114,12 +87,7 @@ async def test_every_declared_function_exists(app_database: URL) -> None:
 
 
 async def test_every_definer_function_pins_its_search_path(app_database: URL) -> None:
-    """The escalation this whole class of function is famous for.
-
-    Without a pinned `search_path` the caller prepends a schema of their own, an
-    unqualified name in the body resolves to their object, and it runs as the
-    owner.
-    """
+    """The escalation this whole class of function is famous for."""
     for name, row in (await _definer_functions(app_database)).items():
         raw_config: object = row[3]
         entries = cast("list[object]", raw_config) if isinstance(raw_config, list) else []
@@ -133,16 +101,9 @@ async def test_every_definer_function_pins_its_search_path(app_database: URL) ->
 
 
 async def test_no_definer_function_is_executable_by_public(app_database: URL) -> None:
-    """`PUBLIC` gets EXECUTE by default the moment a function is created.
-
-    Granting to the application role without revoking leaves it open to every
-    role on the server, which on a shared cluster includes roles this product has
-    never heard of.
-    """
+    """`PUBLIC` gets EXECUTE by default the moment a function is created."""
     for name, row in (await _definer_functions(app_database)).items():
-        # By oid, not by a rendered signature: `pg_get_function_identity_arguments`
-        # returns names as well as types (`p_user_id uuid`), which is not a
-        # signature `has_function_privilege` will parse.
+        # By oid, not by a rendered signature.
         granted = await _rows(
             app_database,
             f"SELECT has_function_privilege('public', {row[4]}::oid, 'EXECUTE')",
@@ -161,13 +122,9 @@ async def test_the_application_role_can_execute_each_one(app_database: URL) -> N
 
 
 async def test_no_definer_function_can_write(app_database: URL) -> None:
-    """All five answer questions. A writing function that runs as the owner is a
-    different and much larger thing to review, and none of these needs to be one:
-    both token flows do their writes inside `org_session`, under RLS."""
+    """All five answer questions."""
     for name, row in (await _definer_functions(app_database)).items():
-        # `provolatile` is Postgres's internal `"char"`, which asyncpg hands back
-        # as bytes — so a bare `in {"s", "i"}` compares b's' to 's' and fails on a
-        # function that is perfectly STABLE.
+        # `provolatile` is Postgres's internal `"char"`, which asyncpg hands back as bytes.
         raw = row[2]
         volatility = raw.decode() if isinstance(raw, bytes) else str(raw)
         assert volatility in {"s", "i"}, (
@@ -177,10 +134,7 @@ async def test_no_definer_function_can_write(app_database: URL) -> None:
 
 
 async def test_the_orphan_statuses_match_the_scheduler(app_database: URL) -> None:
-    """`ops_orphaned_runs` hard-codes the statuses rather than taking them as a
-    parameter, so that a caller cannot ask it for *every* run in *every*
-    organization. The cost of that is two lists, and this is the check that keeps
-    them equal — the same arrangement `TENANT_TABLES` has with revision 0002."""
+    """`ops_orphaned_runs` hard-codes the statuses rather than taking them as a parameter."""
     body = await _rows(
         app_database,
         "SELECT prosrc FROM pg_proc WHERE proname = 'ops_orphaned_runs'",

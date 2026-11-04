@@ -1,22 +1,4 @@
-"""catalog_snapshots, catalog_tables, catalog_columns, catalog_relationships
-
-WP4.1, architecture Part 5.2 and 5.3 and 10.1. What one crawl of a customer database
-learned, versioned: a snapshot is the unit of consistency (a run reasons about
-one) and the unit of change (a crawl that finds nothing new creates none) —
-DECISIONS D-012.
-
-Four tenant tables, so four row-level security policies in this same revision.
-That is not diligence, it is the rule from WP1.2, and
-``test_no_tenant_table_can_be_added_without_protecting_it`` asks the database
-which tables carry ``org_id`` and fails on any that is undeclared or unprotected.
-
-The columns Phase 4.2 and 4.3 fill — profiles, sensitivity, cards, embeddings —
-are deliberately absent. They arrive in the revision that has code to write them.
-
-Revision ID: 0007
-Revises: 0006
-Create Date: 2026-08-12
-"""
+"""catalog_snapshots, catalog_tables, catalog_columns, catalog_relationships"""
 
 from __future__ import annotations
 
@@ -59,8 +41,7 @@ def upgrade() -> None:
         _uuid_pk(),
         sa.Column("org_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("data_source_id", postgresql.UUID(as_uuid=True), nullable=False),
-        # Monotonic per data source. Version 1 is the first crawl that found
-        # anything; a crawl that changes nothing does not spend a version.
+        # Monotonic per data source. Version 1 is the first crawl that found anything.
         sa.Column("version", sa.Integer(), nullable=False),
         sa.Column(
             "status", sa.String(length=20), server_default=sa.text("'building'"), nullable=False
@@ -73,8 +54,7 @@ def upgrade() -> None:
         ),
         sa.Column("completed_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("object_count", sa.Integer(), server_default=sa.text("0"), nullable=False),
-        # Sanitized before it gets here: a failed crawl records why without
-        # recording a DSN (architecture Part 5.1).
+        # Sanitized before it gets here: a failed crawl records why without recording a DSN.
         sa.Column("error", sa.Text(), nullable=True),
         sa.CheckConstraint(
             "status IN ('building', 'active', 'failed', 'superseded')",
@@ -100,8 +80,7 @@ def upgrade() -> None:
         ["data_source_id", "version"],
         unique=True,
     )
-    # One active snapshot per data source, enforced rather than assumed: "which
-    # catalog is current" must have exactly one answer.
+    # One active snapshot per data source, enforced rather than assumed.
     op.create_index(
         "uq_catalog_snapshots_one_active",
         SNAPSHOTS,
@@ -118,8 +97,7 @@ def upgrade() -> None:
         sa.Column("schema_name", sa.String(length=255), nullable=False),
         sa.Column("table_name", sa.String(length=255), nullable=False),
         sa.Column("kind", sa.String(length=20), nullable=False),
-        # sha256 over this table's shape — columns, types, nullability, keys. The
-        # whole of incremental refresh turns on comparing these.
+        # sha256 over this table's shape — columns, types, nullability, keys.
         sa.Column("structural_hash", sa.String(length=64), nullable=False),
         sa.Column("description", sa.Text(), nullable=True),
         sa.CheckConstraint("kind IN ('table', 'view')", name=op.f("ck_catalog_tables_kind_valid")),
@@ -183,9 +161,7 @@ def upgrade() -> None:
         sa.Column("to_schema", sa.String(length=255), nullable=False),
         sa.Column("to_table", sa.String(length=255), nullable=False),
         sa.Column("to_columns", postgresql.ARRAY(sa.Text()), nullable=False),
-        # WP4.1 records only what the engine declares. Inferred edges — name
-        # convention plus type match — arrive with the profiler that can score
-        # them (architecture Part 5.2).
+        # WP4.1 records only what the engine declares.
         sa.Column(
             "kind", sa.String(length=20), server_default=sa.text("'declared'"), nullable=False
         ),
@@ -219,9 +195,7 @@ def upgrade() -> None:
     )
 
     for table in TENANT_TABLES:
-        # Revision 0002's ALTER DEFAULT PRIVILEGES already covers tables created
-        # afterwards by the same owner. Stated again so this revision is true on
-        # its own, as 0004 does.
+        # Revision 0002's ALTER DEFAULT PRIVILEGES already covers tables created afterwards by...
         op.execute(f"GRANT SELECT, INSERT, UPDATE, DELETE ON {table} TO {APP_ROLE}")
         op.execute(f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY")
         op.execute(f"ALTER TABLE {table} FORCE ROW LEVEL SECURITY")

@@ -1,21 +1,4 @@
 // The whole deployment for one environment, one module per service.
-//
-// **Every resource below is in architecture 9.1's justification table.** That
-// table is a deliberate list with a column for what was left out — APIM, Service
-// Bus, AI Search, Functions — and adding a module for any of them belongs in a
-// PR that amends the table first. Reviewing this file against that table is
-// WP12.1's own acceptance criterion.
-//
-// Ordering is by dependency and almost entirely implicit: Bicep infers it from
-// the references between modules, and referencing one output depends on the
-// whole module. Exactly one place states it outright, because there the two
-// modules share no reference at all — the apps must wait for the role
-// assignments, or the identity they run as has no permission on its first boot.
-//
-// Deployed at resource-group scope. The group itself is created by the pipeline,
-// not here: a template that made its own group would have to be deployed at
-// subscription scope, which is a wider blast radius than anything in this file
-// needs.
 
 targetScope = 'resourceGroup'
 
@@ -93,9 +76,7 @@ param deployApps bool = true
 @description('Deploy the migration job. Separate from deployApps so the job can be created and run before any app revision is rolled.')
 param deployJobs bool = true
 
-// Derived, not passed. A globally-unique suffix nobody types is a suffix nobody
-// typos, and it is stable for the life of the resource group — so a redeploy
-// finds the same registry and the same vault rather than making new ones.
+// Derived, not passed. A globally-unique suffix nobody types is a suffix nobody typos.
 var suffix = take(uniqueString(resourceGroup().id), 6)
 
 var tags = {
@@ -179,11 +160,7 @@ module postgres 'modules/postgres.bicep' = {
     privateDnsZoneId: network.outputs.privateDnsZoneId
     databaseName: databaseName
   }
-  // No `dependsOn`. The first draft had one, on the reasoning that the private
-  // DNS *link* is a separate resource nothing here references — but referencing
-  // any output of a module depends on the whole module, link included, and the
-  // linter said so. Worth recording rather than quietly deleting: the ordering
-  // is real, and it is already guaranteed.
+  // No `dependsOn`.
 }
 
 module roles 'modules/roles.bicep' = {
@@ -221,11 +198,7 @@ module apps 'modules/apps.bicep' = {
     deployApps: deployApps
     deployJobs: deployJobs
   }
-  // **The one ordering that has to be written down.** The apps read their
-  // secrets from Key Vault at start-up using the managed identity. If the role
-  // assignments have not landed, the first revision fails to start with a
-  // permissions error against a secret it is entitled to — an intermittent
-  // failure that looks like a bad secret and is a race.
+  // The one ordering that has to be written down.
   dependsOn: [roles]
 }
 

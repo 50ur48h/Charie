@@ -1,12 +1,6 @@
 "use client";
 
-/**
- * Every screen inside an organization sits in the chat shell (WP13.1b).
- *
- * A layout rather than a wrapper each page opts into, so a screen added later
- * cannot forget to be inside it — and so navigating between chats re-renders the
- * conversation without tearing down the rail beside it.
- */
+/** Every screen inside an organization sits in the chat shell (WP13.1b). */
 
 import { use } from "react";
 

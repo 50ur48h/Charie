@@ -1,9 +1,4 @@
-"""The platform-level security log: denials that belong to no tenant.
-
-See DECISIONS D-008. Writes go through the owner session because this table is
-deliberately outside tenant isolation — it exists precisely for the events that
-have no trustworthy organization to be scoped to.
-"""
+"""The platform-level security log: denials that belong to no tenant."""
 
 from __future__ import annotations
 
@@ -24,13 +19,7 @@ OUTCOMES = ("denied", "error")
 
 
 class SecurityEvent(Base):
-    """Not tenant-scoped, and named to say so.
-
-    The organization column is ``attempted_org_id``: it records what was asked
-    for, not what this row belongs to. The RLS proof suite treats any ``org_id``
-    column as a tenant scope that must be declared and protected, so calling this
-    one ``org_id`` would either break that guard or quietly weaken it.
-    """
+    """Not tenant-scoped, and named to say so."""
 
     __tablename__ = "security_events"
     __table_args__ = (
@@ -67,17 +56,9 @@ async def record_security_event(
     method: str | None = None,
     details: dict[str, Any] | None = None,
 ) -> None:
-    """Record a denial that has no tenant to belong to.
-
-    Never raises. A failure to write the security log must not turn a clean 403
-    into a 500 — the caller is being refused either way, and an exception here
-    would convert an access-control decision into an outage. The failure is
-    logged loudly instead.
-    """
+    """Record a denial that has no tenant to belong to."""
     try:
-        # `security_events` is deliberately outside TENANT_TABLES (D-008), so the
-        # application role can write it without an organization — and must, because
-        # a denial often has no tenant to belong to (B-123).
+        # `security_events` is deliberately outside TENANT_TABLES (D-008).
         async with app_session() as session:
             session.add(
                 SecurityEvent(

@@ -1,51 +1,4 @@
 # The twenty golden questions (plan §6 Phase 9, architecture M9).
-#
-# WHAT THIS FILE IS. Twenty questions over the pizza seed, spanning the classes
-# architecture 4.4 cares about: single-shot, multi-step, honest refusal,
-# ambiguous, and policy-masked. Each carries the checks that decide whether the
-# run was right, and every expected number is a **path into ops/seed/truths.json**
-# rather than a literal. That is the rule the seed generator was written for: the
-# fixture and the numbers the evals trust cannot drift apart, because there is
-# only one copy of each number and `make check.truths` fails if it moves.
-#
-# WHAT `script` IS FOR. In CI the model is the FakeLLM, so the SQL below is what
-# gets planned. That is not the model being tested — it is everything *around*
-# the model: the catalog grounding, the DAL's validation and masking, the
-# execution, the critic's rules, the composer's citations and limitations. The
-# statements really run against the real seed database and the results are really
-# compared to the truths. With `EVALS_LIVE=1` the script is ignored, a real model
-# writes the SQL, and the same checks apply — which is when `answer_contains`
-# starts meaning something.
-#
-# `as_of` IS PINNED, ONCE, IN THE RUNNER, to 2026-08-16 (D-027) — two weeks past
-# the fixture's last row, so "last full month" is July 2026 and stays July 2026
-# in a year's time. That is why the relative phrasing below is left alone: #2,
-# #6, #11, #12, #13, #17 and #20 exist to test exactly that handling, and
-# rewriting them as absolute dates would delete the coverage rather than
-# stabilise it. Only #1 and #18 are absolute, because they always were.
-#
-# CHECKS
-#   truth:              dotted path into truths.json; the expected value
-#   truth_any:          a list of paths, any of which is a right answer — for
-#                       a thing with two correct spellings, such as a store
-#                       named by its id or by its name (B-066)
-#   tolerance:          relative tolerance for a numeric compare (default 0)
-#   expect.value_of:    result column whose single value is compared to `truth`.
-#                       A *hint*, not a requirement, since B-066: a real model
-#                       aliases its output however it likes, so the harness
-#                       looks for the column by name first and then for the
-#                       value itself — see `match_value` in runner.py for the
-#                       three rules and why their order keeps CI honest.
-#   expect.rows:        exact row count the query must return
-#   expect.must_cite:   minimum number of executions the answer must cite
-#   expect.must_refuse: the run must end answered=false
-#   expect.may_refuse:  an honest refusal is *also* a right answer here. For a
-#                       question with two defensible outcomes — see #17 and #19.
-#                       A refusal must still say why; silence is not honesty.
-#   expect.sql_contains / sql_excludes: substrings of the executed SQL
-#   expect.answer_contains:  live mode only — prose is scripted in CI
-#   expect.limitations_min:  the answer must carry at least this many caveats
-#   expect.masked:      a column whose raw values must not appear in the result
 
 - id: 1
   question: How many orders were placed in July 2026?
@@ -63,8 +16,7 @@
 - id: 2
   question: What was revenue last full month?
   classes: [single-shot, relative-date]
-  # July 2026 — but only because `as_of` says so. This is the eval that would
-  # silently start failing without D-027, and the one B-005 was filed about.
+  # July 2026 — but only because `as_of` says so.
   truth: revenue.by_month.-1.revenue
   tolerance: 0.0001
   script:
@@ -92,10 +44,7 @@
 - id: 4
   question: Which store brought in the most revenue?
   classes: [single-shot, ranking]
-  # Two right answers, and the second is the better one (B-066). A real model
-  # answers "Northgate", not "3", and it should: an internal key reaching a
-  # reader is itself a defect (B-061, B-020). The old case accepted only the id
-  # and scored the good answer as a failure.
+  # Two right answers, and the second is the better one (B-066).
   truth_any: [revenue.top_store_by_revenue, revenue.top_store_by_name]
   script:
     sql: >-
@@ -166,8 +115,6 @@
   question: Which menu items sell best?
   classes: [refusal]
   # There is no order_items table and no join path from orders to menu_items.
-  # The whole point: a confident answer here would be computed from a cartesian
-  # product and would look exactly like a real one.
   script:
     refuse: >-
       This database has orders and menu_items, but nothing linking them, so
@@ -281,9 +228,7 @@
 - id: 16
   question: How many customers do we have an email address for?
   classes: [single-shot, masked-column]
-  # `customers.email` is auto-masked (WP4.2). It may be counted; its values may
-  # not come back. The check is on the *result*, because the policy is enforced
-  # by the DAL and not by anyone's good intentions.
+  # `customers.email` is auto-masked (WP4.2).
   truth: row_counts.customers
   script:
     sql: SELECT COUNT(email) AS with_email FROM customers
@@ -295,10 +240,7 @@
 - id: 17
   question: How are we doing?
   classes: [ambiguous]
-  # No single right answer. What is checked is that it does not pretend there is
-  # one: a bounded diagnostic that states what it looked at — *or* an honest
-  # "that is too vague to answer, tell me what you want to know", which the live
-  # run gave and which this case used to score as a failure (B-066).
+  # No single right answer. What is checked is that it does not pretend there is one.
   script:
     sql: >-
       SELECT COUNT(*) AS orders, ROUND(SUM(total_amount)::numeric, 2) AS revenue
@@ -327,15 +269,7 @@
 - id: 19
   question: How many orders were placed in November 2026?
   classes: [empty-result, honesty]
-  # After `as_of`, so the seed has nothing there. "Future" is only expressible
-  # because the anchor is fixed (D-027); against a wall clock no date stays future.
-  #
-  # Two right answers, which is why `may_refuse` is here (B-066). Counting the
-  # rows and reporting **zero** is right. Saying *"the orders data ends on
-  # 2026-07-31, so it does not cover November"* is better, and it is D-027's last
-  # clause — "if the range runs past the end of the data, say so" — working
-  # exactly as written. The live run gave the second and this case scored it as a
-  # failure, which is the harness punishing the product for behaving well.
+  # After `as_of`, so the seed has nothing there.
   script:
     sql: >-
       SELECT COUNT(*) AS order_count FROM orders
@@ -349,8 +283,7 @@
 - id: 20
   question: What is behind the drop in revenue over the last couple of months?
   classes: [multi-step, relative-date, stability]
-  # #11 asked another way. Same window, same conclusion — this is where "the
-  # same question twice gives the same answer" stops being a hope (B-060).
+  # #11 asked another way.
   truth: decline.overall_pct
   tolerance: 0.02
   script:

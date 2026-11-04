@@ -1,24 +1,4 @@
-"""The agent consulting a document mid-run (**B-075**, D-032, WP10.2a).
-
-WP10.1b registered `search_knowledge`, described it in every prompt, and left it
-**unreachable**: `loop.research` dispatched `run_sql` by name and nothing else, so
-a model that "asked" for a document lookup had nowhere to put the request. The
-corpus an organization uploads never reached a run. The owner's direction on
-2026-08-18 made closing that a **gate criterion** rather than a side item — *"an
-agent that's told it can search documents but can't dispatch the tool means Phase
-10 ships a feature the product can't reach"* — and asked that the gate demo show
-the agent consulting a document mid-run.
-
-The test that carries the criterion is
-``test_the_definition_reaches_the_plan_that_writes_the_sql``: it is not enough
-that the tool was called and the trace says so, because a passage retrieved and
-then dropped on the floor would satisfy both. What matters is that the words of
-the document are in front of the model when it writes the statement.
-
-Everything here is scripted against the FakeLLM. What is *not* faked is the
-retrieval: a real document is ingested into a real database and found by the real
-tool through the real registry, because the thing under test is the wiring.
-"""
+"""The agent consulting a document mid-run (B-075, D-032, WP10.2a)."""
 
 from __future__ import annotations
 
@@ -50,8 +30,7 @@ Net revenue excludes cancelled and refunded orders. It is the figure reported to
 the board every month.
 """
 
-#: A sentence no card contains and no question mentions, so finding it in a
-#: prompt proves it came from the document rather than from the catalog.
+#: A sentence no card contains and no question mentions.
 FROM_THE_DOCUMENT = "excludes cancelled and refunded orders"
 
 
@@ -79,12 +58,7 @@ def _final() -> str:
 
 
 async def _upload(context: ToolContext, store: LocalDocumentStore) -> None:
-    """A real document in this organization, ingested the ordinary way.
-
-    No embedder: the lookup below asks for the term by name, which the lexical
-    arm answers. What this file is about is the dispatch, and an embedder here
-    would make the test depend on a stub's opinion of similarity as well.
-    """
+    """A real document in this organization, ingested the ordinary way."""
     await ingest_document(
         org_id=context.org_id,
         title="Revenue policy",
@@ -126,12 +100,7 @@ async def _events(context: ToolContext, run_id: uuid.UUID, kind: str) -> list[di
 
 
 def _script_lookup_then_answer(fake_llm: FakeLLM, term: str = "net revenue") -> None:
-    """Ask what a term means, then write the query knowing it.
-
-    Two plan calls and **one** reflect: the lookup iteration runs no statement,
-    so there is nothing to reflect on — which is the property that keeps D-024's
-    call arithmetic true.
-    """
+    """Ask what a term means, then write the query knowing it."""
     fake_llm.script(_plan("SELECT count(*) AS n FROM shops", define=term), role="sql", times=1)
     fake_llm.script(_plan("SELECT count(*) AS n FROM shops"), role="sql", times=1)
     fake_llm.script(_reflect(done=True, statement="counted the shops"), role="plan", times=1)
@@ -139,22 +108,13 @@ def _script_lookup_then_answer(fake_llm: FakeLLM, term: str = "net revenue") -> 
     fake_llm.script(CriticOut(verdict="pass", reasons=[]).model_dump_json(), role="critic")
 
 
-# ---------------------------------------------------------------------------
-# The criterion
-# ---------------------------------------------------------------------------
+# --- The criterion ---
 
 
 async def test_the_definition_reaches_the_plan_that_writes_the_sql(
     context: ToolContext, fake_llm: FakeLLM, wired: URL, store: LocalDocumentStore
 ) -> None:
-    """**The gate criterion.**
-
-    Retrieving a passage and recording that it happened is not the claim Phase 10
-    makes. The claim is that an organization's own writing changes what the agent
-    does — so what this asserts is that the document's words are in the prompt
-    the model was given when it wrote the statement, and were *not* in the one
-    before it.
-    """
+    """The gate criterion."""
     await _upload(context, store)
     _script_lookup_then_answer(fake_llm)
     run_id = await _ask(context, "What was net revenue last month?")
@@ -170,13 +130,7 @@ async def test_the_definition_reaches_the_plan_that_writes_the_sql(
 async def test_the_trace_shows_the_document_being_consulted(
     context: ToolContext, fake_llm: FakeLLM, wired: URL, store: LocalDocumentStore
 ) -> None:
-    """The other half of the criterion: a person can see it happened.
-
-    Both events matter and they say different things. `tool_called` is the
-    registry recording a dispatch — the same row any tool call leaves — and
-    `knowledge_consulted` is what came back, which has nowhere else to go
-    because a lookup produces no execution row.
-    """
+    """The other half of the criterion: a person can see it happened."""
     await _upload(context, store)
     _script_lookup_then_answer(fake_llm)
     run_id = await _ask(context, "What was net revenue last month?")
@@ -198,11 +152,7 @@ async def test_the_trace_shows_the_document_being_consulted(
 async def test_a_lookup_costs_an_iteration_and_no_reflect_call(
     context: ToolContext, fake_llm: FakeLLM, wired: URL, store: LocalDocumentStore
 ) -> None:
-    """D-032's load-bearing detail. An iteration that looks something up runs no
-    statement, so it costs one plan call and no reflect — *cheaper* than an
-    ordinary iteration, which is what leaves D-024's and D-028's arithmetic
-    untouched. If a lookup ever cost an extra call, the worst-case run would stop
-    fitting the call ceiling and this is where that would show."""
+    """D-032's load-bearing detail. An iteration that looks something up runs no statement."""
     await _upload(context, store)
     _script_lookup_then_answer(fake_llm)
     run_id = await _ask(context, "What was net revenue last month?")
@@ -217,18 +167,7 @@ async def test_a_lookup_costs_an_iteration_and_no_reflect_call(
 async def test_a_plan_that_cannot_answer_yet_looks_the_term_up_instead_of_refusing(
     context: ToolContext, fake_llm: FakeLLM, wired: URL, store: LocalDocumentStore
 ) -> None:
-    """**Found by a live run, not by this suite.**
-
-    A model that needs a definition says so by *refusing*: `answerable` false,
-    the reason explaining that the reference data does not define the term, and
-    the term in `define`. Checking `answerable` first — which the first version
-    of this loop did — turned the one state the feature exists for into a dead
-    run, and every scripted test passed because they all set `answerable` true.
-
-    An unanswerable plan that names something to look up is not a refusal. It is
-    a request, and it becomes a refusal only if the documents have nothing to
-    say.
-    """
+    """Found by a live run, not by this suite."""
     await _upload(context, store)
     fake_llm.script(
         _plan(
@@ -256,10 +195,7 @@ async def test_a_plan_that_cannot_answer_yet_looks_the_term_up_instead_of_refusi
 async def test_an_unanswerable_plan_with_nothing_to_look_up_still_refuses(
     context: ToolContext, fake_llm: FakeLLM, wired: URL
 ) -> None:
-    """The other side of that reordering, which is the one a false block would
-    live in. Moving the lookup ahead of `answerable` must not make a plain
-    refusal harder to reach: a plan that says it cannot answer and asks for
-    nothing ends the run, as it always did."""
+    """The other side of that reordering, which is the one a false block would live in."""
     fake_llm.script(
         _plan("SELECT 1 AS placeholder", answerable=False, reason="no such data here"),
         role="sql",
@@ -274,19 +210,13 @@ async def test_an_unanswerable_plan_with_nothing_to_look_up_still_refuses(
     assert await _events(context, run_id, "knowledge_consulted") == []
 
 
-# ---------------------------------------------------------------------------
-# The ceilings
-# ---------------------------------------------------------------------------
+# --- The ceilings ---
 
 
 async def test_the_same_term_is_not_looked_up_twice(
     context: ToolContext, fake_llm: FakeLLM, wired: URL, store: LocalDocumentStore
 ) -> None:
-    """The duplicate-query rule's shape, applied to a second kind of repetition.
-    A corpus does not change mid-run, so asking it the same thing again buys an
-    iteration's worth of nothing — and the plan's SQL runs instead, because
-    refusing to run a statement the model wrote would turn a ceiling into a dead
-    end."""
+    """The duplicate-query rule's shape, applied to a second kind of repetition."""
     await _upload(context, store)
     fake_llm.script(
         _plan("SELECT count(*) AS n FROM shops", define="net revenue"), role="sql", times=1
@@ -311,10 +241,7 @@ async def test_the_same_term_is_not_looked_up_twice(
 async def test_the_next_plan_is_told_what_has_already_been_looked_up(
     context: ToolContext, fake_llm: FakeLLM, wired: URL, store: LocalDocumentStore
 ) -> None:
-    """Also found live. A refused duplicate is right and silence about it is not:
-    the model asked for the same term again, got nothing, and hedged an answer it
-    had already computed. The definition itself stays at L4 — what goes in the
-    progress notes is only the fact that it is there."""
+    """Also found live. A refused duplicate is right and silence about it is not."""
     await _upload(context, store)
     _script_lookup_then_answer(fake_llm)
     run_id = await _ask(context, "What was net revenue last month?")
@@ -329,11 +256,7 @@ async def test_the_next_plan_is_told_what_has_already_been_looked_up(
 async def test_a_run_may_not_look_up_more_than_its_cap(
     context: ToolContext, fake_llm: FakeLLM, wired: URL, store: LocalDocumentStore
 ) -> None:
-    """`MAX_LOOKUPS` is a ceiling the controller enforces, like every other in
-    this loop — never a request to the model. A question turning on more
-    undefined terms than this is one the organization has not written down enough
-    about, and spending the whole iteration budget discovering that helps
-    nobody."""
+    """`MAX_LOOKUPS` is a ceiling the controller enforces, like every other in this loop."""
     await _upload(context, store)
     for index in range(MAX_LOOKUPS + 1):
         fake_llm.script(
@@ -354,9 +277,7 @@ async def test_a_run_may_not_look_up_more_than_its_cap(
 async def test_a_lookup_that_finds_nothing_does_not_stop_the_run(
     context: ToolContext, fake_llm: FakeLLM, wired: URL
 ) -> None:
-    """No document is uploaded at all. The lookup is spent, the trace says the
-    corpus had nothing, and the run carries on and answers — because a term the
-    business has not written down is a normal state, not a failure."""
+    """No document is uploaded at all."""
     _script_lookup_then_answer(fake_llm, term="a term nobody wrote down")
     run_id = await _ask(context, "What was net revenue last month?")
 
@@ -372,25 +293,13 @@ async def test_a_lookup_that_finds_nothing_does_not_stop_the_run(
     )
 
 
-# ---------------------------------------------------------------------------
-# Prose informs; it does not bind (D-033)
-# ---------------------------------------------------------------------------
+# --- Prose informs; it does not bind (D-033) ---
 
 
 async def test_an_answer_resting_on_prose_says_its_definition_was_not_checked(
     context: ToolContext, fake_llm: FakeLLM, wired: URL, store: LocalDocumentStore
 ) -> None:
-    """**The owner's principle, made visible to the person reading the answer.**
-
-    A retrieved passage is evidence the agent may use; only a structured
-    definition is a constraint the critic enforces. B-078 is what happens when
-    that difference is invisible — a live model wrote the document's filter into
-    its SQL and then reasoned its way back out of it, answering 1,054 where the
-    document said 747, with nothing able to object.
-
-    So the answer carries it, and it **names the term**: a reader who knows which
-    definition went unenforced can check that one.
-    """
+    """The owner's principle, made visible to the person reading the answer."""
     await _upload(context, store)
     _script_lookup_then_answer(fake_llm)
     run_id = await _ask(context, "What was net revenue last month?")
@@ -404,9 +313,7 @@ async def test_an_answer_resting_on_prose_says_its_definition_was_not_checked(
 async def test_a_run_that_consulted_nothing_carries_no_such_limitation(
     context: ToolContext, fake_llm: FakeLLM, wired: URL
 ) -> None:
-    """The other half, and the one that keeps the first honest. A caveat that
-    fires on a run which never read a document is a warning about nothing, and a
-    reader who meets two of those stops reading the third."""
+    """The other half, and the one that keeps the first honest."""
     fake_llm.script(_plan("SELECT count(*) AS n FROM shops"), role="sql", times=1)
     fake_llm.script(_reflect(done=True, statement="counted the shops"), role="plan", times=1)
     fake_llm.script(_final(), role="compose")
@@ -421,10 +328,7 @@ async def test_a_run_that_consulted_nothing_carries_no_such_limitation(
 async def test_a_lookup_that_found_nothing_is_not_caveated_either(
     context: ToolContext, fake_llm: FakeLLM, wired: URL
 ) -> None:
-    """No document is uploaded, so the corpus answers nothing. The run is no
-    worse informed than it was and there is nothing for the reader to distrust —
-    `lookups` records the attempt for the cap, `prose_terms` does not, and the
-    two fields exist because they answer different questions."""
+    """No document is uploaded, so the corpus answers nothing."""
     _script_lookup_then_answer(fake_llm, term="a term nobody wrote down")
     run_id = await _ask(context, "What was net revenue last month?")
 
@@ -433,37 +337,20 @@ async def test_a_lookup_that_found_nothing_is_not_caveated_either(
     assert not any("read as prose" in note for note in outcome.limitations), outcome.limitations
 
 
-# ---------------------------------------------------------------------------
-# The tool list is honest
-# ---------------------------------------------------------------------------
+# --- The tool list is honest ---
 
 #: Tools the loop cannot dispatch, each with the reason it is still registered.
-#: Named here rather than left implicit so that adding a third is a line somebody
-#: has to write in a test — the same friction `test_response_schemas.ALLOWED`
-#: uses for a credential-shaped field that is not a credential.
-#:
-#: Both are catalog exploration, made redundant for now by `build_context`
-#: putting the cards in the prompt up front. They are **not** reachable and the
-#: prompt should not imply otherwise; that is **B-077**.
 NOT_DISPATCHABLE = {
     "search_tables": "the context stage already selects and renders the cards",
     "describe_table": "the context stage already selects and renders the cards",
 }
 
-#: What the run can actually dispatch, by name. `create_chart_spec` is called by
-#: the **runner** rather than from inside the loop (WP11.1) — a chart is of a
-#: finished answer, so the request rides on `finalize` and is dispatched once the
-#: citations are verified. Through this same registry, so it is role-filtered,
-#: budgeted and traced like the rest; only the stage differs.
+#: What the run can actually dispatch, by name.
 DISPATCHABLE = {"run_sql", "search_knowledge", "create_chart_spec"}
 
 
 def test_every_registered_tool_is_either_dispatchable_or_listed_as_not() -> None:
-    """The invariant B-075 is really about. A tool in the prompt that the loop
-    cannot call is a promise the product cannot keep, and the failure is silent:
-    the model asks, nothing happens, and the answer is worse for a reason nobody
-    can see. This does not fix the two that remain — it stops a third arriving
-    unnoticed."""
+    """The invariant B-075 is really about."""
     registered = {tool.name for tool in default_registry().available_to("reader")}
 
     unexplained = registered - DISPATCHABLE - set(NOT_DISPATCHABLE)

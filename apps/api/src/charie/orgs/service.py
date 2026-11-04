@@ -1,14 +1,4 @@
-"""Organizations, membership and the audit trail they leave.
-
-Every write here happens inside an org-scoped session, so row-level security is
-in force even while the organization is being created. That has one consequence
-worth stating up front, discovered while proving RLS in WP1.3:
-
-**Bootstrap must choose the organization's id before inserting it.** The policy
-on ``organizations`` is ``id = current_setting('app.org_id')``, so a row can only
-be written by a session already scoped to that id. Letting the database generate
-the id would mean writing a row the session is not allowed to write.
-"""
+"""Organizations, membership and the audit trail they leave."""
 
 from __future__ import annotations
 
@@ -30,13 +20,7 @@ class ConflictError(Exception):
 
 
 class NotFoundError(Exception):
-    """Named a row this organization cannot see — which reads the same as absent.
-
-    Its own class rather than an import from ``datasources`` or ``runs``, which
-    each define one for the same reason: the tenant boundary is what makes "not
-    found" the right answer, and a module that owns a boundary owns the word for
-    crossing it.
-    """
+    """Named a row this organization cannot see — which reads the same as absent."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,13 +40,7 @@ def audit(
     object_id: str | None = None,
     details: dict[str, object] | None = None,
 ) -> None:
-    """Stage an audit row on an already org-scoped session.
-
-    Takes the session rather than opening its own, so the audit row commits in
-    the same transaction as the change it describes: an action that happened
-    without a record, or a record of something that did not happen, are both
-    worse than either alone.
-    """
+    """Stage an audit row on an already org-scoped session."""
     session.add(
         AuditLog(
             org_id=org_id,
@@ -77,21 +55,8 @@ def audit(
 
 
 async def ensure_user(principal: Principal) -> User:
-    """Find or create the local user row for a validated principal.
-
-    Just-in-time provisioning: the identity provider has already vouched for this
-    subject, and refusing to record them until an invitation arrives would make
-    ``GET /v1/me`` fail for a perfectly legitimate first-time caller. ``users`` is
-    not tenant-scoped, so this needs the system session.
-
-    Only claims that actually arrived are stored (B-009). An access token carries
-    ``email`` only when the app registration asks for it, and inventing an address
-    for the ones that do not would write a plausible lie into a column that later
-    features will trust. A claim that shows up later is recorded then — which is
-    what happens when an administrator finally adds the optional claim.
-    """
-    # `users` is not tenant-scoped and has no RLS policy; the application role
-    # holds SELECT/INSERT/UPDATE on it from revision 0002 (B-123).
+    """Find or create the local user row for a validated principal."""
+    # `users` is not tenant-scoped and has no RLS policy.
     async with app_session() as session:
         existing = (
             (await session.execute(select(User).where(User.external_subject == principal.subject)))
@@ -100,8 +65,7 @@ async def ensure_user(principal: Principal) -> User:
         )
 
         if existing is not None:
-            # Filling a blank, never overwriting: the token is authoritative about
-            # who this is, not about what we have already been told they are called.
+            # Filling a blank, never overwriting: the token is authoritative about who this is.
             filled = False
             if existing.email is None and principal.email:
                 existing.email, filled = principal.email, True
@@ -124,16 +88,8 @@ async def ensure_user(principal: Principal) -> User:
 
 
 async def memberships_for(user_id: uuid.UUID) -> list[Membership]:
-    """Every organization this user belongs to.
-
-    Reads through the system session because the answer spans organizations —
-    there is no single ``app.org_id`` that could scope it. It returns only rows
-    joined to this user's own id, so it cannot become a way to enumerate tenants.
-    """
-    # **Spans every organization by definition** — "which tenants is this person
-    # in" is the one question no single `app.org_id` can answer, so it cannot be
-    # an org-scoped query. One audited function instead of an owner connection
-    # (B-123).
+    """Every organization this user belongs to."""
+    # Spans every organization by definition.
     async with app_session() as session:
         rows = await session.execute(
             text(
@@ -198,12 +154,7 @@ async def _count_admins(session: AsyncSession, org_id: uuid.UUID) -> int:
 async def change_role(
     *, org_id: uuid.UUID, actor_user_id: uuid.UUID, target_user_id: uuid.UUID, role: str
 ) -> Member:
-    """Change a member's role, refusing to remove the last Admin.
-
-    An organization with no Admin cannot invite anyone, cannot change a role and
-    cannot register a data source — it is bricked, and only an operator with
-    database access could repair it.
-    """
+    """Change a member's role, refusing to remove the last Admin."""
     async with org_session(org_id) as session:
         membership = (
             (
@@ -278,12 +229,7 @@ async def remove_member(
 
 @dataclass(frozen=True, slots=True)
 class ActiveDataSource:
-    """Which database this organization asks questions of, and its name.
-
-    The name travels with the id because every screen that shows this shows it to
-    a person: *"Questions are answered from Pizza demo"* is readable and
-    ``a3f1…`` is not. Both are null together when no Admin has chosen yet.
-    """
+    """Which database this organization asks questions of, and its name."""
 
     data_source_id: uuid.UUID | None
     data_source_name: str | None
@@ -298,24 +244,14 @@ async def _active_data_source(session: AsyncSession, org: Organization) -> Activ
             select(DataSource.name).where(DataSource.id == org.active_data_source_id)
         )
     ).scalar_one_or_none()
-    # A source deleted between the two statements would land here. The FK's
-    # ON DELETE SET NULL means it cannot persist, so report what a reader can act
-    # on — nothing is chosen — rather than an id with no name behind it.
+    # A source deleted between the two statements would land here.
     if name is None:
         return ActiveDataSource(data_source_id=None, data_source_name=None)
     return ActiveDataSource(data_source_id=org.active_data_source_id, data_source_name=name)
 
 
 async def active_data_source(org_id: uuid.UUID) -> ActiveDataSource:
-    """The organization's chosen database, readable by **any member**.
-
-    Not Admin-only, deliberately: the chat screen has to know whether asking is
-    possible at all, and a Reader who cannot see the answer to that gets a
-    composer that fails for reasons the screen cannot explain. This exposes the
-    name of a database the whole organization already queries — no host, no
-    account, no credential — so it tells a member nothing their own answers would
-    not.
-    """
+    """The organization's chosen database, readable by any member."""
     async with org_session(org_id) as session:
         org = (
             (await session.execute(select(Organization).where(Organization.id == org_id)))
@@ -325,28 +261,12 @@ async def active_data_source(org_id: uuid.UUID) -> ActiveDataSource:
         return await _active_data_source(session, org)
 
 
-#: The key in ``organizations.settings`` holding whether an answer shows what it
-#: cost. **Absent means visible**, which is the owner's rule (2026-08-29):
-#: turning spend off is a deliberate act, not something a new organization
-#: inherits from a default nobody chose.
+#: The key in ``organizations.settings`` holding whether an answer shows what it cost.
 SHOW_RUN_COST = "show_run_cost"
 
 
 def show_run_cost_of(org: Organization) -> bool:
-    """Whether this organization's answers carry cost and token counts.
-
-    **A key in ``settings``, not a column**, and revision 0031's reasoning is
-    what decides it rather than contradicting it: that migration rejected the
-    JSONB column for `active_data_source_id` because an id needs referential
-    integrity and JSONB has none. A boolean references nothing, so the objection
-    does not apply and the column that has been sitting empty since revision
-    0001 is the right home.
-
-    Anything other than an explicit ``false`` reads as visible. A malformed
-    value must not hide spend by accident — the failure that matters here is a
-    number vanishing with nobody able to say why, not one showing when it could
-    have been hidden.
-    """
+    """Whether this organization's answers carry cost and token counts."""
     return (org.settings or {}).get(SHOW_RUN_COST) is not False
 
 
@@ -362,13 +282,7 @@ async def show_run_cost(org_id: uuid.UUID) -> bool:
 
 
 async def set_show_run_cost(*, org_id: uuid.UUID, actor_user_id: uuid.UUID, visible: bool) -> bool:
-    """Turn spend on or off for the whole organization. Admin only.
-
-    **Not a permission.** It hides cost from everybody, the Admin who set it
-    included — which is the owner's intent (2026-08-29: *"Hide it from everyone
-    including me when it's off"*) and worth stating because a per-role rule is
-    the thing this most resembles and is not.
-    """
+    """Turn spend on or off for the whole organization."""
     async with org_session(org_id) as session:
         org = (
             (await session.execute(select(Organization).where(Organization.id == org_id)))
@@ -376,9 +290,7 @@ async def set_show_run_cost(*, org_id: uuid.UUID, actor_user_id: uuid.UUID, visi
             .one()
         )
         previous = show_run_cost_of(org)
-        # Reassigned rather than mutated: SQLAlchemy does not track a mutation
-        # inside a JSONB dict, so `settings[key] = x` would flush nothing and the
-        # switch would appear to work until the next request read it back.
+        # Reassigned rather than mutated: SQLAlchemy does not track a mutation inside a JSONB dict.
         org.settings = {**(org.settings or {}), SHOW_RUN_COST: visible}
         audit(
             session,
@@ -396,21 +308,7 @@ async def set_show_run_cost(*, org_id: uuid.UUID, actor_user_id: uuid.UUID, visi
 async def set_active_data_source(
     *, org_id: uuid.UUID, actor_user_id: uuid.UUID, data_source_id: uuid.UUID | None
 ) -> ActiveDataSource:
-    """Choose the database this organization asks questions of. Admin only.
-
-    **The foreign key is not the tenant check.** A constraint check does not
-    consult row-level security, so another organization's source id would satisfy
-    the database perfectly well and quietly point this organization at somebody
-    else's data — the worst output this product can produce, and the only one
-    with nothing about it that looks wrong. The lookup below runs inside the org
-    session, so a source this organization does not own is simply not there, and
-    the caller is told "no such data source" rather than anything about what
-    exists elsewhere.
-
-    ``None`` clears the choice, which is a legitimate thing for an Admin to want
-    and returns the organization to resolving and refusing exactly as it did
-    before revision 0031.
-    """
+    """Choose the database this organization asks questions of."""
     async with org_session(org_id) as session:
         org = (
             (await session.execute(select(Organization).where(Organization.id == org_id)))

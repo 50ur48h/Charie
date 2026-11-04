@@ -1,37 +1,4 @@
-"""Load a definitions file into a **deployed** environment over the public API.
-
-    export CHARIE_TOKEN='...'                    # from the browser, see below
-    uv run ops/seed/push_definitions.py --api https://<api host> --list
-    uv run ops/seed/push_definitions.py --api https://<api host> \
-        --source-name "<data source name>" --file path/to/definitions.json
-
-`provision_definitions.py` is the local twin and is the better tool where it
-works: it uses the service layer directly and needs no credential. It cannot be
-used against dev, because the platform database sits behind a VNet with
-`publicNetworkAccess` disabled and `ops/` is not in the API image, so there is
-nothing on the inside to run it from. The public API is the remaining door.
-
-**Name the source, not its id.** The first version of this took `--source` as a
-UUID and nothing else, and a UUID is a thing a person copies from one browser
-tab into another shell — so the run that appeared to succeed had written eight
-definitions to a source nobody was looking at. Ids still work; `--source-name`
-resolves one, and `--list` prints what is there when neither is certain.
-
-**The token is read from the environment and never written anywhere.** Not into
-a file, not into the argument list — an argument is visible in the process table
-and lands in shell history. Get one from the browser on a signed-in tab
-(Application -> Local Storage, or the `Authorization` header of any request the
-app makes on the Network tab) and export it into the shell you run this from.
-It is a short-lived user token: it expires, and this script does not persist it.
-
-**It reads back what it wrote.** A push that reports eight created and leaves a
-screen empty is the failure this is built against, so the last thing it does is
-list the source again and print, per definition, whether the caveat and the
-filters actually survived the round trip.
-
-Idempotent by name, like its local twin: a rerun updates rather than
-duplicating, so correcting a caveat is editing the JSON and running it again.
-"""
+"""Load a definitions file into a deployed environment over the public API."""
 
 from __future__ import annotations
 
@@ -90,9 +57,7 @@ def _resolve(
         match = next((s for s in sources if str(s["id"]) == source), None)
         if match is None:
             names = ", ".join(f"{s['name']} ({s['id']})" for s in sources)
-            # Named rather than accepted: the whole point of this script's
-            # rewrite is that a wrong id used to be indistinguishable from a
-            # right one until somebody opened the screen.
+            # Named rather than accepted: the whole point of this script's rewrite is that a...
             raise SystemExit(f"No data source with id {source}. Have: {names}")
         return org, source, str(match["name"])
     if source_name is not None:
@@ -129,8 +94,7 @@ def _report(client: httpx.Client, base: str, wanted: list[dict[str, Any]]) -> in
             continue
         caveat = row.get("caveat") or ""
         expected = item.get("caveat") or ""
-        # Length, not presence: a caveat truncated on the way in is the failure
-        # a "yes it is there" check would wave through.
+        # Length, not presence: a caveat truncated on the way in is the failure a "yes it is...
         mark = "ok" if len(caveat) == len(expected) else f"{len(caveat)}/{len(expected)}"
         if mark != "ok":
             missing += 1

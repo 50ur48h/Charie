@@ -1,26 +1,4 @@
-"""security_events: denials that belong to no tenant
-
-Architecture Part 8.2, extended per DECISIONS D-008.
-
-``audit_log`` answers "who touched what **in my organization**" and is org-scoped
-and RLS-protected. Some denials have no organization to belong to: an
-authenticated user asking for an organization they are not a member of, or one
-whose membership cannot be resolved at all. Those must still be queryable — they
-are the shape of an account probing for tenants — so they land here.
-
-This table is deliberately **not** tenant-scoped, and its organization column is
-named ``attempted_org_id`` rather than ``org_id`` for two reasons: it records
-what was asked for rather than what the row belongs to, and the RLS proof suite
-treats any ``org_id`` column as a tenant scope that must be declared and
-protected. Naming it truthfully keeps that guard meaningful.
-
-Only a platform operator connecting as the owner reads this table; the
-application role may insert and nothing more.
-
-Revision ID: 0003
-Revises: 0002
-Create Date: 2026-08-11
-"""
+"""security_events: denials that belong to no tenant"""
 
 from __future__ import annotations
 
@@ -72,8 +50,7 @@ def upgrade() -> None:
         "ix_security_events_attempted_org_id", "security_events", ["attempted_org_id"], unique=False
     )
 
-    # Append-only for the application, exactly like audit_log: the process that
-    # records a denial must not be able to erase it.
+    # Append-only for the application, exactly like audit_log.
     op.execute(f"GRANT INSERT, SELECT ON security_events TO {APP_ROLE}")
     op.execute(f"REVOKE UPDATE, DELETE ON security_events FROM {APP_ROLE}")
 

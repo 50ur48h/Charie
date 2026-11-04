@@ -1,12 +1,4 @@
-"""Choosing a backend — and refusing the wrong one.
-
-One function decides, so "which store holds customer credentials here?" has a
-single answer that a reviewer can read in ten lines. The production refusal lives
-in ``Settings`` next to the equivalent check for the dev token issuer, and is
-asserted again at application startup: a deployment that gets this wrong must not
-boot, because a process that starts and then mishandles credentials looks healthy
-from the outside.
-"""
+"""Choosing a backend — and refusing the wrong one."""
 
 from __future__ import annotations
 
@@ -25,9 +17,7 @@ def build_secrets_provider(settings: Settings | None = None) -> SecretsProvider:
     resolved.assert_secrets_backend_is_production_safe()
 
     if resolved.secrets_backend == "keyvault":
-        # Imported here rather than at module scope: this module is imported by
-        # every process, and the Azure SDK is only needed by the deployments
-        # that choose this backend.
+        # Imported here rather than at module scope: this module is imported by every process.
         from charie.secrets.keyvault import KeyVaultSecretsProvider
 
         return KeyVaultSecretsProvider(vault_url=resolved.key_vault_url or "")
@@ -40,10 +30,5 @@ def build_secrets_provider(settings: Settings | None = None) -> SecretsProvider:
 
 @lru_cache(maxsize=1)
 def get_secrets_provider() -> SecretsProvider:
-    """The process-wide provider, built on first use.
-
-    Lazy for the same reason the token validator is: an API with no credential
-    store configured must still answer /healthz, and must still fail closed on
-    the routes that need one.
-    """
+    """The process-wide provider, built on first use."""
     return build_secrets_provider()

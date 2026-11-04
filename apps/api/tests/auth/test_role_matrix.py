@@ -1,14 +1,4 @@
-"""The role matrix, asserted route by route and snapshotted.
-
-Architecture Part 6.2 states the matrix in prose. This asserts it against the
-real routes, and then writes what it observed to a committed snapshot — so a
-change to who can do what shows up as a diff in review rather than as a surprise
-in production. Widening access accidentally is the failure this exists to catch.
-
-Every route the API exposes must appear here. A new org-scoped route with no
-entry fails ``test_every_org_route_is_covered``, which is what stops the matrix
-quietly falling behind the surface it describes.
-"""
+"""The role matrix, asserted route by route and snapshotted."""
 
 from __future__ import annotations
 
@@ -40,30 +30,20 @@ SNAPSHOT = Path(__file__).with_name("role_matrix.json")
 
 ROLES = ("admin", "contributor", "reader")
 
-#: Routes that are not org-scoped, and so are not part of this matrix. Listed
-#: explicitly rather than pattern-matched: an unlisted route is a route nobody
-#: thought about.
+#: Routes that are not org-scoped, and so are not part of this matrix.
 NOT_ORG_SCOPED = {
     ("GET", "/healthz"),
     ("GET", "/v1/me"),
     ("POST", "/v1/orgs"),
     ("POST", "/v1/invitations/accept"),
-    # **B-017.** Claiming a recovery grant cannot be org-scoped: the claimant is
-    # either not a member at all, or is a member without the role any org-scoped
-    # guard would demand — which is the whole situation the grant exists for.
-    # The token is the authorization, exactly as for an invitation.
+    # B-017. Claiming a recovery grant cannot be org-scoped.
     ("POST", "/v1/recovery-grants/claim"),
     ("GET", "/dev/token"),
     ("GET", "/dev/jwks.json"),
     ("GET", "/dev/.well-known/openid-configuration"),
 }
 
-#: One representative request per org-scoped route. Bodies are valid, so a 4xx
-#: can only be an authorization decision and never a validation error.
-#:
-#: Order matters for the data-source probes: each probe runs as admin first, so a
-#: DELETE placed before them would leave the later ones probing a row that no
-#: longer exists, and a 404 would be recorded where the matrix means "allow".
+#: One representative request per org-scoped route.
 PROBES: tuple[tuple[str, str, dict[str, Any] | None], ...] = (
     ("GET", "/v1/orgs/{org_id}/members", None),
     ("PATCH", "/v1/orgs/{org_id}/members/{user_id}", {"role": "reader"}),
@@ -73,11 +53,7 @@ PROBES: tuple[tuple[str, str, dict[str, Any] | None], ...] = (
         "/v1/orgs/{org_id}/invitations",
         {"email": "invitee@example.com", "role": "reader"},
     ),
-    # **B-017.** A recovery grant makes whoever holds its token an Admin of this
-    # organization, so all three of these are Admin-only for the same reason
-    # `PATCH members` is: anyone who could arm or read one could promote
-    # themselves. The claim route is not here — it is deliberately not
-    # org-scoped, and is listed in `NOT_ORG_SCOPED` with the reason.
+    # B-017. A recovery grant makes whoever holds its token an Admin of this organization.
     ("POST", "/v1/orgs/{org_id}/recovery-grants", {"label": "Probe"}),
     ("GET", "/v1/orgs/{org_id}/recovery-grants", None),
     (
@@ -105,37 +81,25 @@ PROBES: tuple[tuple[str, str, dict[str, Any] | None], ...] = (
     ),
     ("GET", "/v1/orgs/{org_id}/data-sources/{data_source_id}", None),
     ("PATCH", "/v1/orgs/{org_id}/data-sources/{data_source_id}", {"name": "Probed"}),
-    # Port 1 on loopback: refused immediately on every platform, so the probe
-    # answers "not reachable" in microseconds. The matrix cares that the route
-    # answered at all, not what it found.
+    # Port 1 on loopback: refused immediately on every platform.
     ("POST", "/v1/orgs/{org_id}/data-sources/{data_source_id}/test", None),
-    # Reading a catalog is member work; building one reaches out to a customer's
-    # database, so it is Contributor-or-Admin. The probe's data source is never
-    # verified read-only, so a refresh declines before it opens a socket — which
-    # is a 200 with `changed: false`, and exactly what the matrix wants to see:
-    # the route answered, and the decision was about the role.
+    # Reading a catalog is member work; building one reaches out to a customer's database.
     ("GET", "/v1/orgs/{org_id}/data-sources/{data_source_id}/catalog", None),
     ("POST", "/v1/orgs/{org_id}/data-sources/{data_source_id}/refresh", None),
-    # Profiling reads a customer's rows, so it sits with refresh: Contributor or
-    # Admin. Deciding what may be seen is Admin alone.
+    # Profiling reads a customer's rows, so it sits with refresh: Contributor or Admin.
     ("POST", "/v1/orgs/{org_id}/data-sources/{data_source_id}/profile", None),
     (
         "PATCH",
         "/v1/orgs/{org_id}/data-sources/{data_source_id}/columns/{column_id}/policy",
         {"policy": "mask", "reason": "probe"},
     ),
-    # Searching reads cards, whose examples were masked before they were stored,
-    # so it is member work like browsing.
+    # Searching reads cards, whose examples were masked before they were stored.
     ("GET", "/v1/orgs/{org_id}/catalog/search", None),
-    # Asking questions and reading your own traces is granted to every role
-    # (architecture 6.2). Each role probes *its own* conversation and run — see
-    # the note on `conversations` in the Matrix fixture for why that matters.
+    # Asking questions and reading your own traces is granted to every role (architecture 6.2).
     ("POST", "/v1/orgs/{org_id}/conversations", {"title": "Probe"}),
     ("GET", "/v1/orgs/{org_id}/conversations", None),
     ("GET", "/v1/orgs/{org_id}/conversations/{conversation_id}", None),
-    # Every role has its own conversations (arch 6.2), so these are member-level
-    # and the *ownership* rule does the rest: a colleague's thread is a 404 even
-    # to an Admin (B-037), which is a different check from this matrix.
+    # Every role has its own conversations (arch 6.2).
     ("PATCH", "/v1/orgs/{org_id}/conversations/{conversation_id}", {"title": "Renamed"}),
     (
         "POST",
@@ -148,22 +112,13 @@ PROBES: tuple[tuple[str, str, dict[str, Any] | None], ...] = (
         "/v1/orgs/{org_id}/conversations/{conversation_id}/messages",
         {"content": "How many orders?", "idempotency_key": "probe"},
     ),
-    # The answers in a thread, which the screen reads to render each one as more
-    # than its words (**B-106**). Every role, like the messages above and for the
-    # same reason: this is a person reading their own conversation, and the runs
-    # in it are what they were told.
+    # The answers in a thread, which the screen reads to render each one as more than its words.
     ("GET", "/v1/orgs/{org_id}/conversations/{conversation_id}/runs", None),
     ("GET", "/v1/orgs/{org_id}/runs/{run_id}", None),
     ("GET", "/v1/orgs/{org_id}/runs/{run_id}/events", None),
-    # Resolving your own citation is part of reading your own trace, so it is a
-    # member route like the two above. Each role probes an execution on *its own*
-    # run, for the same reason the conversations do.
+    # Resolving your own citation is part of reading your own trace.
     ("GET", "/v1/orgs/{org_id}/runs/{run_id}/executions/{execution_id}", None),
-    # The semantic layer (WP10.2d, B-059). **Every one of these is Admin, the
-    # read side included** — an accepted definition constrains generated SQL, so
-    # the list is an administrative view of the platform's own controls rather
-    # than a view of the customer's data. Whether a Reader should see it is a
-    # real product question and is filed as B-082, not answered by default here.
+    # The semantic layer (WP10.2d, B-059).
     ("GET", "/v1/orgs/{org_id}/data-sources/{data_source_id}/definitions", None),
     ("GET", "/v1/orgs/{org_id}/data-sources/{data_source_id}/definitions/proposals", None),
     (
@@ -190,10 +145,7 @@ PROBES: tuple[tuple[str, str, dict[str, Any] | None], ...] = (
         "/v1/orgs/{org_id}/data-sources/{data_source_id}/definitions/{definition_id}/reject",
         None,
     ),
-    # Editing and retiring an *active* definition (B-088). Admin like the rest,
-    # and for the sharpest version of the reason: a PATCH here changes what the
-    # critic will enforce on generated SQL, which is a privileged act however
-    # ordinary the verb looks.
+    # Editing and retiring an active definition (B-088).
     (
         "PATCH",
         "/v1/orgs/{org_id}/data-sources/{data_source_id}/definitions/{definition_id}",
@@ -209,16 +161,13 @@ PROBES: tuple[tuple[str, str, dict[str, Any] | None], ...] = (
         "/v1/orgs/{org_id}/data-sources/{data_source_id}/definitions/{definition_id}/versions",
         None,
     ),
-    # Bringing one back (B-094). Admin like every other verb here, and for the
-    # sharpest reason: it puts filters back in front of the critic.
+    # Bringing one back (B-094). Admin like every other verb here, and for the sharpest reason.
     (
         "POST",
         "/v1/orgs/{org_id}/data-sources/{data_source_id}/definitions/{definition_id}/reinstate",
         None,
     ),
-    # Verified queries (arch 5.4). Admin like the rest of the semantic layer,
-    # and for a reason of its own: an approved example is SQL this organization
-    # is telling the planner to imitate.
+    # Verified queries (arch 5.4). Admin like the rest of the semantic layer.
     ("GET", "/v1/orgs/{org_id}/data-sources/{data_source_id}/verified-queries", None),
     (
         "POST",
@@ -231,10 +180,7 @@ PROBES: tuple[tuple[str, str, dict[str, Any] | None], ...] = (
         None,
     ),
     ("DELETE", "/v1/orgs/{org_id}/data-sources/{data_source_id}", None),
-    # Documents (WP10.1b). Reading is member work like browsing a catalog;
-    # **uploading is Contributor-or-Admin**, and the reason is worth stating:
-    # a document is not data a reader supplies, it is guidance every future run
-    # in the organization will be told to follow.
+    # Documents (WP10.1b). Reading is member work like browsing a catalog.
     ("POST", "/v1/orgs/{org_id}/documents", None),
     ("GET", "/v1/orgs/{org_id}/documents", None),
     ("GET", "/v1/orgs/{org_id}/documents/search", None),
@@ -244,35 +190,23 @@ PROBES: tuple[tuple[str, str, dict[str, Any] | None], ...] = (
 )
 
 
-#: Which definition row a probe acts upon. Accept, reject and retire each
-#: **consume** the row they are given — an accepted proposal is no longer a
-#: proposal — so they must not share one, or whichever ran second would record
-#: ``deny(404)`` where the matrix means allow. Same shape of problem as the
-#: per-role documents. The PATCH and versions probes need a row in the *active*
-#: state instead, since editing a proposal is a 404 by design.
+#: Which definition row a probe acts upon.
 DEFINITIONS = "/v1/orgs/{org_id}/data-sources/{data_source_id}/definitions/{definition_id}"
 PROPOSAL_POOL: dict[str, str] = {
     f"{DEFINITIONS}/reject": "rejected",
     DEFINITIONS: "edited",
     f"{DEFINITIONS}/versions": "edited",
-    # Its own pool, already `retired`: probing it against an active row would
-    # record a 404 about state as though it were a decision about role, and
-    # sharing the `retired` pool with the DELETE probe would hand the second one
-    # a row the first had already consumed.
+    # Its own pool, already `retired`.
     f"{DEFINITIONS}/reinstate": "reinstated",
 }
 
-#: Query strings for routes that require one. Without it the probe earns a 422
-#: from validation, and the matrix would record a validation error as though it
-#: were an authorization decision — which is the one thing this file is for.
+#: Query strings for routes that require one.
 QUERIES: dict[str, str] = {
     "/v1/orgs/{org_id}/catalog/search": "?q=orders",
     "/v1/orgs/{org_id}/documents/search": "?q=revenue",
 }
 
-#: Routes that take a file rather than a JSON body. Same reason ``QUERIES``
-#: exists: a multipart route probed with JSON earns a 422, and the matrix would
-#: record a validation error as though it were an authorization decision.
+#: Routes that take a file rather than a JSON body.
 UPLOADS: dict[str, dict[str, tuple[str, bytes, str]]] = {
     "/v1/orgs/{org_id}/documents": {
         "file": (
@@ -303,35 +237,18 @@ class Matrix:
     users: dict[str, uuid.UUID]
     data_source_id: uuid.UUID
     column_id: uuid.UUID
-    #: A conversation and a run **per role**, because a conversation belongs to
-    #: the person who started it (architecture 6.2 grants "view *own*
-    #: conversations"). Sharing one across the three roles would record
-    #: ``deny(404)`` for two of them and make an ownership rule look like a role
-    #: rule — which is the one confusion this file exists to prevent. Ownership
-    #: itself is proved in ``tests/runs/test_runs_routes.py``.
+    #: A conversation and a run per role.
     conversations: dict[str, uuid.UUID]
     runs: dict[str, uuid.UUID]
-    #: One `query_executions` row per role, on that role's own run — so the
-    #: evidence probe records a role decision rather than "that execution is not
-    #: on this run", which is a 404 of an entirely different kind.
+    #: One `query_executions` row per role, on that role's own run.
     executions: dict[str, uuid.UUID]
-    #: Five definitions **per role**: one each for the accept, reject, retire and
-    #: reinstate probes, plus an active one the edit and versions probes read. Each of
-    #: those verbs consumes the row it is handed, so a shared one
-    #: would record an already-decided 404 for whichever ran second — a
-    #: lifecycle fact wearing the clothes of a role decision.
+    #: Five definitions per role: one each for the accept, reject, retire and reinstate probes.
     proposals: dict[str, dict[str, uuid.UUID]]
-    #: One approved example per role, for the same reason the proposals are per
-    #: role: the DELETE probe retires the row it is handed.
+    #: One approved example per role, for the same reason the proposals are per role.
     verified: dict[str, uuid.UUID]
-    #: One recovery grant for the organization (**B-017**). Not per-role,
-    #: because revoking is idempotent and nothing here is owned by a caller.
+    #: One recovery grant for the organization (B-017).
     recovery_grant_id: uuid.UUID
-    #: A document **per role**, and for a blunter reason than the conversations:
-    #: documents are org-scoped, so one would be visible to all three — but the
-    #: DELETE probe *removes* it, and roles are probed in order, so the second
-    #: role would record ``deny(404)`` for a document the first one deleted. One
-    #: each keeps every entry a role decision.
+    #: A document per role, and for a blunter reason than the conversations.
     documents: dict[str, uuid.UUID]
 
 
@@ -351,24 +268,12 @@ async def matrix_app(
         "_session_factory",
         lambda: async_sessionmaker(app_engine, expire_on_commit=False, autoflush=False),
     )
-    # The upload probe posts a real file through a real ingest, and since B-073
-    # that route asks for the configured embedder — which on a developer machine
-    # is a live one, so every run of this file would embed a probe document at
-    # the owner's expense. This file is about **who may call what**; embedding
-    # is proved where it belongs, in `tests/knowledge`. Without the seam the
-    # B-040 guard would refuse and the probe would record `deny(500)`, turning
-    # an authorization matrix into a report about configuration.
+    # The upload probe posts a real file through a real ingest.
     monkeypatch.setattr(knowledge_routes, "document_embedder", lambda: None)
     # And the same for cards: refreshing a catalog embeds them since B-018.
     monkeypatch.setattr(catalog_routes, "card_embedder", lambda: None)
 
-    # The import probe reads the customer's database through the DAL, and this
-    # fixture's data source points at port 1 so that nothing here ever waits on
-    # a socket. Left alone it would answer 502 for the admin and the matrix
-    # would record "not reachable" as though it were an authorization decision —
-    # the one confusion this file exists to prevent. What an import actually
-    # reads is proved in tests/semantic and tests/agent, against a real
-    # database; this file is about **who may call what**.
+    # The import probe reads the customer's database through the DAL.
     async def _no_rows(**_: object) -> tuple[object, ...]:
         return ()
 
@@ -382,13 +287,10 @@ async def matrix_app(
     proposals: dict[str, dict[str, uuid.UUID]] = {
         "accepted": {},
         "rejected": {},
-        # Active rather than proposed: PATCH and DELETE act on a definition that
-        # is already in force, and probing them against a proposal would record
-        # a 404 about state as though it were a decision about role.
+        # Active rather than proposed: PATCH and DELETE act on a definition that is already in...
         "edited": {},
         "retired": {},
-        # And this one starts out of force, because that is the only state
-        # `reinstate` accepts (B-094).
+        # And this one starts out of force, because that is the only state `reinstate` accepts.
         "reinstated": {},
     }
     verified: dict[str, uuid.UUID] = {}
@@ -402,8 +304,7 @@ async def matrix_app(
         await connection.execute(
             text("INSERT INTO organizations (id, name) VALUES (:id, 'Matrix')"), {"id": org_id}
         )
-        # Two admins, so that a PATCH or DELETE aimed at one is refused on role
-        # grounds only — never by the last-admin rule, which would look identical.
+        # Two admins, so that a PATCH or DELETE aimed at one is refused on role grounds only.
         for subject, role in (
             ("admin", "admin"),
             ("spare-admin", "admin"),
@@ -421,7 +322,6 @@ async def matrix_app(
                 {"o": org_id, "u": user_id, "r": role},
             )
             # Each probing role gets a conversation of its own, and a run in it.
-            # `spare-admin` never probes, so it needs neither.
             if subject in ROLES:
                 conversation_id, run_id = uuid.uuid4(), uuid.uuid4()
                 conversations[subject], runs[subject] = conversation_id, run_id
@@ -474,11 +374,7 @@ async def matrix_app(
                 "r": f"ds/{org_id}/{data_source_id}/credentials",
             },
         )
-        # A catalog with one column in it, written directly rather than
-        # discovered: without one the browse probe answers 404 for every role and
-        # the matrix would record "deny(404)" three times — which reads like
-        # nobody may see a catalog, when what it means is that there was not one
-        # to see. The column is what the policy probe patches.
+        # A catalog with one column in it, written directly rather than discovered.
         snapshot_id = uuid.uuid4()
         table_id = uuid.uuid4()
         await connection.execute(
@@ -503,9 +399,7 @@ async def matrix_app(
             {"i": column_id, "o": org_id, "t": table_id},
         )
 
-        # A proposal per role per verb. Written directly rather than imported,
-        # because the import path is stubbed above and because what the accept
-        # and reject probes need is simply a row in the state those verbs act on.
+        # A proposal per role per verb. Written directly rather than imported.
         for role in ROLES:
             for pool in ("accepted", "rejected", "edited", "retired", "reinstated"):
                 proposal_id = uuid.uuid4()
@@ -540,10 +434,7 @@ async def matrix_app(
                 {"i": example_id, "o": org_id, "d": data_source_id, "q": f"probe {role}?"},
             )
 
-        # **B-017.** One grant serves all three roles: revoking is idempotent, so
-        # unlike the conversations these do not need to be per-role. It has to
-        # *exist* though — probing revoke against an invented id would earn the
-        # Admin a 409 and record a role decision that never happened.
+        # B-017. One grant serves all three roles: revoking is idempotent.
         recovery_grant_id = uuid.uuid4()
         await connection.execute(
             text(
@@ -578,13 +469,7 @@ async def matrix_app(
 
 
 def _pool(method: str, template: str) -> str:
-    """Which pool of definitions this probe draws from.
-
-    Keyed on the **verb** as well as the path, because ``PATCH`` and ``DELETE``
-    share one template and only the second consumes its row. Handing them the
-    same definition would make the retire probe run against a row the edit probe
-    had already changed, or worse, the reverse.
-    """
+    """Which pool of definitions this probe draws from."""
     if method == "DELETE" and template == DEFINITIONS:
         return "retired"
     return PROPOSAL_POOL.get(template, "accepted")
@@ -605,8 +490,7 @@ async def _probe(
             method,
             path,
             headers={"Authorization": f"Bearer {who}"},
-            # Never both: httpx refuses a request carrying a JSON body and a
-            # multipart one, and a route takes one or the other.
+            # Never both: httpx refuses a request carrying a JSON body and a multipart one.
             json=body if files is None else None,
             files=files,
         )
@@ -620,9 +504,7 @@ async def test_the_role_matrix_matches_its_snapshot(matrix_app: Matrix) -> None:
         key = f"{method} {template}"
         observed[key] = {}
         for role in ROLES:
-            # Formatted per role rather than once: the conversation and run ids
-            # differ by caller, so that what is recorded here is the *role*
-            # decision and never an ownership 404 wearing its clothes.
+            # Formatted per role rather than once: the conversation and run ids differ by caller.
             path = template.format(
                 org_id=matrix_app.org_id,
                 user_id=matrix_app.users["spare-admin"],
@@ -653,31 +535,18 @@ async def test_the_role_matrix_matches_its_snapshot(matrix_app: Matrix) -> None:
 
 
 async def test_the_snapshot_says_what_the_architecture_says(matrix_app: Matrix) -> None:
-    """A snapshot only proves stability. This proves it is the *right* matrix.
-
-    Architecture Part 6.2: managing members and data sources is Admin-only;
-    everyone may read.
-    """
+    """A snapshot only proves stability."""
     recorded = json.loads(SNAPSHOT.read_text(encoding="utf-8"))
 
     for readable in (
         "GET /v1/orgs/{org_id}/members",
         "GET /v1/orgs/{org_id}/data-sources",
         "GET /v1/orgs/{org_id}/data-sources/{data_source_id}",
-        # D-045. Readable by any member on purpose: the chat screen has to
-        # know whether asking is possible before it offers a composer, and a
-        # Reader who cannot read this gets a control that fails for a reason
-        # the screen cannot explain. It discloses the *name* of a database
-        # every member already queries — no host, no account, no credential.
+        # D-045. Readable by any member on purpose.
         "GET /v1/orgs/{org_id}/active-data-source",
-        # D-066, and readable for the same reason. Every member is subject to
-        # this switch, so the settings screen has to be able to show its state
-        # to whoever can open the screen. It discloses no spend — only whether
-        # spend is shown.
+        # D-066, and readable for the same reason.
         "GET /v1/orgs/{org_id}/show-run-cost",
-        # "Ask questions / view own conversations & traces" is the one line of
-        # 6.2's table that grants a Reader anything, so a Reader who cannot ask
-        # is a broken product rather than a tightened one.
+        # "Ask questions / view own conversations & traces" is the one line of 6.2's table that...
         "POST /v1/orgs/{org_id}/conversations",
         "GET /v1/orgs/{org_id}/conversations",
         "GET /v1/orgs/{org_id}/conversations/{conversation_id}",
@@ -686,8 +555,7 @@ async def test_the_snapshot_says_what_the_architecture_says(matrix_app: Matrix) 
         "GET /v1/orgs/{org_id}/conversations/{conversation_id}/runs",
         "GET /v1/orgs/{org_id}/runs/{run_id}",
         "GET /v1/orgs/{org_id}/runs/{run_id}/events",
-        # A trace whose citations cannot be opened is a trace you are asked to
-        # take on faith, so this is granted with the trace rather than above it.
+        # A trace whose citations cannot be opened is a trace you are asked to take on faith.
         "GET /v1/orgs/{org_id}/runs/{run_id}/executions/{execution_id}",
     ):
         assert recorded[readable] == {
@@ -695,10 +563,7 @@ async def test_the_snapshot_says_what_the_architecture_says(matrix_app: Matrix) 
             "contributor": "allow",
             "reader": "allow",
         }
-    # Reading the organization's documents is member work, like browsing a
-    # catalog: the text is guidance the agent already follows, and hiding it
-    # from a Reader would mean a Reader cannot check why an answer said what it
-    # said.
+    # Reading the organization's documents is member work, like browsing a catalog.
     for readable_document_route in (
         "GET /v1/orgs/{org_id}/documents",
         "GET /v1/orgs/{org_id}/documents/search",
@@ -709,12 +574,7 @@ async def test_the_snapshot_says_what_the_architecture_says(matrix_app: Matrix) 
             "contributor": "allow",
             "reader": "allow",
         }
-    # **Writing one is Contributor-or-Admin** (architecture 10.2 marks the route
-    # `[contributor+]`). A document is not data a Reader supplies — it is
-    # guidance every future run in the organization will be told to follow, so
-    # uploading one is closer to editing the agent than to asking it a question.
-    # The Reader's denial must be a **403**: a 404 would mean the route was
-    # reached and the object was missing, which is a different claim entirely.
+    # Writing one is Contributor-or-Admin (architecture 10.2 marks the route `[contributor+]`).
     for contributor_only in (
         "POST /v1/orgs/{org_id}/documents",
         "POST /v1/orgs/{org_id}/documents/{document_id}/reindex",
@@ -731,15 +591,9 @@ async def test_the_snapshot_says_what_the_architecture_says(matrix_app: Matrix) 
         "PATCH /v1/orgs/{org_id}/data-sources/{data_source_id}",
         "DELETE /v1/orgs/{org_id}/data-sources/{data_source_id}",
         "POST /v1/orgs/{org_id}/data-sources/{data_source_id}/test",
-        # D-045. Choosing the database an entire organization answers from
-        # is org-shaping, and getting it wrong points every member at the
-        # wrong data — so it sits with managing data sources, not with
-        # asking questions.
+        # D-045. Choosing the database an entire organization answers from is org-shaping.
         "PUT /v1/orgs/{org_id}/active-data-source",
-        # D-066. Not a permission — off hides spend from the whole
-        # organization, the Admin who set it included — but *changing* it is
-        # org-shaping and audited, so it sits with the other org-shaping
-        # writes rather than with asking questions.
+        # D-066. Not a permission — off hides spend from the whole organization.
         "PUT /v1/orgs/{org_id}/show-run-cost",
     ):
         assert recorded[admin_only]["admin"] == "allow"
@@ -751,9 +605,7 @@ def test_every_org_route_is_covered() -> None:
     """A new org-scoped route with no probe is a role nobody decided on."""
     app = create_app(settings=Settings(auth_mode="dev", env="ci", build_env="dev"))
 
-    # Read the OpenAPI schema rather than walking app.routes: this FastAPI nests
-    # included routers instead of flattening them, and the schema is the stable
-    # public description of what the API actually exposes.
+    # Read the OpenAPI schema rather than walking app.routes.
     paths = app.openapi()["paths"]
     exposed = {
         (method.upper(), path)

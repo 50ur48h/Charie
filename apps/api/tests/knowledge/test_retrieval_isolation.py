@@ -1,17 +1,4 @@
-"""Ingest and retrieval, against a real database (plan WP10.1).
-
-The plan names one test in this file and it is
-``test_two_organizations_asking_the_same_question_get_zero_cross_hits``. It
-belongs to the `rls_proof` family and carries its marker, which means it may
-never be skipped: the whole product rests on the claim that one customer's
-documents are unreachable from another's session, and a retrieval path is a new
-way to reach rows.
-
-The rest of the file is about the states ingest can leave a document in, because
-those are the ones that look like success and are not: a scanned PDF that
-extracted to nothing, a document whose text landed but whose embedding call
-failed, a re-index that should have replaced text and appended it instead.
-"""
+"""Ingest and retrieval, against a real database (plan WP10.1)."""
 
 from __future__ import annotations
 
@@ -46,13 +33,7 @@ Prove the dough for twelve hours before shaping it.
 
 
 async def _passages(**kwargs: object) -> list[Passage]:
-    """Just the passages, for the tests that are about what was found.
-
-    ``search_knowledge`` returns a `Retrieval` since B-073, because *how much of
-    the search ran* is a separate fact from *what it found*. Most tests here are
-    about the second, so they say so; the ones about the first call the real
-    function and read `arms` and `degraded`.
-    """
+    """Just the passages, for the tests that are about what was found."""
     found = await search_knowledge(**kwargs)  # pyright: ignore[reportArgumentType]
     return list(found.passages)
 
@@ -74,22 +55,14 @@ async def _ingest(
     )
 
 
-# ---------------------------------------------------------------------------
-# The isolation proof
-# ---------------------------------------------------------------------------
+# --- The isolation proof ---
 
 
 @pytest.mark.rls_proof
 async def test_two_organizations_asking_the_same_question_get_zero_cross_hits(
     orgs: TwoOrgs, store: LocalDocumentStore
 ) -> None:
-    """**The test the plan names.**
-
-    Both organizations upload a document about revenue, both ask the same
-    question, and neither can see a single chunk of the other's. Asserted on
-    `chunk_id`, not on text: two documents that happen to share wording would
-    make a text comparison pass while the rows leaked.
-    """
+    """The test the plan names."""
     embedder = StubEmbedder(vector_for={"revenue": unit(0), "dough": unit(1)})
 
     await _ingest(orgs.a, store, POLICY, "Alpha revenue policy", embedder=embedder)
@@ -112,10 +85,7 @@ async def test_two_organizations_asking_the_same_question_get_zero_cross_hits(
 async def test_an_organization_with_no_documents_finds_nothing(
     orgs: TwoOrgs, store: LocalDocumentStore
 ) -> None:
-    """The sharper half of isolation. A tenant that uploaded nothing must get an
-    empty result, not the other tenant's — and an empty result is exactly what a
-    broken predicate would *also* look like if the other side were empty too, so
-    the other side is deliberately full."""
+    """The sharper half of isolation."""
     embedder = StubEmbedder(vector_for={"revenue": unit(0)})
     await _ingest(orgs.a, store, POLICY, "Alpha revenue policy", embedder=embedder)
 
@@ -126,9 +96,7 @@ async def test_an_organization_with_no_documents_finds_nothing(
 async def test_the_rows_themselves_are_scoped_not_only_the_query(
     orgs: TwoOrgs, store: LocalDocumentStore, wired: URL, app_database: URL
 ) -> None:
-    """Reads the tables directly through the application role, so this is the
-    database's claim rather than the retrieval module's. If `search_knowledge`
-    grew a bug tomorrow, this would still hold."""
+    """Reads the tables directly through the application role."""
     await _ingest(orgs.a, store, POLICY, "Alpha revenue policy")
 
     engine = create_async_engine(app_database)
@@ -150,9 +118,7 @@ async def test_the_rows_themselves_are_scoped_not_only_the_query(
     assert chunks == 0, "another organization's chunks were visible"
 
 
-# ---------------------------------------------------------------------------
-# What ingest leaves behind
-# ---------------------------------------------------------------------------
+# --- What ingest leaves behind ---
 
 
 async def test_a_document_becomes_searchable_and_says_how_much_of_it_is(
@@ -171,9 +137,7 @@ async def test_a_document_becomes_searchable_and_says_how_much_of_it_is(
 async def test_text_is_searchable_before_it_is_embedded(
     orgs: TwoOrgs, store: LocalDocumentStore
 ) -> None:
-    """The whole reason `embedding` is nullable. With no embedder the chunks
-    still land and lexical search still finds them, which is what a deployment
-    with no embedding key gets — and what the backfill later finishes."""
+    """The whole reason `embedding` is nullable."""
     view = await _ingest(orgs.a, store, POLICY, "Revenue policy", embedder=None)
 
     hits = await _passages(org_id=orgs.a, query="cancelled orders")
@@ -187,9 +151,7 @@ async def test_text_is_searchable_before_it_is_embedded(
 async def test_an_embedding_failure_keeps_the_text_and_says_what_happened(
     orgs: TwoOrgs, store: LocalDocumentStore
 ) -> None:
-    """A partial success recorded as a failure *with the chunks intact*.
-    Throwing the text away to make the status tidy would lose working behaviour
-    to a bookkeeping preference — and those rows are the backfill's work list."""
+    """A partial success recorded as a failure with the chunks intact."""
     from charie.knowledge.embeddings import EmbeddingError
 
     embedder = StubEmbedder(fail_with=EmbeddingError("rate limited", retryable=True))
@@ -208,8 +170,7 @@ async def test_an_embedding_failure_keeps_the_text_and_says_what_happened(
 async def test_a_file_with_no_readable_text_fails_with_a_reason_naming_ocr(
     orgs: TwoOrgs, store: LocalDocumentStore
 ) -> None:
-    """The failure that otherwise looks exactly like a successful upload of
-    nothing."""
+    """The failure that otherwise looks exactly like a successful upload of nothing."""
     view = await _ingest(orgs.a, store, b"   \n\n  ", "Scanned handbook")
 
     assert view.status == "failed"
@@ -220,9 +181,7 @@ async def test_a_file_with_no_readable_text_fails_with_a_reason_naming_ocr(
 async def test_reindexing_replaces_the_chunks_rather_than_appending(
     orgs: TwoOrgs, store: LocalDocumentStore, wired: URL, app_database: URL
 ) -> None:
-    """`seq` is unique per document, so appending would collide — and leaving
-    the old rows would keep answering questions from text the source no longer
-    contains."""
+    """`seq` is unique per document, so appending would collide."""
     embedder = StubEmbedder(vector_for={"revenue": unit(0)})
     view = await _ingest(orgs.a, store, POLICY, "Revenue policy", embedder=embedder)
     before = view.chunk_count
@@ -252,17 +211,13 @@ async def test_reindexing_replaces_the_chunks_rather_than_appending(
     assert total == before, "re-indexing appended instead of replacing"
 
 
-# ---------------------------------------------------------------------------
-# What retrieval actually returns
-# ---------------------------------------------------------------------------
+# --- What retrieval actually returns ---
 
 
 async def test_a_passage_can_name_where_it_came_from(
     orgs: TwoOrgs, store: LocalDocumentStore
 ) -> None:
-    """Provenance is what makes retrieved text safe to show at all (5.5). A
-    passage that cannot say which document and which heading it is from is text
-    of unknown origin arriving inside a prompt."""
+    """Provenance is what makes retrieved text safe to show at all (5.5)."""
     await _ingest(orgs.a, store, POLICY, "Revenue policy")
 
     hits = await _passages(org_id=orgs.a, query="cancelled refunded orders")
@@ -277,8 +232,7 @@ async def test_a_passage_can_name_where_it_came_from(
 async def test_the_vector_arm_finds_what_the_words_do_not(
     orgs: TwoOrgs, store: LocalDocumentStore
 ) -> None:
-    """B-018's whole argument, in one test. The query shares no word with the
-    passage, so lexical search cannot reach it and the vector arm must."""
+    """B-018's whole argument, in one test."""
     embedder = StubEmbedder(vector_for={"cancelled": unit(0), "takings": unit(0)})
     await _ingest(orgs.a, store, POLICY, "Revenue policy", embedder=embedder)
 
@@ -291,9 +245,7 @@ async def test_the_vector_arm_finds_what_the_words_do_not(
 async def test_a_query_nobody_can_answer_returns_nothing_rather_than_anything(
     orgs: TwoOrgs, store: LocalDocumentStore
 ) -> None:
-    """With no embedder there is no vector arm, so a query matching no word must
-    come back empty. Returning "the closest thing we have" would put unrelated
-    text into a prompt as though it were relevant."""
+    """With no embedder there is no vector arm, so a query matching no word must come back empty."""
     await _ingest(orgs.a, store, RECIPES, "Kitchen handbook")
 
     assert await _passages(org_id=orgs.a, query="quarterly depreciation") == []
@@ -311,8 +263,7 @@ async def test_an_empty_query_costs_no_provider_call(
 async def test_one_document_cannot_fill_the_whole_result(
     orgs: TwoOrgs, store: LocalDocumentStore
 ) -> None:
-    """A long document otherwise wins every slot on term frequency alone, and
-    the answer is drawn from one source that happens to be verbose."""
+    """A long document otherwise wins every slot on term frequency alone."""
     sections = b"\n\n".join(
         f"## Section {n}\n\nCancelled orders are excluded from revenue here too.".encode()
         for n in range(8)
@@ -343,9 +294,7 @@ async def test_a_search_can_be_narrowed_to_one_document(
 async def test_the_stub_never_produces_a_vector_of_the_wrong_width(
     orgs: TwoOrgs, store: LocalDocumentStore
 ) -> None:
-    """Guards the fixture rather than the product: a stub emitting 3 floats
-    would make every test here pass against a column that accepts 1536, and the
-    suite would prove nothing about what the database will take."""
+    """Guards the fixture rather than the product."""
     embedder = StubEmbedder(vector_for={"revenue": unit(0)})
 
     batch = await embedder.embed(["revenue"])

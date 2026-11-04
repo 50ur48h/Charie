@@ -1,10 +1,4 @@
-"""Registering a database, over real HTTP against a real platform database.
-
-The M3 promise is narrow and absolute: **the credential is never echoed and never
-stored here**. Most of this file is that one sentence, asserted from every angle a
-credential could escape from — the response body, the row, the audit log, and the
-error path where a half-finished registration is rolled back.
-"""
+"""Registering a database, over real HTTP against a real platform database."""
 
 from __future__ import annotations
 
@@ -36,11 +30,7 @@ from charie.secrets.local import LocalSecretsProvider
 from charie.tenancy import session as session_module
 from customer_db import CustomerDatabase
 
-# Named after the fixture rather than after the field: a secret scanner reads a
-# quoted, high-entropy literal beside a constant called "password" and is right
-# to complain. Silencing it per line is a habit worth not forming — this
-# repository is public, and that scanner is the last thing between a pasted
-# credential and the internet.
+# Named after the fixture rather than after the field: a secret scanner reads a quoted.
 PIZZA_LOGIN = "p1zza-r3ad0nly-pa55"
 PIZZA_ACCOUNT = "pizza_readonly"
 
@@ -83,9 +73,7 @@ class Api:
         return response.status_code, payload
 
 
-#: The TLS policy these tests assert against, stated rather than inherited: the
-#: service reads process-wide settings, and a developer's .env must not be able
-#: to change what this file proves (B-013).
+#: The TLS policy these tests assert against, stated rather than inherited.
 TLS_POLICY = Settings(
     env="ci", build_env="dev", tls_mode="require", tls_mode_local="prefer", tls_local_hosts=()
 )
@@ -133,9 +121,7 @@ async def _rows(url: URL, org_id: uuid.UUID, statement: str) -> Sequence[Row[Any
         await engine.dispose()
 
 
-# ---------------------------------------------------------------------------
-# Registration
-# ---------------------------------------------------------------------------
+# --- Registration ---
 
 
 async def test_registering_stores_the_credential_only_in_the_secrets_store(
@@ -157,8 +143,7 @@ async def test_registering_stores_the_credential_only_in_the_secrets_store(
     stored = await secrets_provider.get(created["secret_ref"])
     assert stored == {"username": PIZZA_ACCOUNT, "password": PIZZA_LOGIN}
 
-    # The whole row as text, so this asserts about every column there is — including
-    # any a later phase adds without thinking about what it might carry.
+    # The whole row as text, so this asserts about every column there is.
     row = (await _rows(app_database, org_id, "SELECT row_to_json(d)::text FROM data_sources d"))[0][
         0
     ]
@@ -237,9 +222,7 @@ async def test_an_unknown_engine_is_refused_with_the_list_of_known_ones(api: Api
     assert status == 422
 
 
-# ---------------------------------------------------------------------------
-# Encryption in transit (B-013)
-# ---------------------------------------------------------------------------
+# --- Encryption in transit (B-013) ---
 
 
 async def test_a_source_that_is_not_on_this_machine_requires_tls(api: Api) -> None:
@@ -300,9 +283,7 @@ async def test_asking_for_more_encryption_is_always_allowed(api: Api) -> None:
 
 
 async def test_moving_a_local_source_to_a_remote_address_tightens_its_tls(api: Api) -> None:
-    """A rename must not fail because of a mode that used to be fine, and the
-    source must not keep travelling in plaintext either. Tightening is the only
-    automatic direction there is."""
+    """A rename must not fail because of a mode that used to be fine."""
     org_id = await _org(api, "alice", "Acme")
     _, created = await api.call(
         "POST",
@@ -357,8 +338,7 @@ async def test_the_audit_trail_records_which_mode_was_used(api: Api, app_databas
 async def test_a_test_result_reports_what_the_server_actually_did(
     api: Api, customer_database: CustomerDatabase
 ) -> None:
-    """The local fixture serves no certificate, so this is a plaintext
-    connection — said out loud, on the result an admin reads."""
+    """The local fixture serves no certificate, so this is a plaintext connection."""
     org_id = await _org(api, "alice", "Acme")
     created = await _register_customer_database(api, org_id, customer_database)
 
@@ -372,9 +352,7 @@ async def test_a_test_result_reports_what_the_server_actually_did(
     assert "NOT encrypted" in result["tls_detail"]
 
 
-# ---------------------------------------------------------------------------
-# Who may do what
-# ---------------------------------------------------------------------------
+# --- Who may do what ---
 
 
 async def test_a_reader_may_look_but_not_register(api: Api) -> None:
@@ -410,8 +388,7 @@ async def test_another_organization_cannot_see_or_touch_it(api: Api) -> None:
     )
 
     listed, sources = await api.call("GET", f"/v1/orgs/{globex}/data-sources", who="dave")
-    # Dave is an Admin of Globex, so this is a 404 about the data source rather
-    # than a 403 about the organization — he may ask, the row simply is not his.
+    # Dave is an Admin of Globex, so this is a 404 about the data source rather than a 403 about...
     fetched, _ = await api.call(
         "GET", f"/v1/orgs/{globex}/data-sources/{created['id']}", who="dave"
     )
@@ -422,9 +399,7 @@ async def test_another_organization_cannot_see_or_touch_it(api: Api) -> None:
     assert outsider == 403
 
 
-# ---------------------------------------------------------------------------
-# Rotation, deletion, and the test endpoint
-# ---------------------------------------------------------------------------
+# --- Rotation, deletion, and the test endpoint ---
 
 
 async def test_rotating_the_password_replaces_it_and_says_nothing_about_it(
@@ -514,12 +489,7 @@ async def test_a_data_source_that_never_existed_is_a_404(api: Api) -> None:
 async def test_a_registration_that_fails_late_leaves_no_credential_behind(
     api: Api, secrets_provider: LocalSecretsProvider
 ) -> None:
-    """The compensation path, forced.
-
-    A name longer than the column is refused by the database rather than by
-    pydantic, so this reaches the service exactly as an unforeseen failure would
-    — after the credential has been written and before the row exists.
-    """
+    """The compensation path, forced."""
     org_id = await _org(api, "alice", "Acme")
     _, alice = await api.call("GET", "/v1/me", who="alice")
     before = _entries(secrets_provider)
@@ -620,8 +590,7 @@ async def test_credentials_that_can_write_are_refused_verification(
     )
     assert fetched["status"] == "error"
     assert fetched["readonly_verified"] is False
-    # A failed check does not get to claim a verification time: the column says
-    # when this was last *proven* read-only, and it never was.
+    # A failed check does not get to claim a verification time.
     assert fetched["last_verified_at"] is None
 
 
@@ -674,10 +643,7 @@ async def test_a_verification_failure_never_quotes_the_credential(
 
 
 async def test_a_sql_server_source_reaches_its_connector(api: Api) -> None:
-    """Until WP3.3 this answered "no connector for mssql yet". Now the engine is
-    supported, so the same registration gets as far as the network and fails
-    there — which is what proves the factory is wired, without needing a SQL
-    Server to be running for this test."""
+    """Until WP3.3 this answered "no connector for mssql yet"."""
     org_id = await _org(api, "alice", "Acme")
     _, created = await api.call(
         "POST",
@@ -716,12 +682,7 @@ async def test_an_unreachable_address_is_reported_without_leaking_it(api: Api) -
 
 
 def _entries(provider: LocalSecretsProvider) -> set[str]:
-    """Which references the store holds, for "did this leave anything behind?".
-
-    The references rather than the file text: a failed registration that writes
-    and then removes its secret leaves an empty file where there was none, and
-    that difference is bookkeeping, not a leak.
-    """
+    """Which references the store holds, for "did this leave anything behind?"."""
     if not provider.path.exists():
         return set()
     document = json.loads(provider.path.read_text(encoding="utf-8"))
@@ -729,20 +690,12 @@ def _entries(provider: LocalSecretsProvider) -> set[str]:
 
 
 def test_the_routes_and_the_database_agree_on_which_engines_exist() -> None:
-    """Two declarations of the same fact; a test rather than a comment.
-
-    The route's Literal produces a 422 that lists what is accepted; the CHECK
-    constraint is what the database will enforce. If they drift, one of them
-    starts lying and the other starts returning 500s.
-    """
+    """Two declarations of the same fact; a test rather than a comment."""
     assert set(get_args(Engine)) == set(DATA_SOURCE_ENGINES)
 
 
 def test_every_engine_the_api_accepts_is_either_supported_or_names_its_work_package() -> None:
-    """Registering an engine with no connector yet is allowed — silently failing
-    to explain why is not. As of WP3.3 both accepted engines have one, so the
-    second half of the rule is asserted against MySQL, which is the next engine
-    somebody will try (architecture Part 5.1 lists it; V1.1 delivers it)."""
+    """Registering an engine with no connector yet is allowed."""
     for engine in DATA_SOURCE_ENGINES:
         if engine in SUPPORTED_ENGINES:
             continue
