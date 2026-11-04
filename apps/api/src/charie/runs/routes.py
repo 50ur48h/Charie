@@ -701,7 +701,8 @@ async def get_run_events(
             media_type="text/event-stream",
             headers={
                 # Proxies buffer by default, which turns a live trace into one burst at the end.
-                "Cache-Control": "no-cache",
+                # `no-transform` keeps the web app's /api proxy from gzipping, and so holding, it.
+                "Cache-Control": "no-cache, no-transform",
                 "X-Accel-Buffering": "no",
             },
         )

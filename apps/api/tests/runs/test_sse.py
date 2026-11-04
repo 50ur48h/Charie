@@ -287,5 +287,7 @@ async def test_the_same_route_answers_json_or_a_stream(tenant: Tenant) -> None:
     assert next(event["type"] for event in polled.json()["events"]) == "run_started"
 
     assert streamed.headers["content-type"].startswith("text/event-stream")
+    # Without no-transform the web app's /api proxy gzips the stream and holds it to the end.
+    assert "no-transform" in streamed.headers["cache-control"]
     assert "event: run_started" in streamed.text
     assert "id: " in streamed.text
