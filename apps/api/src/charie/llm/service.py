@@ -30,6 +30,7 @@ from charie.llm.structured import (
     parse,
     repair_messages,
 )
+from charie.runs.events import EventWriter, UnknownRunError
 
 __all__ = ["complete"]
 
@@ -145,6 +146,9 @@ async def _call(
             error=str(error),
             settings=settings,
         )
+        await _trace(
+            request, choice, model=choice.model, usage=Usage(), latency_ms=0, error=str(error)
+        )
         raise
 
     latency_ms = _elapsed_ms(started)
@@ -161,7 +165,42 @@ async def _call(
         repaired=repaired,
         settings=settings,
     )
+    await _trace(
+        request, choice, model=completion.model, usage=completion.usage, latency_ms=latency_ms
+    )
     return replace(completion, latency_ms=latency_ms)
+
+
+async def _trace(
+    request: LLMRequest,
+    choice: ModelChoice,
+    *,
+    model: str,
+    usage: Usage,
+    latency_ms: int,
+    error: str | None = None,
+) -> None:
+    """Put the call in the run's trace, so the person watching sees which model did what."""
+    run_id = request.tags.run_id
+    if run_id is None:
+        return
+    payload: dict[str, object] = {
+        "model": model,
+        "provider": choice.provider,
+        "role": choice.role,
+        "tier": choice.tier,
+        "latency_ms": latency_ms,
+        "input_tokens": usage.input_tokens,
+        "output_tokens": usage.output_tokens,
+        "status": "error" if error else "ok",
+    }
+    if error:
+        payload["error"] = error[:200]
+    try:
+        await EventWriter(org_id=request.tags.org_id, run_id=run_id).emit("model_called", payload)
+    except UnknownRunError:
+        # A call tagged with a run that has no row has no trace to join.
+        return
 
 
 def _with_schema_instruction(

@@ -1,4 +1,4 @@
-"""The OpenAI provider (DECISIONS D-017), and the Responses protocol it speaks."""
+"""A client for the Responses protocol, which the Meta Model API serves (D-069)."""
 
 from __future__ import annotations
 
@@ -8,7 +8,6 @@ from typing import Any, cast
 
 import httpx
 
-from charie.config import Settings, get_settings
 from charie.llm.base import (
     Completion,
     LLMError,
@@ -17,9 +16,8 @@ from charie.llm.base import (
     Usage,
 )
 
-__all__ = ["OpenAIProvider", "strict_safe"]
+__all__ = ["ResponsesProvider", "strict_safe"]
 
-BASE_URL = "https://api.openai.com/v1"
 RESPONSES = "/responses"
 
 #: How much provider error text is kept. Short because of the caveat above.
@@ -31,24 +29,21 @@ HTTP_TOO_MANY_REQUESTS = 429
 HTTP_SERVER_ERROR = 500
 
 
-class OpenAIProvider:
-    """One HTTP client for a Responses API endpoint — OpenAI's unless told otherwise."""
+class ResponsesProvider:
+    """One HTTP client for a Responses API endpoint; `MetaProvider` aims it at Meta."""
 
     def __init__(
         self,
         *,
-        api_key: str | None = None,
-        base_url: str = BASE_URL,
+        api_key: str,
+        base_url: str,
+        name: str,
         client: httpx.AsyncClient | None = None,
-        settings: Settings | None = None,
-        name: str = "openai",
         reasoning_effort: str | None = None,
     ) -> None:
-        resolved = settings if settings is not None else get_settings()
-        key = api_key if api_key is not None else _key_from(resolved)
-        # Not always `openai`: Meta's Model API serves this same protocol (`llm/meta.py`, D-069).
+        key = api_key
         self._name = name
-        # None sends no `reasoning` field at all, which is what every OpenAI call has always sent.
+        # None sends no `reasoning` field at all.
         self._reasoning_effort = reasoning_effort
         self._client = client if client is not None else httpx.AsyncClient(base_url=base_url)
         self._headers = {
@@ -89,16 +84,6 @@ class OpenAIProvider:
 
     async def aclose(self) -> None:
         await self._client.aclose()
-
-
-def _key_from(settings: Settings) -> str:
-    if settings.openai_api_key is None:
-        raise LLMError(
-            "OPENAI_API_KEY is not set, so the openai provider cannot be used. "
-            "Set it in .env, or remove 'openai' from LLM_PROVIDERS.",
-            retryable=False,
-        )
-    return settings.openai_api_key.get_secret_value()
 
 
 def _body(request: LLMRequest, *, reasoning_effort: str | None = None) -> dict[str, Any]:

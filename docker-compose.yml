@@ -1,0 +1,57 @@
+# The one-command demo: `docker compose up --build`, then open http://localhost:3000.
+# Needs only META_API_KEY, in a .env file beside this one (see .env.example).
+name: charie-demo
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: charie
+      POSTGRES_PASSWORD: charie_demo_local_only
+      POSTGRES_DB: charie
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U charie -d charie"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  app:
+    build: .
+    image: charie:demo
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "${CHARIE_PORT:-3000}:3000"
+    volumes:
+      - app-data:/app/ops
+    environment:
+      # Migrate, create the encryption key, and connect the demo database on first start.
+      CHARIE_BOOTSTRAP: "1"
+      DATABASE_URL: postgresql+asyncpg://charie:charie_demo_local_only@db:5432/charie
+      APP_DB_PASSWORD: charie_app_demo_local_only
+      APP_DATABASE_URL: postgresql+asyncpg://charie_app:charie_app_demo_local_only@db:5432/charie
+
+      # Meta models only: Muse Spark by default, Muse Wonder selectable in the app.
+      META_API_KEY: ${META_API_KEY:?Set META_API_KEY in .env - see .env.example}
+      LLM_PROVIDERS: meta
+      LLM_MODELS: '{"meta":{"small":"muse-spark-1.3","mid":"muse-spark-1.3","strong":"muse-spark-1.3"}}'
+      LLM_ROLE_MAP: '{"compose":"small"}'
+      LLM_PRICES: '{"muse-spark-1.3":{"input":1.25,"output":4.25},"muse-wonder-1.0":{"input":4.00,"output":20.00}}'
+      LLM_SELECTABLE_MODELS: muse-spark-1.3,muse-wonder-1.0
+      LLM_RUN_COST_LIMIT_USD: "5.00"
+      META_REASONING_EFFORT: minimal
+
+      # The hosted demo database: synthetic food-delivery data, read-only login.
+      DEMO_SOURCE_NAME: Food delivery demo
+      DEMO_SOURCE_HOST: ep-proud-boat-za4d26yl-pooler.c-2.eu-west-2.aws.neon.tech
+      DEMO_SOURCE_PORT: "5432"
+      DEMO_SOURCE_DATABASE: datamind-db
+      DEMO_SOURCE_USER: datamind-db_readonly
+      DEMO_SOURCE_PASSWORD: TT284Cy_lwnKvLjPUukGWXGXQvN5q31C
+
+volumes:
+  db-data:
+  app-data:

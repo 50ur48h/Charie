@@ -23,6 +23,8 @@ MERGE_POLICY: ASK
 - The architecture is binding. Explain and document design changes in the PR.
 - DAL and infrastructure changes require human review.
 - The model is never a security boundary; analysis queries go through the DAL.
+- Every model called at runtime is a Meta model (Meta Model API). Do not add other
+  model or embedding providers.
 - The API uses charie_app: no superuser, BYPASSRLS or schema ownership.
   Migrations use the separate owner connection. Never collapse those roles.
 - New tenant tables require RLS, a TENANT_TABLES entry and tenant-isolation proofs.
@@ -58,6 +60,8 @@ MERGE_POLICY: ASK
 - The GitHub repository is public: https://github.com/50ur48h/Charie.
 - Never commit secrets. Real credentials stay in local .env or a secret store;
   .env.example contains placeholders and documents runtime configuration.
+- Exception: docker-compose.yml publishes the read-only login to the synthetic demo
+  database on purpose, so judges can run the demo with only a Meta API key.
 - Customer databases, dictionaries, derived findings and diagnostic artifacts
   belong under gitignored .SampleData/. Never publish identifying information.
 - Check quoted literals in SQL/view definitions and fixtures as well as data rows.

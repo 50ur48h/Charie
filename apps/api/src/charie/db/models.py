@@ -704,6 +704,7 @@ EVENT_TYPES: tuple[str, ...] = (
     "step_started",
     "tool_called",
     "knowledge_consulted",
+    "model_called",
     "sql_validated",
     "sql_rejected",
     "query_executed",
@@ -792,6 +793,8 @@ class AgentRun(Base):
     user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     status: Mapped[str] = mapped_column(String(20), nullable=False, server_default=text("'queued'"))
     question: Mapped[str] = mapped_column(Text, nullable=False)
+    #: The Meta model the person picked for this question; null means the configured default.
+    model: Mapped[str | None] = mapped_column(Text)
     budget: Mapped[dict[str, object]] = mapped_column(
         JSONB, nullable=False, server_default=text("'{}'::jsonb")
     )

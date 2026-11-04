@@ -9,6 +9,17 @@ under "Unreleased", only for changes a user would notice.
 
 ## [Unreleased]
 
+- Every Meta model call now appears live in the thinking panel, naming the model, what it
+  did, the seconds and the tokens; finished answers count their Meta model calls.
+
+- Pick Muse Spark or Muse Wonder for each question in the box where you type.
+
+- Charie calls only Meta models: the OpenAI provider and the embedding model are removed,
+  and search uses wording.
+
+- `docker compose up --build` starts a complete demo connected to a hosted sample
+  database; only a Meta API key is needed.
+
 - Charie now ships as one image, `ghcr.io/50ur48h/charie`, with the web app and API
   together; the browser reaches the API at `/api`. README covers deploying it on Railway.
 

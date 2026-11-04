@@ -82,21 +82,15 @@ services:
       LLM_PROVIDERS: ${LLM_PROVIDERS:-}
       LLM_MODELS: ${LLM_MODELS:-}
       LLM_ROLE_MAP: ${LLM_ROLE_MAP:-}
+      LLM_SELECTABLE_MODELS: ${LLM_SELECTABLE_MODELS:-}
       LLM_PRICES: ${LLM_PRICES:-}
       LLM_RUN_COST_LIMIT_USD: ${LLM_RUN_COST_LIMIT_USD:-}
       # What a run does when the cap is on and a model has no price.
       LLM_REFUSE_UNPRICED_WHEN_CAPPED: ${LLM_REFUSE_UNPRICED_WHEN_CAPPED:-}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       # Meta Model API, for LLM_PROVIDERS=meta (D-069).
       META_API_KEY: ${META_API_KEY:-}
       # Passed for B-086's reason: an effort tuned on the host and not here would be measured by...
       META_REASONING_EFFORT: ${META_REASONING_EFFORT:-}
-      # The embedding model, for exactly the reason the block above exists (B-086).
-      EMBEDDINGS_PROVIDER: ${EMBEDDINGS_PROVIDER:-}
-      EMBEDDINGS_MODEL: ${EMBEDDINGS_MODEL:-}
-      EMBEDDINGS_DIMENSIONS: ${EMBEDDINGS_DIMENSIONS:-}
-      EMBEDDINGS_BATCH: ${EMBEDDINGS_BATCH:-}
       # The DAL's caps, which decide what a query is allowed to cost the customer's database.
       DAL_MAX_ROWS: ${DAL_MAX_ROWS:-}
       DAL_TIMEOUT_SECONDS: ${DAL_TIMEOUT_SECONDS:-}

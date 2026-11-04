@@ -107,7 +107,15 @@ async def _execute(context: ToolContext, run_id: uuid.UUID) -> RunOutcome:
 
 
 async def _types(context: ToolContext, run_id: uuid.UUID) -> list[str]:
-    return [e.type for e in await read_events(org_id=context.org_id, run_id=run_id)]
+    """The agent's own steps; each model call is checked by `_model_roles`."""
+    events = await read_events(org_id=context.org_id, run_id=run_id)
+    return [e.type for e in events if e.type != "model_called"]
+
+
+async def _model_roles(context: ToolContext, run_id: uuid.UUID) -> list[object]:
+    """Which role each live model call in the trace served, in order."""
+    events = await read_events(org_id=context.org_id, run_id=run_id)
+    return [e.payload.get("role") for e in events if e.type == "model_called"]
 
 
 # --- The happy path ---
@@ -226,6 +234,8 @@ async def test_the_trace_tells_the_whole_story_in_order(
 
     await _execute(context, run_id)
 
+    # Every live model call is in the trace too, one per role it served.
+    assert await _model_roles(context, run_id) == ["sql", "plan", "compose", "critic"]
     assert await _types(context, run_id) == [
         "run_started",
         "context_selected",

@@ -171,6 +171,8 @@ class RunView:
     question: str
     #: The assistant's message for this run, once there is one.
     answer: str | None
+    #: The Meta model the person picked, or None for the configured default.
+    model: str | None = None
     findings: list[FindingView] = field(default_factory=list["FindingView"])
     started_at: datetime | None = None
     finished_at: datetime | None = None
@@ -430,6 +432,7 @@ async def post_message(
     conversation_id: uuid.UUID,
     content: str,
     idempotency_key: str,
+    model: str | None = None,
 ) -> AskResult:
     """Record a question and queue the run that will answer it."""
     try:
@@ -439,6 +442,7 @@ async def post_message(
             conversation_id=conversation_id,
             content=content,
             idempotency_key=idempotency_key,
+            model=model,
         )
     except IntegrityError:
         # Two identical POSTs in flight at once: the unique index refused the second.
@@ -460,6 +464,7 @@ async def _create_question(
     conversation_id: uuid.UUID,
     content: str,
     idempotency_key: str,
+    model: str | None = None,
 ) -> AskResult:
     async with org_session(org_id) as session:
         conversation = await _owned_conversation(
@@ -495,6 +500,7 @@ async def _create_question(
             user_id=user_id,
             status=STATUS_QUEUED,
             question=content,
+            model=model,
         )
         session.add(run)
         await session.flush()
@@ -609,6 +615,7 @@ async def _run_view(session: AsyncSession, run: AgentRun) -> RunView:
         status=run.status,
         question=run.question,
         answer=answer,
+        model=run.model,
         findings=[
             FindingView(
                 id=finding.id,

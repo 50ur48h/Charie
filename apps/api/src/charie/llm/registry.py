@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from contextlib import suppress
+from collections.abc import Callable, Generator
+from contextlib import contextmanager, suppress
+from contextvars import ContextVar
 from dataclasses import dataclass
 
 from charie.config import Settings, get_settings
@@ -23,11 +24,14 @@ __all__ = [
     "ProviderNotConfiguredError",
     "aclose_providers",
     "clear_provider_cache",
+    "default_model",
     "get_provider",
     "register_provider",
     "resolve",
+    "selectable_models",
     "tier_for",
     "unresolvable_roles",
+    "use_model",
 ]
 
 
@@ -48,13 +52,6 @@ class ModelChoice:
     model: str
 
 
-def _openai() -> LLMProvider:
-    # Imported inside the factory, not at module scope: the import reads no configuration.
-    from charie.llm.openai import OpenAIProvider
-
-    return OpenAIProvider()
-
-
 def _meta() -> LLMProvider:
     # The same Responses client with Meta's endpoint and key (D-069).
     from charie.llm.meta import MetaProvider
@@ -70,7 +67,6 @@ def _scripted() -> LLMProvider:
 
 
 _BUILTIN_FACTORIES: dict[str, Callable[[], LLMProvider]] = {
-    "openai": _openai,
     "meta": _meta,
     # A stub, shipped deliberately (WP11.2b).
     "scripted": _scripted,
@@ -147,10 +143,50 @@ def tier_for(role: Role, settings: Settings | None = None) -> Tier:
     return override
 
 
+#: The model a person picked for the run in progress; None means the configured chain.
+_chosen_model: ContextVar[str | None] = ContextVar("charie_chosen_model", default=None)
+
+
+@contextmanager
+def use_model(model: str | None) -> Generator[None]:
+    """Serve every role in this context from ``model``, on the primary provider."""
+    token = _chosen_model.set(model)
+    try:
+        yield
+    finally:
+        _chosen_model.reset(token)
+
+
+def default_model(settings: Settings | None = None) -> str | None:
+    """The model a question gets when nobody picks one: the primary provider's strongest."""
+    resolved = settings if settings is not None else get_settings()
+    if not resolved.llm_providers:
+        return None
+    models = resolved.llm_models.get(resolved.llm_providers[0]) or {}
+    return models.get("strong") or models.get("mid") or models.get("small")
+
+
+def selectable_models(settings: Settings | None = None) -> tuple[str, ...]:
+    """The models a person may pick, default first."""
+    resolved = settings if settings is not None else get_settings()
+    first = default_model(resolved)
+    offered = list(resolved.llm_selectable_models)
+    if not offered and resolved.llm_providers:
+        offered = list((resolved.llm_models.get(resolved.llm_providers[0]) or {}).values())
+    ordered = ([first] if first else []) + [model for model in offered if model != first]
+    return tuple(dict.fromkeys(ordered))
+
+
 def resolve(role: Role, settings: Settings | None = None) -> tuple[ModelChoice, ...]:
     """The ordered chain of models that may serve ``role``."""
     resolved = settings if settings is not None else get_settings()
     tier = tier_for(role, resolved)
+
+    chosen = _chosen_model.get()
+    if chosen is not None and resolved.llm_providers:
+        return (
+            ModelChoice(role=role, tier=tier, provider=resolved.llm_providers[0], model=chosen),
+        )
 
     if not resolved.llm_providers:
         raise ProviderNotConfiguredError(

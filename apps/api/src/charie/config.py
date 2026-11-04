@@ -265,10 +265,18 @@ class Settings(BaseSettings):
 
     #: Ordered: the first is primary and the rest are the fallback chain WP6.2 walks on a...
     llm_providers: Annotated[tuple[str, ...], NoDecode] = Field(
-        default=("openai",),
+        default=("meta",),
         description=(
             "Comma-separated LLM providers, most preferred first. Each must have "
-            "models in LLM_MODELS and a key in its own variable."
+            "models in LLM_MODELS and a key in its own variable. Charie ships `meta`."
+        ),
+    )
+    llm_selectable_models: Annotated[tuple[str, ...], NoDecode] = Field(
+        default=(),
+        description=(
+            "Comma-separated model ids a person may pick per question, served by the "
+            "first provider in LLM_PROVIDERS, e.g. `muse-spark-1.3,muse-wonder-1.0`. "
+            "Unset offers the models LLM_MODELS already names."
         ),
     )
     llm_role_map: dict[str, str] = Field(
@@ -284,7 +292,7 @@ class Settings(BaseSettings):
         default_factory=dict[str, dict[str, str]],
         description=(
             "JSON: provider -> tier -> model id, e.g. "
-            '{"openai": {"small": "...", "mid": "...", "strong": "..."}}. '
+            '{"meta": {"small": "...", "mid": "...", "strong": "..."}}. '
             "Required: model ids are deployment configuration, because a default "
             "compiled into a release is stale within months and a stale model id "
             "either 404s or bills for the wrong tier."
@@ -300,14 +308,6 @@ class Settings(BaseSettings):
     )
 
     #: SecretStr, like LOCAL_SECRETS_KEY: a provider key is a spending credential.
-    openai_api_key: SecretStr | None = Field(
-        default=None,
-        description="Key for the OpenAI provider. From platform.openai.com (D-017).",
-    )
-    anthropic_api_key: SecretStr | None = Field(
-        default=None,
-        description="Key for the Anthropic provider — the second provider in the chain.",
-    )
     meta_api_key: SecretStr | None = Field(
         default=None,
         description=(
@@ -322,41 +322,6 @@ class Settings(BaseSettings):
             "against each call's output cap, and with none sent Muse Wonder spent "
             "the whole cap reasoning and answered nothing (D-069). Raise it only "
             "together with those caps."
-        ),
-    )
-
-    # -- Phase 10: embeddings -------------------------------------------------
-    embeddings_provider: str = Field(
-        default="openai",
-        description=(
-            "Which provider embeds. The same account as the chat models by "
-            "default (D-017) — one key, one bill, one place to rotate."
-        ),
-    )
-    embeddings_model: str | None = Field(
-        default=None,
-        description=(
-            "Embedding model id, e.g. `text-embedding-3-small`. Required before "
-            "anything can be embedded, and verified against the account before "
-            "it is written here (B-027's habit): a pricing page says what "
-            "exists, not what a key may call."
-        ),
-    )
-    embeddings_dimensions: int = Field(
-        default=1536,
-        description=(
-            "How wide a vector this model returns. It must equal the width of "
-            "`knowledge_chunks.embedding`, which a migration fixed — so this is "
-            "asserted at startup rather than trusted, and a mismatch fails "
-            "loudly instead of writing rows nothing can search."
-        ),
-    )
-    embeddings_batch: int = Field(
-        default=64,
-        description=(
-            "How many chunks are embedded per request. One call per chunk is "
-            "slow and rate-limited; one call for a whole book is a request that "
-            "times out and loses everything in it."
         ),
     )
 
@@ -448,7 +413,9 @@ class Settings(BaseSettings):
             return None
         return value
 
-    @field_validator("cors_origins", "tls_local_hosts", "llm_providers", mode="before")
+    @field_validator(
+        "cors_origins", "tls_local_hosts", "llm_providers", "llm_selectable_models", mode="before"
+    )
     @classmethod
     def _split_list(cls, value: object) -> object:
         """Accept ``CORS_ORIGINS=http://a,http://b`` as well as a JSON array."""

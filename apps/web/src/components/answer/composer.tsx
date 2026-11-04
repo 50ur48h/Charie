@@ -6,6 +6,7 @@ import { ArrowUp, Brain, Paperclip } from "lucide-react";
 import { useEffect, useId, useImperativeHandle, useRef, type Ref } from "react";
 
 import { Hint } from "@/components/ui/tooltip";
+import { modelName, type ModelChoice } from "@/lib/models";
 import { cn } from "@/lib/utils";
 
 export function Composer({
@@ -21,6 +22,7 @@ export function Composer({
   footnote = true,
   className,
   minRows = 1,
+  model,
 }: {
   /** The field's accessible name, e.g. "Ask a question". */
   label: string;
@@ -36,6 +38,8 @@ export function Composer({
   footnote?: boolean;
   className?: string | undefined;
   minRows?: number;
+  /** The Meta model picker; absent shows the plain "Thinking" pill. */
+  model?: ModelChoice | undefined;
 }) {
   const id = useId();
   const box = useRef<HTMLTextAreaElement | null>(null);
@@ -97,12 +101,33 @@ export function Composer({
               </button>
             </Hint>
           )}
-          <Hint label="Charie plans, queries and checks its work before it answers">
-            <span className="inline-flex cursor-default items-center gap-1.5 rounded-full border border-border px-2.5 py-[5px] text-[12.5px] text-text-2">
-              <Brain aria-hidden="true" className="size-3.5 text-brand" />
-              Thinking
-            </span>
-          </Hint>
+          {model?.choices && model.model ? (
+            <Hint label="The Meta model that answers this question">
+              <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-border px-2.5 py-[5px] text-[12.5px] text-text-2 focus-within:border-focus">
+                <Brain aria-hidden="true" className="size-3.5 text-brand" />
+                <span className="sr-only">Meta model</span>
+                <select
+                  value={model.model}
+                  onChange={(event) => model.setModel(event.target.value)}
+                  disabled={sending}
+                  className="cursor-pointer bg-transparent text-text-2 outline-none"
+                >
+                  {model.choices.models.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </Hint>
+          ) : (
+            <Hint label="Charie plans, queries and checks its work before it answers">
+              <span className="inline-flex cursor-default items-center gap-1.5 rounded-full border border-border px-2.5 py-[5px] text-[12.5px] text-text-2">
+                <Brain aria-hidden="true" className="size-3.5 text-brand" />
+                Thinking
+              </span>
+            </Hint>
+          )}
           <button
             type="submit"
             aria-label="Send"
@@ -122,6 +147,9 @@ export function Composer({
       </form>
       {footnote && (
         <p className="mt-2 text-center text-[12px] text-muted-foreground">
+          {model?.model
+            ? `Answered by Meta ${modelName(model.model)} (${model.model}) through the Meta Model API. `
+            : ""}
           Charie shows the query behind every number.
         </p>
       )}

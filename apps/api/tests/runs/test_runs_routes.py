@@ -703,7 +703,7 @@ async def _charged_run(api: Api, org_id: str) -> str:
         run_id=uuid.UUID(run_id),
         role="sql",
         tier="strong",
-        provider="openai",
+        provider="meta",
         model="m-1",
         usage=Usage(input_tokens=1000, output_tokens=100),
         latency_ms=5,

@@ -1,4 +1,4 @@
-"""The OpenAI provider, against a transport that never leaves the process."""
+"""The Responses client, against a transport that never leaves the process."""
 
 from __future__ import annotations
 
@@ -12,8 +12,7 @@ import pytest
 from pydantic import BaseModel, ConfigDict
 
 from charie.llm.base import CallLimits, LLMError, LLMRequest, Message, Tags
-from charie.llm.openai import OpenAIProvider, strict_safe
-from llm_fixture import build_settings
+from charie.llm.responses import ResponsesProvider, strict_safe
 
 ORG = uuid.uuid4()
 
@@ -45,7 +44,7 @@ def request_for(
     *, schema: type[BaseModel] | None = None, system: str = "platform rules"
 ) -> LLMRequest:
     return LLMRequest(
-        model="gpt-test",
+        model="model-test",
         messages=[
             Message(role="system", content=system),
             Message(role="user", content="how many orders?"),
@@ -56,18 +55,20 @@ def request_for(
     )
 
 
-def provider_for(handler: Handler) -> OpenAIProvider:
-    return OpenAIProvider(
+def provider_for(handler: Handler) -> ResponsesProvider:
+    return ResponsesProvider(
         api_key="test-key",
+        base_url="https://api.responses.test/v1",
+        name="responses-test",
         client=httpx.AsyncClient(
-            transport=httpx.MockTransport(handler), base_url="https://api.openai.test/v1"
+            transport=httpx.MockTransport(handler), base_url="https://api.responses.test/v1"
         ),
     )
 
 
 def ok_body(text: str = '{"steps": ["a"]}', **extra: Any) -> dict[str, Any]:
     body: dict[str, Any] = {
-        "model": "gpt-test",
+        "model": "model-test",
         "status": "completed",
         "output": [{"type": "message", "content": [{"type": "output_text", "text": text}]}],
         "usage": {"input_tokens": 11, "output_tokens": 7},
@@ -102,7 +103,7 @@ async def test_several_system_messages_keep_their_order() -> None:
         return httpx.Response(200, json=ok_body())
 
     request = LLMRequest(
-        model="gpt-test",
+        model="model-test",
         messages=[
             Message(role="system", content="L0 platform"),
             Message(role="system", content="L1 org"),
@@ -210,7 +211,7 @@ async def test_the_answer_and_its_usage_are_read_back() -> None:
     )
 
     assert completion.text == '{"steps": ["a"]}'
-    assert completion.provider == "openai"
+    assert completion.provider == "responses-test"
     assert completion.usage.input_tokens == 11
     assert completion.usage.output_tokens == 7
     assert not completion.usage.estimated  # the provider counted these, we did not
@@ -258,13 +259,13 @@ async def test_a_malformed_cached_count_is_unknown_not_zero() -> None:
 async def test_the_model_that_answered_is_recorded_not_the_one_asked_for() -> None:
     """A provider may serve a different snapshot than the alias requested."""
     body = ok_body()
-    body["model"] = "gpt-test-2026-08-01"
+    body["model"] = "model-test-2026-08-01"
 
     completion = await provider_for(lambda _: httpx.Response(200, json=body)).complete(
         request_for()
     )
 
-    assert completion.model == "gpt-test-2026-08-01"
+    assert completion.model == "model-test-2026-08-01"
 
 
 async def test_output_items_that_are_not_the_answer_are_skipped() -> None:
@@ -349,32 +350,22 @@ async def test_a_transport_failure_does_not_leak_the_url() -> None:
     with pytest.raises(LLMError) as raised:
         await provider_for(handler).complete(request_for())
 
-    assert "api.openai.test" not in str(raised.value)
+    assert "api.responses.test" not in str(raised.value)
     assert raised.value.__cause__ is None
 
 
 async def test_the_provider_declares_native_schema_support() -> None:
     caps = provider_for(lambda _: httpx.Response(200, json=ok_body())).capabilities()
 
-    assert caps.name == "openai"
+    assert caps.name == "responses-test"
     assert caps.supports_response_schema
     assert not caps.is_stub
 
 
-def test_no_key_fails_with_the_fix_in_the_message() -> None:
-    """The commonest first-run failure."""
-    with pytest.raises(LLMError) as raised:
-        OpenAIProvider(settings=build_settings(openai_api_key=None))
-
-    message = str(raised.value)
-    assert "OPENAI_API_KEY" in message
-    assert "LLM_PROVIDERS" in message
-    assert not raised.value.retryable
-
-
 def test_a_configured_key_is_never_in_the_error_or_the_repr() -> None:
     """A provider key is a spending credential."""
-    provider = OpenAIProvider(settings=build_settings(openai_api_key="sk-secret-value"))
+    provider = ResponsesProvider(
+        api_key="sk-secret-value", base_url="https://api.responses.test/v1", name="t"
+    )
 
     assert "sk-secret-value" not in repr(provider)
-    assert "sk-secret-value" not in str(build_settings(openai_api_key="sk-secret-value"))

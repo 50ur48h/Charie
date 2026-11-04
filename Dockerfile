@@ -19,6 +19,7 @@ FROM web-base AS web-build
 ENV NEXT_PUBLIC_API_URL=/api \
     NEXT_PUBLIC_AUTH_MODE=dev \
     NEXT_PUBLIC_ENV=local \
+    NEXT_PUBLIC_DEV_SUBJECT=demo \
     CHARIE_INTERNAL_API_URL=http://127.0.0.1:8000
 COPY --from=web-deps /web/node_modules ./node_modules
 COPY apps/web/ ./

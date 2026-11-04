@@ -38,14 +38,14 @@ jobs:
           OIDC_AUDIENCE: ${{ vars.OIDC_AUDIENCE }}
           POSTGRES_ADMIN_PASSWORD: ${{ secrets.POSTGRES_ADMIN_PASSWORD }}
           BUDGET_ALERT_EMAIL: ${{ secrets.BUDGET_ALERT_EMAIL }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          META_API_KEY: ${{ secrets.META_API_KEY }}
           NEXT_PUBLIC_ENTRA_AUTHORITY: ${{ vars.NEXT_PUBLIC_ENTRA_AUTHORITY }}
           NEXT_PUBLIC_ENTRA_CLIENT_ID: ${{ vars.NEXT_PUBLIC_ENTRA_CLIENT_ID }}
           NEXT_PUBLIC_API_SCOPE: ${{ vars.NEXT_PUBLIC_API_SCOPE }}
         run: |
           missing=''
           for name in OIDC_AUTHORITY OIDC_AUDIENCE POSTGRES_ADMIN_PASSWORD \
-            BUDGET_ALERT_EMAIL OPENAI_API_KEY NEXT_PUBLIC_ENTRA_AUTHORITY \
+            BUDGET_ALERT_EMAIL META_API_KEY NEXT_PUBLIC_ENTRA_AUTHORITY \
             NEXT_PUBLIC_ENTRA_CLIENT_ID NEXT_PUBLIC_API_SCOPE; do
             # `${!name}`, bash's indirect expansion.
             value=${!name}
@@ -104,7 +104,7 @@ jobs:
         run: bash ops/scripts/deploy_seed_secrets.sh
         env:
           KEY_VAULT: ${{ steps.infra.outputs.key_vault }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          META_API_KEY: ${{ secrets.META_API_KEY }}
           POSTGRES_ADMIN_PASSWORD: ${{ secrets.POSTGRES_ADMIN_PASSWORD }}
 
       # Built on the runner with BuildKit, then pushed.

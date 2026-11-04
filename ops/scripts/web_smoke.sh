@@ -53,10 +53,6 @@ export LLM_RUN_COST_LIMIT_USD=
 export LLM_REFUSE_UNPRICED_WHEN_CAPPED=
 
 # Nothing in this stack may reach a paid API, whatever is in .env.
-export OPENAI_API_KEY=
-export ANTHROPIC_API_KEY=
-export EMBEDDINGS_PROVIDER=
-export EMBEDDINGS_MODEL=
 
 # Sign-in, pinned end to end. A developer's .env is quite likely to say `entra` — the owner's does.
 export AUTH_MODE=dev

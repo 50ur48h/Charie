@@ -24,8 +24,6 @@ def build_settings(**overrides: object) -> Settings:
         "llm_prices": {},
         "llm_run_cost_limit_usd": None,
         "llm_refuse_unpriced_when_capped": True,
-        "openai_api_key": None,
-        "anthropic_api_key": None,
         "meta_api_key": None,
     }
     values.update(overrides)

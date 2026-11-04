@@ -296,6 +296,18 @@ export interface ConversationMessage {
 }
 
 /** What `POST …/messages` answers with: the run, not the answer. */
+/** A Meta model a question can be answered with. */
+export interface ModelOption {
+  id: string;
+  name: string;
+}
+
+/** The models this deployment offers, and the one it uses unless told otherwise. */
+export interface ModelChoices {
+  default: string;
+  models: ModelOption[];
+}
+
 export interface Accepted202 {
   run_id: string;
   message_id: string;
@@ -702,6 +714,18 @@ export function isConversationMessage(value: unknown): value is ConversationMess
     typeof value.content === "string" &&
     isNullableString(value.run_id) &&
     typeof value.created_at === "string"
+  );
+}
+
+export function isModelChoices(value: unknown): value is ModelChoices {
+  return (
+    isRecord(value) &&
+    typeof value.default === "string" &&
+    Array.isArray(value.models) &&
+    value.models.every(
+      (model: unknown) =>
+        isRecord(model) && typeof model.id === "string" && typeof model.name === "string",
+    )
   );
 }
 

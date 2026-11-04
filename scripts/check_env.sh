@@ -254,7 +254,7 @@ LLM_MODELS | provider -> tier -> model id; without it every run fails at its fir
 '
 
 # What makes this a coupling rather than a blanket requirement.
-readonly RUN_CREDENTIALS='OPENAI_API_KEY ANTHROPIC_API_KEY'
+readonly RUN_CREDENTIALS='META_API_KEY'
 
 check_the_deployment_can_answer_a_question() {
   local infra_keys credential found='' key why
@@ -468,17 +468,17 @@ FIXTURE
   write_fixture "$dir"
   cat >"$dir/infra/apps.bicep" <<'FIXTURE'
             {
-              name: 'OPENAI_API_KEY'
-              secretRef: 'openai-api-key'
+              name: 'META_API_KEY'
+              secretRef: 'meta-api-key'
             }
 FIXTURE
   {
-    echo 'OPENAI_API_KEY=sk-x'
-    echo 'LLM_PROVIDERS=openai'
+    echo 'META_API_KEY=sk-x'
+    echo 'LLM_PROVIDERS=meta'
     echo 'LLM_MODELS={}'
   } >>"$dir/.env.example"
   {
-    echo '      OPENAI_API_KEY: ${OPENAI_API_KEY:-}'
+    echo '      META_API_KEY: ${META_API_KEY:-}'
     echo '      LLM_PROVIDERS: ${LLM_PROVIDERS:-}'
     echo '      LLM_MODELS: ${LLM_MODELS:-}'
   } >>"$dir/compose.yml"
@@ -486,7 +486,7 @@ FIXTURE
     echo 'class Settings(BaseSettings):'
     echo '    passed_key: str = "x"'
     echo '    optional_key: str | None = None'
-    echo '    openai_api_key: str | None = None'
+    echo '    meta_api_key: str | None = None'
     echo '    llm_providers: tuple[str, ...] = ()'
     echo '    llm_models: dict[str, str] = {}'
   } >"$dir/config.py"
@@ -497,25 +497,25 @@ FIXTURE
   write_fixture "$dir"
   cat >"$dir/infra/apps.bicep" <<'FIXTURE'
             {
-              name: 'OPENAI_API_KEY'
-              secretRef: 'openai-api-key'
+              name: 'META_API_KEY'
+              secretRef: 'meta-api-key'
             }
             {
               name: 'LLM_PROVIDERS'
-              value: 'openai'
+              value: 'meta'
             }
             {
               name: 'LLM_MODELS'
-              value: '{"openai":{"small":"s"}}'
+              value: '{"meta":{"small":"s"}}'
             }
 FIXTURE
   {
-    echo 'OPENAI_API_KEY=sk-x'
-    echo 'LLM_PROVIDERS=openai'
+    echo 'META_API_KEY=sk-x'
+    echo 'LLM_PROVIDERS=meta'
     echo 'LLM_MODELS={}'
   } >>"$dir/.env.example"
   {
-    echo '      OPENAI_API_KEY: ${OPENAI_API_KEY:-}'
+    echo '      META_API_KEY: ${META_API_KEY:-}'
     echo '      LLM_PROVIDERS: ${LLM_PROVIDERS:-}'
     echo '      LLM_MODELS: ${LLM_MODELS:-}'
   } >>"$dir/compose.yml"
@@ -523,7 +523,7 @@ FIXTURE
     echo 'class Settings(BaseSettings):'
     echo '    passed_key: str = "x"'
     echo '    optional_key: str | None = None'
-    echo '    openai_api_key: str | None = None'
+    echo '    meta_api_key: str | None = None'
     echo '    llm_providers: tuple[str, ...] = ()'
     echo '    llm_models: dict[str, str] = {}'
   } >"$dir/config.py"

@@ -30,8 +30,8 @@ echo "Seeding $KEY_VAULT (values are never printed)"
 
 failures=0
 
-seed_if_absent openai-api-key "${OPENAI_API_KEY:-}" \
-  "set the OPENAI_API_KEY repository secret; the agent cannot answer without a model" ||
+seed_if_absent meta-api-key "${META_API_KEY:-}" \
+  "set the META_API_KEY repository secret; the agent cannot answer without a model" ||
   failures=$((failures + 1))
 
 seed_if_absent database-password "${POSTGRES_ADMIN_PASSWORD:-}" \

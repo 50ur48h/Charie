@@ -48,8 +48,7 @@ jobs:
       LLM_ROLE_MAP: ${{ vars.LLM_ROLE_MAP }}
       LLM_PRICES: ${{ vars.LLM_PRICES }}
       LLM_RUN_COST_LIMIT_USD: ${{ vars.LLM_RUN_COST_LIMIT_USD }}
-      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      META_API_KEY: ${{ secrets.META_API_KEY }}
     services:
       postgres:
         image: pgvector/pgvector:pg16
@@ -70,9 +69,9 @@ jobs:
           cache-dependency-glob: apps/api/uv.lock
       - name: Refuse to run without a key
         run: |
-          if [ -z "${OPENAI_API_KEY}" ] && [ -z "${ANTHROPIC_API_KEY}" ]; then
+          if [ -z "${META_API_KEY}" ]; then
             echo "No provider key is configured, so a live run would prove nothing." >&2
-            echo "Set OPENAI_API_KEY or ANTHROPIC_API_KEY as a repository secret." >&2
+            echo "Set META_API_KEY as a repository secret." >&2
             exit 1
           fi
       - name: Install
